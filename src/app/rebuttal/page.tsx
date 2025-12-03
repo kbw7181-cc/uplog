@@ -1,182 +1,143 @@
 // src/app/rebuttal/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '../../lib/supabaseClient';
+import { useState } from 'react';
 
-type RebuttalListItem = {
-  id: string;
-  category: string | null;
-  short_phrase: string | null;
-  final_content: string | null;
-  script_full: string | null;
-  status: string | null;
-  created_at: string | null;
-};
+export default function RebuttalPage() {
+  const today = new Date().toISOString().slice(0, 10);
 
-export default function RebuttalListPage() {
-  const router = useRouter();
-  const [items, setItems] = useState<RebuttalListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'ready' | 'draft'>('all');
-  const [search, setSearch] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        setLoading(true);
-        const { data, error } = await supabase
-          .from('rebuttals')
-          .select(
-            'id, category, short_phrase, final_content, script_full, status, created_at',
-          )
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        if (!cancelled && data) setItems(data as any);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const filtered = useMemo(() => {
-    let list = items;
-    if (filter === 'ready') list = list.filter((i) => i.status === 'ready');
-    if (filter === 'draft') list = list.filter((i) => i.status !== 'ready');
-
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter((i) => {
-        const txt =
-          (i.category ?? '') +
-          ' ' +
-          (i.short_phrase ?? '') +
-          ' ' +
-          (i.final_content ?? '') +
-          ' ' +
-          (i.script_full ?? '');
-        return txt.toLowerCase().includes(q);
-      });
-    }
-    return list;
-  }, [items, filter, search]);
+  const [rejectionText, setRejectionText] = useState('');
+  const [memo, setMemo] = useState('');
 
   return (
-    <div className="min-h-screen bg-[#050509] text-zinc-50">
-      <div className="mx-auto w-full max-w-5xl px-4 py-6 space-y-6">
-        <header className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">반론 아카이브</h1>
-          <span className="text-xs text-zinc-400">
-            최근 반론 · AI/관리자 피드백 · 내 스크립트를 한 번에
-          </span>
-        </header>
+    <main className="min-h-screen bg-gradient-to-b from-[#ffe6f7] via-[#f5f4ff] to-[#e7f7ff]">
+      <div className="mx-auto max-w-6xl px-4 py-10 text-slate-900">
+        {/* 상단 큰 카드 (MYUP 스타일) */}
+        <section className="rounded-3xl border border-white/70 bg-gradient-to-br from-[#ffe6f7] via-[#f8f4ff] to-[#e7f7ff] p-8 md:p-10 shadow-[0_24px_60px_rgba(148,163,255,0.35)] backdrop-blur-xl">
+          <div className="flex flex-col gap-8 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9f8bff]">
+                UPLOG · REBUTTAL
+              </p>
+              <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900">
+                반론 아카이브
+              </h1>
+              <p className="text-[14px] md:text-[15px] leading-relaxed text-slate-700">
+                오늘 받은 거절 멘트와 상황을 기록하고, AI가 만들어주는 공감 멘트와
+                스토리텔링 반론을 한 번에 정리하는 공간이에요.
+              </p>
+            </div>
 
-        {/* 필터 / 검색 */}
-        <section className="flex flex-col md:flex-row md:items-center gap-2 text-xs">
-          <div className="inline-flex rounded-full border border-zinc-700 bg-zinc-900/80 p-1">
-            <button
-              type="button"
-              onClick={() => setFilter('all')}
-              className={`px-3 py-1 rounded-full ${
-                filter === 'all'
-                  ? 'bg-pink-600 text-white'
-                  : 'text-zinc-300'
-              }`}
-            >
-              전체
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilter('ready')}
-              className={`px-3 py-1 rounded-full ${
-                filter === 'ready'
-                  ? 'bg-pink-600 text-white'
-                  : 'text-zinc-300'
-              }`}
-            >
-              최종본 완료
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilter('draft')}
-              className={`px-3 py-1 rounded-full ${
-                filter === 'draft'
-                  ? 'bg-pink-600 text-white'
-                  : 'text-zinc-300'
-              }`}
-            >
-              수정 예정
-            </button>
+            <div className="w-full max-w-xs rounded-2xl border border-white/80 bg-gradient-to-br from-white via-[#f9f5ff] to-[#eaf6ff] p-4 shadow-[0_18px_40px_rgba(129,140,248,0.4)] text-[13px]">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b5cf6]">
+                오늘 요약
+              </p>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-slate-600">선택한 날짜</span>
+                <span className="font-bold text-slate-900">{today}</span>
+              </div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-slate-600">기록한 거절</span>
+                <span className="font-bold text-[#6366f1]">0건</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">AI 반론 초안</span>
+                <span className="font-bold text-[#ec4899]">0개</span>
+              </div>
+            </div>
           </div>
-
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="반론 문장, 상품, 키워드로 검색"
-            className="flex-1 rounded-lg border border-zinc-700 bg-black/40 px-3 py-2 text-xs outline-none focus:border-pink-500"
-          />
         </section>
 
-        {/* 목록 */}
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4 space-y-2 text-xs">
-          {loading && (
-            <p className="text-xs text-zinc-400">
-              반론을 불러오는 중입니다…
-            </p>
-          )}
+        {/* TODAY INPUT 카드 */}
+        <section className="mt-14 rounded-3xl border border-white/70 bg-white/95 p-8 md:p-10 shadow-[0_20px_50px_rgba(148,163,255,0.32)] backdrop-blur-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b5cf6]">
+            TODAY INPUT
+          </p>
+          <h2 className="mt-3 text-2xl md:text-[26px] font-extrabold text-slate-900">
+            오늘 받은 거절 멘트를 그대로 적어주세요.
+          </h2>
+          <p className="mt-2 text-[14px] md:text-[15px] text-slate-700">
+            이 문장을 기준으로 AI가 공감 멘트와 스토리텔링 반론을 만들어줘요.
+          </p>
 
-          {!loading && filtered.length === 0 && (
-            <p className="text-xs text-zinc-400">
-              아직 저장된 반론이 없거나, 검색 결과가 없습니다.
-            </p>
-          )}
+          <div className="mt-6 space-y-5">
+            {/* 거절 멘트 */}
+            <div className="space-y-2">
+              <label className="text-[14px] font-semibold text-slate-900">
+                거절 멘트
+              </label>
+              <textarea
+                className="h-28 w-full resize-none rounded-2xl border border-[#d8daf5] bg-white px-4 py-3 text-[15px] text-slate-900 placeholder:text-slate-400 shadow-[0_14px_30px_rgba(148,163,255,0.2)] outline-none focus:border-[#a855f7] focus:shadow-[0_16px_40px_rgba(168,85,247,0.35)]"
+                placeholder="예) 지금은 생각이 없어요. 나중에 필요하면 제가 연락드릴게요."
+                value={rejectionText}
+                onChange={(e) => setRejectionText(e.target.value)}
+              />
+            </div>
 
-          {!loading &&
-            filtered.map((r) => (
+            {/* 상황 메모 */}
+            <div className="space-y-2">
+              <label className="text-[14px] font-semibold text-slate-900">
+                상황 메모 (선택)
+              </label>
+              <textarea
+                className="h-20 w-full resize-none rounded-2xl border border-[#d8daf5] bg-white px-4 py-3 text-[15px] text-slate-900 placeholder:text-slate-400 shadow-[0_14px_30px_rgba(148,163,255,0.18)] outline-none focus:border-[#a855f7] focus:shadow-[0_16px_40px_rgba(168,85,247,0.3)]"
+                placeholder="예) 기존 고객 / 가격 부담 / 전화 상담 중 등"
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+              />
+            </div>
+
+            {/* 버튼 */}
+            <div className="flex flex-wrap gap-3 pt-2">
               <button
-                key={r.id}
                 type="button"
-                onClick={() => router.push(`/rebuttal/${r.id}`)}
-                className="w-full text-left rounded-xl border border-zinc-700 bg-black/40 px-3 py-2 hover:border-pink-400"
+                className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#fb7185] via-[#f973b8] to-[#a855f7] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_16px_40px_rgba(236,72,153,0.6)] transition hover:scale-[1.02] active:scale-[0.97]"
               >
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-pink-500/15 px-2 py-0.5 text-[10px] text-pink-200">
-                      {r.category || '일반 반론'}
-                    </span>
-                    {r.status === 'ready' && (
-                      <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-300">
-                        최종본
-                      </span>
-                    )}
-                  </div>
-                  {r.created_at && (
-                    <span className="text-[10px] text-zinc-500">
-                      {new Date(r.created_at).toLocaleString()}
-                    </span>
-                  )}
-                </div>
-                <div className="text-[13px] font-semibold">
-                  {r.short_phrase || '제목 없는 반론'}
-                </div>
-                <div className="mt-1 text-[11px] text-zinc-400 line-clamp-2">
-                  {r.final_content || r.script_full || ''}
-                </div>
+                AI 피드백 받기
               </button>
-            ))}
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-full border border-[#e5e7eb] bg-white px-6 py-2.5 text-sm font-semibold text-slate-900 shadow-[0_12px_26px_rgba(148,163,255,0.25)] hover:bg-[#f4f4ff]"
+              >
+                임시 저장
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* AI REBUTTAL 결과 영역 */}
+        <section className="mt-14 rounded-3xl border border-white/70 bg-gradient-to-br from-white via-[#fdf2ff] to-[#e7f7ff] p-8 md:p-10 shadow-[0_24px_60px_rgba(148,163,255,0.33)] backdrop-blur-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b5cf6]">
+            AI REBUTTAL
+          </p>
+          <h2 className="mt-3 text-2xl md:text-[26px] font-extrabold text-slate-900">
+            공감 멘트 + 스토리텔링 반론
+          </h2>
+          <p className="mt-2 text-[14px] md:text-[15px] text-slate-700">
+            AI 피드백을 받으면 아래 공간에 자동으로 채워질 거예요.
+          </p>
+
+          <div className="mt-8 grid gap-6 md:grid-cols-2">
+            <div className="rounded-2xl bg-white/90 p-6 shadow-[0_16px_36px_rgba(148,163,255,0.28)]">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#ec4899]">
+                1단계 · 공감 멘트
+              </p>
+              <p className="mt-2 text-[15px] leading-relaxed text-slate-900">
+                (AI 생성 전)
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-white/90 p-6 shadow-[0_16px_36px_rgba(148,163,255,0.28)]">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6366f1]">
+                2단계 · 스토리텔링 반론
+              </p>
+              <p className="mt-2 text-[15px] leading-relaxed text-slate-900">
+                (AI 생성 전)
+              </p>
+            </div>
+          </div>
         </section>
       </div>
-    </div>
+    </main>
   );
 }
