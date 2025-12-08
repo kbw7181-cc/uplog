@@ -737,7 +737,8 @@ export default function HomePage() {
             <div className="summary-card todo-card">
               <h3 className="summary-title">오늘 할 일</h3>
               <p className="summary-desc">
-                나의 U P 관리에서 등록한<br />
+                나의 U P 관리에서 등록한
+                <br />
                 오늘의 체크항목만 크게 한눈에 보여줘요.
               </p>
 
@@ -1057,9 +1058,10 @@ const styles = `
   min-height: 100vh;
   padding: 24px;
   box-sizing: border-box;
-  background: radial-gradient(circle at top left, #f9e0ff 0, #422061 40%, #12061c 100%);
+  /* 바탕: 나의 U P 관리처럼 밝은 그라데이션 */
+  background: linear-gradient(180deg, #ffe6f7 0%, #f5f0ff 45%, #e8f6ff 100%);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #f8f4ff;
+  color: #1b1030;
 }
 
 .home-inner {
@@ -1072,14 +1074,13 @@ const styles = `
 .section-title {
   font-size: 15px;
   font-weight: 700;
-  color: #ffe9ff;
-  text-shadow: 0 0 10px rgba(255, 147, 255, 0.6);
+  color: #6b41ff;
 }
 
 .section-sub {
   font-size: 12px;
   margin-top: 4px;
-  color: #b9a6ff;
+  color: #8c7ad9;
 }
 
 /* 로딩 */
@@ -1098,9 +1099,11 @@ const styles = `
   gap: 24px;
   padding: 22px 26px;
   border-radius: 30px;
-  background: linear-gradient(135deg, #ff87ba, #a455ff);
-  box-shadow: 0 22px 44px rgba(0,0,0,0.48);
+  /* 상단 큰 배너: 핑크 → 퍼플 그라데이션 유지 (글씨는 거의 흰색이므로 OK) */
+  background: linear-gradient(135deg, #ff89bd, #a45bff);
+  box-shadow: 0 22px 44px rgba(0,0,0,0.25);
   margin-bottom: 18px;
+  color: #fffdfd;
 }
 
 .home-header-left {
@@ -1120,7 +1123,7 @@ const styles = `
   height: 50px;
   border-radius: 18px;
   object-fit: cover;
-  background: rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.25);
   padding: 7px;
 }
 
@@ -1134,7 +1137,7 @@ const styles = `
   font-size: 22px;
   font-weight: 900;
   letter-spacing: 4px;
-  background: linear-gradient(135deg, #ffffff, #ffe0ff);
+  background: linear-gradient(135deg, #ffffff, #ffe9ff);
   -webkit-background-clip: text;
   color: transparent;
 }
@@ -1151,7 +1154,7 @@ const styles = `
   background: linear-gradient(135deg, #ffffff, #ffe4ff);
   -webkit-background-clip: text;
   color: transparent;
-  text-shadow: 0 0 16px rgba(255,255,255,0.5);
+  text-shadow: 0 0 16px rgba(255,255,255,0.4);
 }
 
 .welcome-name {
@@ -1161,8 +1164,10 @@ const styles = `
 .home-date {
   font-size: 13px;
   margin-top: 4px;
-  color: rgba(255,255,255,0.95);
+  color: #fffdfd;
 }
+
+/* 헤더 오른쪽 카드: 밝은 박스 */
 
 .home-header-right {
   min-width: 360px;
@@ -1171,14 +1176,15 @@ const styles = `
 }
 
 .profile-box {
-  background: rgba(12, 2, 28, 0.96);
+  background: #ffffff;
   border-radius: 24px;
   padding: 14px 16px;
-  box-shadow: 0 18px 34px rgba(0,0,0,0.85);
+  box-shadow: 0 18px 34px rgba(0,0,0,0.16);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  border: 1px solid rgba(255, 163, 255, 0.3);
+  border: 1px solid #e3dafb;
+  color: #211437;
 }
 
 .profile-main {
@@ -1199,7 +1205,7 @@ const styles = `
   font-weight: 800;
   font-size: 22px;
   overflow: hidden;
-  box-shadow: 0 0 18px rgba(255, 144, 244, 0.7);
+  box-shadow: 0 0 14px rgba(193, 126, 255, 0.7);
 }
 
 .profile-avatar img {
@@ -1211,11 +1217,12 @@ const styles = `
 .profile-name {
   font-size: 15px;
   font-weight: 700;
+  color: #211437;
 }
 
 .profile-email {
   font-size: 11px;
-  color: #c6b7ff;
+  color: #8b7bd4;
 }
 
 .profile-meta {
@@ -1228,8 +1235,8 @@ const styles = `
   font-size: 11px;
   padding: 4px 9px;
   border-radius: 999px;
-  background: rgba(100, 75, 190, 0.8);
-  color: #fef5ff;
+  background: #f3efff;
+  color: #352153;
 }
 
 .profile-stats {
@@ -1242,13 +1249,13 @@ const styles = `
   font-size: 11px;
   padding: 4px 11px;
   border-radius: 999px;
-  background: rgba(35, 20, 80, 0.95);
-  color: #fef5ff;
-  border: 1px solid rgba(255, 168, 255, 0.35);
+  background: #f7f2ff;
+  color: #352153;
+  border: 1px solid #e0d4ff;
 }
 
 .profile-stat-pill strong {
-  color: #ffb5df;
+  color: #ff4f9f;
 }
 
 .profile-links {
@@ -1259,30 +1266,31 @@ const styles = `
 }
 
 .profile-links a {
-  color: #ffbff0;
+  color: #a24cff;
   text-decoration: none;
 }
 
-/* 오늘의 U P 감성 */
+/* 오늘의 U P 감성 배너: 나의 U P 관리처럼 보라+핑크 그라데이션 */
 
 .emo-banner {
   margin-bottom: 18px;
   padding: 20px 24px 22px;
   border-radius: 26px;
-  background: linear-gradient(135deg, #5a2dfd, #ff6fbd);
-  box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+  background: linear-gradient(135deg, #8e7dff, #ff8fd2);
+  box-shadow: 0 20px 40px rgba(107, 71, 183, 0.3);
   position: relative;
   overflow: hidden;
+  color: #fffdfd;
 }
 
 .emo-pill {
   display: inline-flex;
   padding: 5px 18px;
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.8);
+  border: 1px solid rgba(255,255,255,0.9);
   font-size: 11px;
   margin-bottom: 12px;
-  background: rgba(0,0,0,0.18);
+  background: rgba(0,0,0,0.12);
 }
 
 .emo-title {
@@ -1303,7 +1311,7 @@ const styles = `
 .emo-footer {
   margin-top: 12px;
   font-size: 13px;
-  color: #ffe7ff;
+  color: #fff4ff;
 }
 
 .emo-dots {
@@ -1317,16 +1325,16 @@ const styles = `
   height: 8px;
   border-radius: 999px;
   border: none;
-  background: rgba(255,255,255,0.35);
+  background: rgba(255,255,255,0.55);
   cursor: pointer;
 }
 
 .emo-dot-active {
   width: 20px;
-  background: #fff;
+  background: #ffffff;
 }
 
-/* 퀵 메뉴 */
+/* 퀵 메뉴: 어두운 카드 → 밝은 카드 */
 
 .home-quick-nav {
   display: grid;
@@ -1338,36 +1346,36 @@ const styles = `
 .quick-card {
   border-radius: 18px;
   padding: 12px 14px;
-  background: radial-gradient(circle at top left, #2a102f 0, #110719 60%);
-  box-shadow: 0 14px 30px rgba(0,0,0,0.7);
+  background: #1b1029;
+  box-shadow: 0 14px 26px rgba(0,0,0,0.38);
   text-decoration: none;
   display: flex;
   flex-direction: column;
   gap: 4px;
   transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, border 0.14s ease;
-  border: 1px solid rgba(255, 135, 230, 0.15);
+  border: 1px solid rgba(25, 7, 41, 0.25);
+  color: #ffffff;
 }
 
 .quick-card:hover {
   transform: translateY(-2px);
-  background: radial-gradient(circle at top left, #3b1745 0, #1b0926 60%);
-  box-shadow: 0 18px 36px rgba(0,0,0,0.9);
-  border-color: rgba(255, 180, 255, 0.6);
+  background: #291237;
+  box-shadow: 0 18px 32px rgba(0,0,0,0.45);
+  border-color: rgba(125, 97, 255, 0.8);
 }
 
 .quick-title {
   font-size: 14px;
   font-weight: 700;
-  color: #ffeafe;
-  text-shadow: 0 0 10px rgba(255, 152, 255, 0.5);
+  color: #ffebff;
 }
 
 .quick-desc {
   font-size: 11px;
-  color: #d6c2ff;
+  color: #e0d6ff;
 }
 
-/* 날씨 */
+/* 날씨 패널: 밝은 카드 */
 
 .weather-wide {
   margin-bottom: 14px;
@@ -1375,9 +1383,11 @@ const styles = `
 
 .weather-panel {
   border-radius: 20px;
-  background: radial-gradient(circle at top left, #2b123a 0, #12041f 70%);
+  background: #ffffff;
   padding: 12px 16px 10px;
-  box-shadow: 0 16px 34px rgba(0,0,0,0.7);
+  box-shadow: 0 14px 30px rgba(0,0,0,0.12);
+  border: 1px solid #e3dafb;
+  color: #241336;
 }
 
 .weather-panel-header {
@@ -1397,7 +1407,7 @@ const styles = `
 .weather-slot {
   min-width: 120px;
   border-radius: 14px;
-  background: rgba(39, 19, 70, 0.95);
+  background: #f7f3ff;
   padding: 8px;
   font-size: 11px;
 }
@@ -1410,12 +1420,12 @@ const styles = `
 .weather-temp {
   font-size: 16px;
   font-weight: 700;
-  color: #ffb7f4;
+  color: #f35fa6;
 }
 
 .weather-desc {
   font-size: 11px;
-  color: #d9c8ff;
+  color: #7a68c4;
 }
 
 /* 메인 레이아웃 */
@@ -1436,7 +1446,7 @@ const styles = `
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-/* 상단 요약 카드 (목표 / 오늘 할 일 / 성장 그래프) */
+/* 상단 요약 카드 */
 
 .home-top-summary {
   margin-top: 4px;
@@ -1448,23 +1458,17 @@ const styles = `
 .summary-card {
   border-radius: 24px;
   padding: 18px 20px;
-  background: radial-gradient(circle at top left, #1e0d33 0, #0a0213 70%);
-  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.8);
-  border: 1px solid rgba(255, 185, 255, 0.18);
+  background: #ffffff;
+  box-shadow: 0 16px 30px rgba(0,0,0,0.12);
+  border: 1px solid #e5ddff;
+  color: #211437;
 }
 
 .summary-title {
   font-size: 15px;
   font-weight: 700;
   margin-bottom: 10px;
-  color: #ffe9ff;
-  text-shadow: 0 0 8px rgba(255, 150, 255, 0.6);
-}
-
-.summary-desc {
-  font-size: 13px;
-  color: #e6dcff;
-  line-height: 1.5;
+  color: #6b41ff;
 }
 
 /* 목표 카드 */
@@ -1479,36 +1483,35 @@ const styles = `
 .goal-card {
   border-radius: 18px;
   padding: 10px 12px;
-  background: #211033;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #faf7ff;
+  border: 1px solid rgba(194, 179, 255, 0.6);
 }
 
 .goal-card-today {
-  background: linear-gradient(135deg, #ff8fd7, #ff6fb5);
-  box-shadow: 0 0 18px rgba(255, 140, 220, 0.7);
+  background: linear-gradient(135deg, #ffb5df, #ff8cc7);
+  box-shadow: 0 0 14px rgba(255, 128, 205, 0.6);
+  color: #2b1131;
 }
 
 .goal-label {
   font-size: 12px;
-  color: #ffe9ff;
-  opacity: 0.9;
+  color: #694292;
 }
 
 .goal-text {
   margin-top: 4px;
   font-size: 14px;
   font-weight: 600;
-  color: #ffffff;
 }
 
 .goal-main {
   margin-top: 12px;
   font-size: 13px;
-  color: #b9a9ff;
+  color: #7e68c7;
 }
 
 .goal-main-strong {
-  color: #ffcaf8;
+  color: #f153aa;
   font-weight: 700;
 }
 
@@ -1522,16 +1525,15 @@ const styles = `
   margin-top: 12px;
   border-radius: 18px;
   padding: 12px 14px;
-  background: #1a0c2b;
-  border: 1px dashed rgba(255, 255, 255, 0.2);
+  background: #faf7ff;
+  border: 1px dashed rgba(165, 148, 230, 0.9);
   font-size: 13px;
-  color: #b9a9ff;
+  color: #7461be;
   line-height: 1.5;
 }
 
 .todo-empty-sub {
   font-size: 12px;
-  opacity: 0.9;
 }
 
 .todo-list {
@@ -1552,20 +1554,20 @@ const styles = `
   width: 14px;
   height: 14px;
   border-radius: 4px;
-  border: 1px solid #ff9fdc;
+  border: 1px solid #f153aa;
   box-sizing: border-box;
 }
 
 .todo-check-done {
-  background: linear-gradient(135deg, #ff9fdc, #a36dff);
+  background: linear-gradient(135deg, #f153aa, #a36dff);
 }
 
 .todo-text {
-  color: #f3eaff;
+  color: #241336;
 }
 
 .todo-text-done {
-  color: #8e83c5;
+  color: #a39ad3;
   text-decoration: line-through;
 }
 
@@ -1579,17 +1581,17 @@ const styles = `
 
 .growth-month {
   font-size: 12px;
-  color: #c5b7ff;
+  color: #7e6fd6;
 }
 
 .growth-caption {
   margin-top: 4px;
   font-size: 12px;
-  color: #d8cfff;
+  color: #7c6acd;
 }
 
 .growth-caption span {
-  color: #ffcaf8;
+  color: #f153aa;
   font-weight: 600;
 }
 
@@ -1598,7 +1600,7 @@ const styles = `
   display: flex;
   gap: 12px;
   font-size: 11px;
-  color: #b9a9ff;
+  color: #7e6fd6;
 }
 
 .legend-item {
@@ -1619,7 +1621,7 @@ const styles = `
 }
 
 .legend-dot-off {
-  background: #2c193f;
+  background: #e3dafb;
 }
 
 .growth-grid {
@@ -1643,26 +1645,27 @@ const styles = `
 .growth-day-on {
   background: linear-gradient(135deg, #ff9ed8, #ff73b5);
   color: #ffffff;
-  box-shadow: 0 0 14px rgba(255, 140, 220, 0.8);
 }
 
 .growth-day-off {
-  background: #1d0f30;
-  color: #5f4f86;
+  background: #f3efff;
+  color: #8f82c6;
 }
 
 .growth-day-off:hover {
-  background: #26113c;
-  color: #e6dcff;
+  background: #e7deff;
+  color: #43306a;
 }
 
-/* 카드 공통 (아래쪽) */
+/* 공통 카드 (달력/친구/반론) */
 
 .right-card {
-  background: radial-gradient(circle at top left, #251136 0, #0b0313 70%);
+  background: #ffffff;
   border-radius: 20px;
   padding: 12px 14px;
-  box-shadow: 0 16px 34px rgba(0,0,0,0.8);
+  box-shadow: 0 16px 30px rgba(0,0,0,0.12);
+  border: 1px solid #e5ddff;
+  color: #211437;
 }
 
 .right-card-header {
@@ -1674,13 +1677,13 @@ const styles = `
 
 .small-link {
   font-size: 11px;
-  color: #ffbff0;
+  color: #a24cff;
   text-decoration: none;
 }
 
 .empty-text {
   font-size: 11px;
-  color: #bcb0ff;
+  color: #7a69c4;
   line-height: 1.5;
 }
 
@@ -1702,39 +1705,40 @@ const styles = `
   border: none;
   padding: 4px 8px;
   font-size: 11px;
-  background: rgba(73, 46, 150, 0.9);
-  color: #ffe3ff;
+  background: #f0e8ff;
+  color: #5a3cb2;
   cursor: pointer;
 }
 
 .month-label {
   font-size: 13px;
   font-weight: 600;
-  color: #fff;
+  color: #372153;
 }
 
 .calendar-grid {
-  background: radial-gradient(circle at top left, #1e0e2c 0, #09020f 80%);
+  background: #ffffff;
   border-radius: 18px;
   padding: 8px;
-  box-shadow: 0 16px 30px rgba(0,0,0,0.8);
+  box-shadow: 0 16px 30px rgba(0,0,0,0.12);
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
   grid-column: 1 / -1;
+  border: 1px solid #e5ddff;
 }
 
 .calendar-weekday {
   text-align: center;
   font-size: 11px;
   font-weight: 600;
-  color: #fef1ff;
+  color: #7f6bd5;
 }
 
 .calendar-day {
   border-radius: 14px;
   border: none;
-  background: #1a0c27;
+  background: #faf7ff;
   padding: 6px 4px;
   min-height: 56px;
   font-size: 11px;
@@ -1742,20 +1746,20 @@ const styles = `
   flex-direction: column;
   align-items: flex-start;
   cursor: pointer;
-  color: #fef7ff;
+  color: #241336;
 }
 
 .calendar-day-out {
-  opacity: 0.34;
+  opacity: 0.35;
 }
 
 .calendar-day-today {
-  box-shadow: 0 0 0 1px #ffb7f4;
+  box-shadow: 0 0 0 1px #f153aa;
 }
 
 .calendar-day-selected {
-  box-shadow: 0 0 0 2px #ff8bdc;
-  background: linear-gradient(135deg, #ff8bdc, #8345ff);
+  box-shadow: 0 0 0 2px #a45bff;
+  background: linear-gradient(135deg, #f5e6ff, #ffe1f1);
 }
 
 .calendar-day-number {
@@ -1767,15 +1771,15 @@ const styles = `
   font-size: 10px;
   padding: 2px 4px;
   border-radius: 999px;
-  background: #ffb7f4;
-  color: #3c0930;
+  background: #f153aa;
+  color: #fff;
 }
 
 .calendar-footer {
   grid-column: 1 / -1;
   margin-top: 6px;
   font-size: 12px;
-  color: #d2c4ff;
+  color: #7e6fd6;
 }
 
 /* 선택 날짜 */
@@ -1800,30 +1804,30 @@ const styles = `
 
 .schedule-time-label {
   font-size: 11px;
-  color: #f7e9ff;
+  color: #4b335f;
 }
 
 .schedule-time-input {
   border-radius: 999px;
-  border: 1px solid #b485ff;
+  border: 1px solid #c2b1ff;
   padding: 4px 8px;
   font-size: 12px;
-  background: #13081d;
-  color: #f5eaff;
+  background: #f9f6ff;
+  color: #241336;
 }
 
 .schedule-time-input::-webkit-calendar-picker-indicator {
-  filter: invert(1);
+  filter: invert(0.3);
 }
 
 .schedule-title-input {
   flex: 1;
   border-radius: 999px;
-  border: 1px solid #b485ff;
+  border: 1px solid #c2b1ff;
   padding: 6px 10px;
   font-size: 12px;
-  background: #13081d;
-  color: #f5eaff;
+  background: #faf7ff;
+  color: #241336;
 }
 
 .schedule-title-input::placeholder {
@@ -1839,7 +1843,7 @@ const styles = `
   background: linear-gradient(135deg, #ff8fba, #a36dff);
   color: #fff;
   cursor: pointer;
-  box-shadow: 0 10px 24px rgba(0,0,0,0.75);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.25);
 }
 
 /* 스케줄 목록 */
@@ -1856,7 +1860,7 @@ const styles = `
   gap: 6px;
   font-size: 11px;
   padding: 4px 0;
-  border-bottom: 1px dashed #3c285e;
+  border-bottom: 1px dashed #e0d4ff;
 }
 
 .schedule-item:last-child {
@@ -1864,12 +1868,12 @@ const styles = `
 }
 
 .schedule-time {
-  color: #ffb7f4;
+  color: #f153aa;
   font-weight: 600;
 }
 
 .schedule-title {
-  color: #f9efff;
+  color: #241336;
 }
 
 /* 친구 */
@@ -1883,7 +1887,7 @@ const styles = `
   background: linear-gradient(135deg, #ff8fba, #a36dff);
   color: #fff;
   cursor: pointer;
-  box-shadow: 0 10px 24px rgba(0,0,0,0.8);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.25);
 }
 
 .friend-chat-banner.big {
@@ -1913,11 +1917,11 @@ const styles = `
 }
 
 .friend-dot-on {
-  background: #46d46f;
+  background: #3eba63;
 }
 
 .friend-dot-off {
-  background: #777;
+  background: #bbbbbb;
 }
 
 .friend-name {
@@ -1926,16 +1930,16 @@ const styles = `
 
 .friend-role {
   font-size: 10px;
-  color: #c7b5ff;
+  color: #7f6bd5;
 }
 
 .friend-status {
   margin-left: auto;
   font-size: 10px;
-  color: #a89ae0;
+  color: #9387d5;
 }
 
-/* 반론 */
+/* 반론 리스트 */
 
 .rebuttal-list {
   list-style: none;
@@ -1947,7 +1951,7 @@ const styles = `
 
 .rebuttal-item {
   padding: 5px 0;
-  border-bottom: 1px dashed #3c285e;
+  border-bottom: 1px dashed #e0d4ff;
   font-size: 11px;
 }
 
@@ -1957,12 +1961,12 @@ const styles = `
 
 .rebuttal-category {
   font-weight: 600;
-  color: #ffb7f4;
+  color: #f153aa;
   margin-bottom: 2px;
 }
 
 .rebuttal-content {
-  color: #f9efff;
+  color: #241336;
 }
 
 /* 플로팅 버튼 */
@@ -1975,8 +1979,8 @@ const styles = `
   height: 64px;
   border-radius: 999px;
   border: none;
-  background: radial-gradient(circle at top left, #ff9dd1 0, #a15dff 70%);
-  box-shadow: 0 20px 40px rgba(0,0,0,0.95);
+  background: radial-gradient(circle at top left, #ff9ed5 0, #a35dff 70%);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.6);
   color: #fff;
   font-size: 10px;
   font-weight: 600;
@@ -2013,4 +2017,3 @@ const styles = `
   }
 }
 `;
-

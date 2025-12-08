@@ -4,100 +4,121 @@
 import { useState } from 'react';
 
 export default function RebuttalPage() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
 
-  const [rejectionText, setRejectionText] = useState('');
-  const [memo, setMemo] = useState('');
+  const [rawMent, setRawMent] = useState('');
+  const [situation, setSituation] = useState('');
+  const [empathyText, setEmpathyText] = useState('');
+  const [storyText, setStoryText] = useState('');
+
+  const handleAiRebuttal = () => {
+    if (!rawMent.trim()) {
+      alert('오늘 받은 거절 멘트를 먼저 적어주세요.');
+      return;
+    }
+
+    // ⚠️ 지금은 디자인용 더미 텍스트.
+    // 나중에 /api 호출이나 기존 AI 함수로 바꿔 끼우면 됨.
+    setEmpathyText(
+      '대표님, 지금 상황에서 부담스럽게 느끼실 수 있다는 점 충분히 이해합니다. ' +
+        '이미 여러 가지를 고민하고 계셨을 거라는 것도 알고 있어요.'
+    );
+    setStoryText(
+      '사실 기존 고객분들 중에도 처음에는 같은 고민을 하셨던 분들이 많았어요. ' +
+        '그래서 대표님의 속도에 맞게, 부담되지 않는 선에서 먼저 작은 경험부터 시작하실 수 있게 도와드리고 있어요. ' +
+        '이번 제안도 “당장 결정”이 아니라, 대표님께 진짜 도움이 될 수 있는지 같이 살펴보는 과정이라고 생각해 주시면 좋겠습니다.'
+    );
+  };
+
+  const handleTempSave = () => {
+    // 기능은 나중에 Supabase 저장으로 교체 가능
+    localStorage.setItem(
+      'uplog_rebuttal_temp',
+      JSON.stringify({ rawMent, situation })
+    );
+    alert('임시 저장되었습니다. (지금은 브라우저 로컬 임시 저장)');
+  };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-[#ffe6f7] via-[#f5f4ff] to-[#e7f7ff]">
-      <div className="mx-auto max-w-6xl px-4 py-10 text-slate-900">
-        {/* 상단 큰 카드 (MYUP 스타일) */}
-        <section className="rounded-3xl border border-white/70 bg-gradient-to-br from-[#ffe6f7] via-[#f8f4ff] to-[#e7f7ff] p-8 md:p-10 shadow-[0_24px_60px_rgba(148,163,255,0.35)] backdrop-blur-xl">
-          <div className="flex flex-col gap-8 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9f8bff]">
-                UPLOG · REBUTTAL
-              </p>
-              <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900">
-                반론 아카이브
-              </h1>
-              <p className="text-[14px] md:text-[15px] leading-relaxed text-slate-700">
-                오늘 받은 거절 멘트와 상황을 기록하고, AI가 만들어주는 공감 멘트와
-                스토리텔링 반론을 한 번에 정리하는 공간이에요.
-              </p>
-            </div>
-
-            <div className="w-full max-w-xs rounded-2xl border border-white/80 bg-gradient-to-br from-white via-[#f9f5ff] to-[#eaf6ff] p-4 shadow-[0_18px_40px_rgba(129,140,248,0.4)] text-[13px]">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b5cf6]">
-                오늘 요약
-              </p>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-slate-600">선택한 날짜</span>
-                <span className="font-bold text-slate-900">{today}</span>
-              </div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-slate-600">기록한 거절</span>
-                <span className="font-bold text-[#6366f1]">0건</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-600">AI 반론 초안</span>
-                <span className="font-bold text-[#ec4899]">0개</span>
-              </div>
-            </div>
+    <div className="rebuttal-root">
+      <div className="rebuttal-inner">
+        {/* 헤더 영역 */}
+        <header className="rebuttal-header-card">
+          <div className="rebuttal-header-left">
+            <div className="rebuttal-tag">UPLOG · REBUTTAL</div>
+            <h1 className="rebuttal-title">반론 아카이브</h1>
+            <p className="rebuttal-desc">
+              오늘 받은 거절 멘트를 AI와 함께 공감 멘트와 스토리텔링 반론으로 정리하는
+              나만의 기록장이에요.
+            </p>
           </div>
-        </section>
 
-        {/* TODAY INPUT 카드 */}
-        <section className="mt-14 rounded-3xl border border-white/70 bg-white/95 p-8 md:p-10 shadow-[0_20px_50px_rgba(148,163,255,0.32)] backdrop-blur-xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b5cf6]">
-            TODAY INPUT
-          </p>
-          <h2 className="mt-3 text-2xl md:text-[26px] font-extrabold text-slate-900">
-            오늘 받은 거절 멘트를 그대로 적어주세요.
-          </h2>
-          <p className="mt-2 text-[14px] md:text-[15px] text-slate-700">
-            이 문장을 기준으로 AI가 공감 멘트와 스토리텔링 반론을 만들어줘요.
-          </p>
+          <aside className="rebuttal-summary-card">
+            <h2 className="summary-title">오늘 요약</h2>
+            <dl className="summary-list">
+              <div className="summary-row">
+                <dt>날짜</dt>
+                <dd>{today}</dd>
+              </div>
+              <div className="summary-row">
+                <dt>오늘 기록한 거절</dt>
+                <dd>0개</dd>
+              </div>
+              <div className="summary-row">
+                <dt>AI 반론 초안</dt>
+                <dd>{empathyText || storyText ? '1개' : '0개'}</dd>
+              </div>
+            </dl>
+          </aside>
+        </header>
 
-          <div className="mt-6 space-y-5">
-            {/* 거절 멘트 */}
-            <div className="space-y-2">
-              <label className="text-[14px] font-semibold text-slate-900">
-                거절 멘트
-              </label>
+        {/* TODAY INPUT */}
+        <section className="block-section">
+          <div className="block-label">TODAY INPUT</div>
+          <div className="block-card">
+            <h2 className="block-title">오늘 받은 거절 멘트를 그대로 적어주세요.</h2>
+            <p className="block-sub">
+              기록한 문장을 기준으로 AI가 공감 멘트와 스토리텔링 반론을 만들어줘요.
+            </p>
+
+            <div className="field-group">
+              <label className="field-label">거절 멘트</label>
               <textarea
-                className="h-28 w-full resize-none rounded-2xl border border-[#d8daf5] bg-white px-4 py-3 text-[15px] text-slate-900 placeholder:text-slate-400 shadow-[0_14px_30px_rgba(148,163,255,0.2)] outline-none focus:border-[#a855f7] focus:shadow-[0_16px_40px_rgba(168,85,247,0.35)]"
+                className="field-textarea"
                 placeholder="예) 지금은 생각이 없어요. 나중에 필요하면 제가 연락드릴게요."
-                value={rejectionText}
-                onChange={(e) => setRejectionText(e.target.value)}
+                value={rawMent}
+                onChange={(e) => setRawMent(e.target.value)}
               />
             </div>
 
-            {/* 상황 메모 */}
-            <div className="space-y-2">
-              <label className="text-[14px] font-semibold text-slate-900">
-                상황 메모 (선택)
+            <div className="field-group">
+              <label className="field-label">
+                상황 메모 <span className="field-optional">(선택)</span>
               </label>
               <textarea
-                className="h-20 w-full resize-none rounded-2xl border border-[#d8daf5] bg-white px-4 py-3 text-[15px] text-slate-900 placeholder:text-slate-400 shadow-[0_14px_30px_rgba(148,163,255,0.18)] outline-none focus:border-[#a855f7] focus:shadow-[0_16px_40px_rgba(168,85,247,0.3)]"
-                placeholder="예) 기존 고객 / 가격 부담 / 전화 상담 중 등"
-                value={memo}
-                onChange={(e) => setMemo(e.target.value)}
+                className="field-textarea"
+                placeholder="예) 기존 고객 / 전화 상담 / 가격 부담을 많이 느끼는 상황 등"
+                value={situation}
+                onChange={(e) => setSituation(e.target.value)}
               />
             </div>
 
-            {/* 버튼 */}
-            <div className="flex flex-wrap gap-3 pt-2">
+            <div className="button-row">
               <button
                 type="button"
-                className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#fb7185] via-[#f973b8] to-[#a855f7] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_16px_40px_rgba(236,72,153,0.6)] transition hover:scale-[1.02] active:scale-[0.97]"
+                className="btn-primary"
+                onClick={handleAiRebuttal}
               >
                 AI 피드백 받기
               </button>
               <button
                 type="button"
-                className="inline-flex items-center justify-center rounded-full border border-[#e5e7eb] bg-white px-6 py-2.5 text-sm font-semibold text-slate-900 shadow-[0_12px_26px_rgba(148,163,255,0.25)] hover:bg-[#f4f4ff]"
+                className="btn-secondary"
+                onClick={handleTempSave}
               >
                 임시 저장
               </button>
@@ -105,39 +126,319 @@ export default function RebuttalPage() {
           </div>
         </section>
 
-        {/* AI REBUTTAL 결과 영역 */}
-        <section className="mt-14 rounded-3xl border border-white/70 bg-gradient-to-br from-white via-[#fdf2ff] to-[#e7f7ff] p-8 md:p-10 shadow-[0_24px_60px_rgba(148,163,255,0.33)] backdrop-blur-xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b5cf6]">
-            AI REBUTTAL
-          </p>
-          <h2 className="mt-3 text-2xl md:text-[26px] font-extrabold text-slate-900">
-            공감 멘트 + 스토리텔링 반론
-          </h2>
-          <p className="mt-2 text-[14px] md:text-[15px] text-slate-700">
-            AI 피드백을 받으면 아래 공간에 자동으로 채워질 거예요.
-          </p>
+        {/* AI REBUTTAL */}
+        <section className="block-section">
+          <div className="block-label">AI REBUTTAL</div>
+          <div className="block-card">
+            <h2 className="block-title">공감 멘트 + 스토리텔링 반론</h2>
+            <p className="block-sub">
+              AI 피드백 받기를 누르면 대표님이 적은 거절 멘트를 기준으로 아래 내용이
+              채워집니다.
+            </p>
 
-          <div className="mt-8 grid gap-6 md:grid-cols-2">
-            <div className="rounded-2xl bg-white/90 p-6 shadow-[0_16px_36px_rgba(148,163,255,0.28)]">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#ec4899]">
-                1단계 · 공감 멘트
-              </p>
-              <p className="mt-2 text-[15px] leading-relaxed text-slate-900">
-                (AI 생성 전)
-              </p>
+            <div className="ai-step">
+              <div className="ai-step-header">
+                <span className="ai-step-badge">1단계 · 공감 멘트</span>
+              </div>
+              <div className="ai-text-box">
+                {empathyText ? (
+                  <p>{empathyText}</p>
+                ) : (
+                  <p className="ai-placeholder">
+                    아직 공감 멘트가 없어요. 위에서 거절 멘트를 적고{' '}
+                    <strong>AI 피드백 받기</strong> 버튼을 눌러보세요.
+                  </p>
+                )}
+              </div>
             </div>
 
-            <div className="rounded-2xl bg-white/90 p-6 shadow-[0_16px_36px_rgba(148,163,255,0.28)]">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6366f1]">
-                2단계 · 스토리텔링 반론
-              </p>
-              <p className="mt-2 text-[15px] leading-relaxed text-slate-900">
-                (AI 생성 전)
-              </p>
+            <div className="ai-step">
+              <div className="ai-step-header">
+                <span className="ai-step-badge purple">
+                  2단계 · 스토리텔링 반론
+                </span>
+              </div>
+              <div className="ai-text-box">
+                {storyText ? (
+                  <p>{storyText}</p>
+                ) : (
+                  <p className="ai-placeholder">
+                    고객에게 실제로 전하고 싶은 스토리텔링 반론이 이 영역에 정리됩니다.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="ai-footer-info">
+              <span>TIP.</span> 마음에 드는 멘트는 나중에 반론 아카이브 목록에 따로
+              정리해 두면 좋아요.
             </div>
           </div>
         </section>
       </div>
-    </main>
+
+      <style jsx>{styles}</style>
+    </div>
   );
 }
+
+const styles = `
+.rebuttal-root {
+  min-height: 100vh;
+  padding: 24px;
+  box-sizing: border-box;
+  /* 나의 U P 관리와 비슷한 밝은 그라데이션 배경 */
+  background: linear-gradient(180deg, #ffe6f7 0%, #f5f0ff 50%, #e8f6ff 100%);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.rebuttal-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* 헤더 카드 */
+
+.rebuttal-header-card {
+  display: grid;
+  grid-template-columns: minmax(0, 2.1fr) minmax(260px, 1fr);
+  gap: 18px;
+  padding: 22px 26px;
+  border-radius: 30px;
+  background: linear-gradient(135deg, #ff89bd, #a45bff);
+  box-shadow: 0 22px 44px rgba(0,0,0,0.15);
+  color: #fff;
+}
+
+.rebuttal-tag {
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.rebuttal-title {
+  margin-top: 10px;
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.rebuttal-desc {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  opacity: 0.96;
+}
+
+/* 오늘 요약 카드 */
+
+.rebuttal-summary-card {
+  background: rgba(4, 0, 12, 0.92);
+  border-radius: 22px;
+  padding: 16px 18px;
+  box-shadow: 0 18px 32px rgba(0,0,0,0.45);
+}
+
+.summary-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.summary-list {
+  margin: 0;
+  padding: 0;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed rgba(255,255,255,0.16);
+}
+
+.summary-row:last-child {
+  border-bottom: none;
+}
+
+.summary-row dt {
+  opacity: 0.8;
+}
+
+.summary-row dd {
+  font-weight: 600;
+}
+
+/* 공통 섹션 */
+
+.block-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.block-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: #7b5bff;
+}
+
+.block-card {
+  border-radius: 26px;
+  padding: 20px 22px 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 30px rgba(0,0,0,0.08);
+  border: 1px solid #e4ddff;
+}
+
+.block-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #251437;
+}
+
+.block-sub {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #6e5a9e;
+}
+
+/* 입력 영역 */
+
+.field-group {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3a2458;
+}
+
+.field-optional {
+  font-size: 11px;
+  font-weight: 400;
+  color: #a597d7;
+}
+
+.field-textarea {
+  min-height: 80px;
+  resize: vertical;
+  border-radius: 16px;
+  border: 1px solid #dacfff;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  background: #faf7ff;
+  color: #281432;
+}
+
+.field-textarea::placeholder {
+  color: #b1a2e3;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.btn-primary,
+.btn-secondary {
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #ff8fba, #a36dff);
+  color: #fff;
+  box-shadow: 0 12px 22px rgba(165, 94, 255, 0.38);
+}
+
+.btn-secondary {
+  background: #f3efff;
+  color: #51366d;
+}
+
+/* AI 결과 */
+
+.ai-step {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-step-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai-step-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #ffe5f1;
+  color: #b02464;
+}
+
+.ai-step-badge.purple {
+  background: #e8dfff;
+  color: #5a39c8;
+}
+
+.ai-text-box {
+  border-radius: 18px;
+  padding: 12px 14px;
+  background: #faf7ff;
+  border: 1px solid #e0d6ff;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #2a1038;
+  min-height: 70px;
+}
+
+.ai-placeholder {
+  color: #a097cf;
+}
+
+.ai-footer-info {
+  margin-top: 16px;
+  font-size: 12px;
+  color: #7b6ac5;
+}
+
+.ai-footer-info span {
+  font-weight: 700;
+  color: #f153aa;
+}
+
+/* 반응형 */
+
+@media (max-width: 960px) {
+  .rebuttal-root {
+    padding: 16px;
+  }
+  .rebuttal-header-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+`;
