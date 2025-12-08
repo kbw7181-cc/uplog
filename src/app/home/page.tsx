@@ -16,6 +16,17 @@ type Friend = {
   name: string;
   role: string | null;
   online: boolean;
+  industry: string;
+  career: string;
+  company: string;
+  team: string;
+  dayGoal: string;
+  weekGoal: string;
+  monthGoal: string;
+  mainGoal: string;
+  cheerCount: number;
+  avatarUrl?: string | null;
+  mood?: string | null; // 기분 코드(tired/smile...) 또는 이모지
 };
 
 type WeatherSlot = {
@@ -160,6 +171,40 @@ function getCareerLabel(code: string | null | undefined): string | null {
   }
 }
 
+function getScheduleDotClassAndLabel(title: string): {
+  className: string;
+  label: string;
+} {
+  const t = title || '';
+  if (t.includes('상담')) return { className: 'calendar-dot-consult', label: '상담' };
+  if (t.includes('방문')) return { className: 'calendar-dot-visit', label: '방문' };
+  if (t.includes('해피콜')) return { className: 'calendar-dot-happy', label: '해피콜' };
+  if (t.includes('배송') || t.includes('택배'))
+    return { className: 'calendar-dot-delivery', label: '배송' };
+  return { className: 'calendar-dot-etc', label: '기타' };
+}
+
+function getMoodEmoji(code: string | null | undefined): string {
+  if (!code) return '';
+  if (code === '🙂' || code === '😎' || code === '🔥') return code; // 이미 이모지면 그대로
+  switch (code) {
+    case 'tired':
+      return '😭';
+    case 'down':
+      return '😔';
+    case 'smile':
+      return '🙂';
+    case 'focus':
+      return '😐';
+    case 'fire':
+      return '🔥';
+    case 'confident':
+      return '😎';
+    default:
+      return '🙂';
+  }
+}
+
 export default function HomePage() {
   const router = useRouter();
 
@@ -196,6 +241,7 @@ export default function HomePage() {
 
   const [growthDays, setGrowthDays] = useState<GrowthDay[]>([]);
   const [currentMonthLabel, setCurrentMonthLabel] = useState<string>('');
+  const [moodByDate, setMoodByDate] = useState<Record<string, string>>({});
 
   const todayStr = useMemo(() => formatDate(new Date()), []);
 
@@ -203,10 +249,61 @@ export default function HomePage() {
     return new Date().getDate() % EMO_SLIDES.length;
   });
 
+  // 친구 프로필 모달
+  const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+
   const friends: Friend[] = [
-    { id: 'f1', name: '김영업 팀장', role: '팀장', online: true },
-    { id: 'f2', name: '박성장 사원', role: '사원', online: true },
-    { id: 'f3', name: '이멘탈 대리', role: '대리', online: false },
+    {
+      id: 'f1',
+      name: '김영업',
+      role: '팀장',
+      online: true,
+      industry: '뷰티 · TM 영업',
+      career: '6~9년',
+      company: 'UPLOG 뷰티본부',
+      team: '1팀',
+      dayGoal: '상담 5건',
+      weekGoal: '계약 3건',
+      monthGoal: '매출 1,000만',
+      mainGoal: '이번 분기 “영업왕” 타이틀 따기',
+      cheerCount: 28,
+      avatarUrl: null,
+      mood: 'fire',
+    },
+    {
+      id: 'f2',
+      name: '박성장',
+      role: '사원',
+      online: true,
+      industry: '보험 · 설계',
+      career: '2년',
+      company: 'UPLIFE 금융센터',
+      team: 'A조',
+      dayGoal: '콜 20통',
+      weekGoal: '미팅 5건',
+      monthGoal: '계약 10건',
+      mainGoal: '올해 안에 팀장 승진',
+      cheerCount: 15,
+      avatarUrl: null,
+      mood: '🙂',
+    },
+    {
+      id: 'f3',
+      name: '이멘탈',
+      role: '대리',
+      online: false,
+      industry: '교육 · 컨설팅',
+      career: '4~5년',
+      company: 'UPCLASS 아카데미',
+      team: '컨설팅팀',
+      dayGoal: '후속콜 10통',
+      weekGoal: '설명회 2회',
+      monthGoal: '수강등록 20명',
+      mainGoal: '수강 후기 100개 모으기',
+      cheerCount: 9,
+      avatarUrl: null,
+      mood: 'down',
+    },
   ];
 
   const currentSlide = EMO_SLIDES[quoteIndex];
@@ -300,7 +397,7 @@ export default function HomePage() {
       `${monthStart.getFullYear()}년 ${monthStart.getMonth() + 1}월`
     );
 
-    // 1) schedules
+    // schedules
     const { data: scheduleRows, error: scheduleError } = await supabase
       .from('schedules')
       .select('id, title, schedule_date, schedule_time')
@@ -327,12 +424,10 @@ export default function HomePage() {
     );
     setDaySummaries(summaries);
 
-    // 2) up_logs (목표 + 기록 여부)
-    const loggedSet = new Set<string>();
-
+    // up_logs for goals + growth graph + 기분
     const { data: upRows, error: upError } = await supabase
       .from('up_logs')
-      .select('id, day_goal, week_goal, month_goal, log_date')
+      .select('id, day_goal, week_goal, month_goal, log_date, mood')
       .eq('user_id', uid)
       .gte('log_date', from)
       .lte('log_date', to)
@@ -346,6 +441,9 @@ export default function HomePage() {
         month_goal: last.month_goal ?? null,
       });
 
+      const loggedSet = new Set<string>();
+      const moodMap: Record<string, string> = {};
+
       (upRows as any[]).forEach((row) => {
         if (!row.log_date) return;
         const raw = row.log_date;
@@ -354,13 +452,35 @@ export default function HomePage() {
             ? raw.slice(0, 10)
             : formatDate(new Date(raw));
         loggedSet.add(str);
+        if (row.mood) {
+          moodMap[str] = row.mood;
+        }
       });
+
+      const daysInThisMonth = monthEnd.getDate();
+      const growth: GrowthDay[] = [];
+      for (let d = 1; d <= daysInThisMonth; d++) {
+        const cur = new Date(
+          monthStart.getFullYear(),
+          monthStart.getMonth(),
+          d
+        );
+        const dateStr = formatDate(cur);
+        growth.push({
+          date: dateStr,
+          rate: loggedSet.has(dateStr) ? 1 : 0,
+        });
+      }
+      setGrowthDays(growth);
+      setMoodByDate(moodMap);
     } else {
       setLatestGoals(null);
+      setGrowthDays([]);
+      setMoodByDate({});
       if (upError) console.error('up_logs error', upError);
     }
 
-    // 3) 최근 반론 (상단 통계용)
+    // rebuttals
     const { data: rebutRows, error: rebutError } = await supabase
       .from('rebuttals')
       .select('id, category, content')
@@ -375,84 +495,30 @@ export default function HomePage() {
       if (rebutError) console.error('rebuttals error', rebutError);
     }
 
-    // 4) 한 달치 daily_tasks
+    // 오늘 할 일
     const today = formatDate(new Date());
-    const { data: monthTaskRows, error: monthTaskError } = await supabase
+    const { data: taskRows, error: taskError } = await supabase
       .from('daily_tasks')
       .select('id, task_date, content, done')
       .eq('user_id', uid)
-      .gte('task_date', from)
-      .lte('task_date', to)
-      .order('task_date', { ascending: true });
+      .eq('task_date', today)
+      .order('id', { ascending: true });
 
-    const taskSummary: Record<
-      string,
-      { total: number; done: number }
-    > = {};
-    const todayList: DailyTask[] = [];
-
-    if (!monthTaskError && monthTaskRows) {
-      (monthTaskRows as any[]).forEach((t) => {
-        const dateStr: string = t.task_date;
-        if (!dateStr) return;
-
-        if (!taskSummary[dateStr]) {
-          taskSummary[dateStr] = { total: 0, done: 0 };
-        }
-        taskSummary[dateStr].total += 1;
-        if (t.done) taskSummary[dateStr].done += 1;
-
-        if (dateStr === today) {
-          todayList.push({
-            id: String(t.id),
-            task_date: dateStr,
-            content: t.content ?? '',
-            done: !!t.done,
-          });
-        }
-      });
-
-      setTodayTasks(todayList);
+    if (!taskError && taskRows) {
+      setTodayTasks(
+        taskRows.map((t: any) => ({
+          id: t.id,
+          task_date: t.task_date,
+          content: t.content ?? '',
+          done: !!t.done,
+        }))
+      );
     } else {
       setTodayTasks([]);
-      if (monthTaskError)
-        console.error('daily_tasks month error', monthTaskError);
+      if (taskError) console.error('daily_tasks error', taskError);
     }
 
-    // 5) 성장 그래프용 데이터
-    const daysInThisMonth = monthEnd.getDate();
-    const growth: GrowthDay[] = [];
-
-    for (let d = 1; d <= daysInThisMonth; d++) {
-      const cur = new Date(
-        monthStart.getFullYear(),
-        monthStart.getMonth(),
-        d
-      );
-      const dateStr = formatDate(cur);
-      const taskInfo = taskSummary[dateStr];
-
-      let rate = 0;
-
-      if (taskInfo && taskInfo.total > 0) {
-        // 오늘 할 일 달성률
-        rate = taskInfo.done / taskInfo.total;
-      } else if (loggedSet.has(dateStr)) {
-        // 할 일은 없지만 up_logs 기록만 있는 날
-        rate = 0.4;
-      } else {
-        rate = 0;
-      }
-
-      growth.push({
-        date: dateStr,
-        rate,
-      });
-    }
-
-    setGrowthDays(growth);
-
-    // 6) 날씨 (mock)
+    // 날씨 (mock)
     const now = new Date();
     const mockWeather: WeatherSlot[] = [];
     for (let i = 0; i < 6; i++) {
@@ -529,20 +595,28 @@ export default function HomePage() {
     });
   };
 
-  // 성장 그래프용 SVG 포인트 (한 달 구성 꺾은선 그래프)
-  const graphPoints = useMemo(() => {
-    if (!growthDays.length) return '';
-    const lastIndex = Math.max(growthDays.length - 1, 1);
+  const handleToggleTask = async (task: DailyTask) => {
+    if (!userId) return;
+    const nextDone = !task.done;
 
-    return growthDays
-      .map((g, idx) => {
-        const x = (idx / lastIndex) * 100; // 0 ~ 100
-        const rate = g.rate < 0 ? 0 : g.rate > 1 ? 1 : g.rate;
-        const y = 35 - rate * 30; // 0~1 -> 35~5
-        return `${x},${y}`;
-      })
-      .join(' ');
-  }, [growthDays]);
+    setTodayTasks((prev) =>
+      prev.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t))
+    );
+
+    const { error } = await supabase
+      .from('daily_tasks')
+      .update({ done: nextDone })
+      .eq('id', task.id)
+      .eq('user_id', userId);
+
+    if (error) {
+      setTodayTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? { ...t, done: task.done } : t))
+      );
+      console.error('toggle daily_task error', error);
+      alert('오늘 할 일 상태 저장 중 오류가 발생했어요.');
+    }
+  };
 
   if (loading) {
     return (
@@ -629,7 +703,7 @@ export default function HomePage() {
                   새 피드백 <strong>{newRebuttalCount}건</strong>
                 </span>
                 <span className="profile-stat-pill">
-                  오늘 등록 고객 <strong>{newScheduleCountToday}명</strong>
+                  오늘 등록 스케줄 <strong>{newScheduleCountToday}건</strong>
                 </span>
               </div>
 
@@ -671,11 +745,11 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* 퀵 메뉴 버튼들 */}
+        {/* 퀵 메뉴 */}
         <section className="home-quick-nav">
           <Link href="/my-up" className="quick-card">
             <div className="quick-title">나의 U P 관리</div>
-            <div className="quick-desc">목표 · 마음 · 피드백 정리하기</div>
+            <div className="quick-desc">목표 · 마음 · 실적 · 스케줄</div>
           </Link>
 
           <Link href="/customers" className="quick-card">
@@ -703,7 +777,7 @@ export default function HomePage() {
         <section className="weather-wide">
           <div className="weather-panel">
             <div className="weather-panel-header">
-              <div className="section-title-wrap">
+              <div>
                 <div className="section-title">오늘 날씨</div>
                 <div className="section-sub">
                   외근/미팅 계획 세울 때 참고하세요.
@@ -726,9 +800,9 @@ export default function HomePage() {
 
         {/* 메인 컨텐츠 */}
         <main className="home-main">
-          {/* ====== 일 · 주 · 월 목표 / 오늘 할 일 / 성장 그래프 ====== */}
+          {/* 상단 요약 */}
           <section className="home-top-summary">
-            {/* 일 · 주 · 월 목표 요약 */}
+            {/* 일 · 주 · 월 목표 */}
             <div className="summary-card goals-card">
               <h3 className="summary-title">일 · 주 · 월 목표 요약</h3>
 
@@ -736,24 +810,30 @@ export default function HomePage() {
                 <div className="goal-card goal-card-today">
                   <div className="goal-label">오늘 목표</div>
                   <div className="goal-text">
-                    가망고객 12월 안부 문자인사하기
+                    {latestGoals?.day_goal || '가망고객 안부 문자인사하기'}
                   </div>
                 </div>
 
                 <div className="goal-card">
                   <div className="goal-label">이번 주 목표</div>
-                  <div className="goal-text">신규고객 3명 이상</div>
+                  <div className="goal-text">
+                    {latestGoals?.week_goal || '신규고객 3명 이상'}
+                  </div>
                 </div>
 
                 <div className="goal-card">
                   <div className="goal-label">이번 달 목표</div>
-                  <div className="goal-text">이달엔 30건 이상 계약하기</div>
+                  <div className="goal-text">
+                    {latestGoals?.month_goal || '이달엔 30건 이상 계약하기'}
+                  </div>
                 </div>
               </div>
 
               <div className="goal-main">
                 나의 최종 목표{' '}
-                <span className="goal-main-strong">“1등 찍어보자”</span>
+                <span className="goal-main-strong">
+                  “{mainGoal || '1등 찍어보자'}”
+                </span>
               </div>
             </div>
 
@@ -761,9 +841,8 @@ export default function HomePage() {
             <div className="summary-card todo-card">
               <h3 className="summary-title">오늘 할 일</h3>
               <p className="summary-desc">
-                나의 U P 관리에서 등록한
-                <br />
-                오늘의 체크항목만 크게 한눈에 보여줘요.
+                <strong>나의 U P 관리</strong>에서 입력한 오늘의 체크항목을
+                여기에서 한 번에 체크할 수 있어요.
               </p>
 
               {todayTasks.length === 0 ? (
@@ -771,20 +850,23 @@ export default function HomePage() {
                   아직 등록된 할 일이 없어요.
                   <br />
                   <span className="todo-empty-sub">
-                    오늘의 할 일은 <strong>나의 U P 관리</strong>에서만 추가/수정할
-                    수 있어요.
+                    오늘의 할 일은 <strong>나의 U P 관리</strong>에서 추가해 주세요.
                   </span>
                 </div>
               ) : (
                 <ul className="todo-list">
                   {todayTasks.map((task) => (
                     <li key={task.id} className="todo-item">
-                      <span
+                      <button
+                        type="button"
                         className={
                           'todo-check ' +
                           (task.done ? 'todo-check-done' : '')
                         }
-                      />
+                        onClick={() => handleToggleTask(task)}
+                      >
+                        {task.done ? '✓' : ''}
+                      </button>
                       <span
                         className={
                           'todo-text ' + (task.done ? 'todo-text-done' : '')
@@ -806,122 +888,61 @@ export default function HomePage() {
                   {currentMonthLabel || '2025년 12월'}
                 </span>
               </div>
+
               <p className="growth-caption">
                 중요한 건 <span>빈 날을 줄여가는 것</span>입니다.
-                <br />
-                오늘 할 일 달성률을 한 달 꺾은선 그래프로 보여줘요.
               </p>
 
               <div className="growth-legend">
                 <span className="legend-item">
-                  <span className="legend-dot legend-dot-zero" />
-                  기록 없음
+                  <span className="legend-dot legend-dot-on" />
+                  기록 있는 날
                 </span>
                 <span className="legend-item">
-                  <span className="legend-dot legend-dot-mid" />
-                  일부 달성
-                </span>
-                <span className="legend-item">
-                  <span className="legend-dot legend-dot-full" />
-                  완전 달성
+                  <span className="legend-dot legend-dot-off" />
+                  아직 비어 있는 날
                 </span>
               </div>
 
-              <div className="growth-chart-wrapper">
-                <div className="growth-y-labels">
-                  <span>100%</span>
-                  <span>50%</span>
-                  <span>0%</span>
-                </div>
-                <div className="growth-svg-area">
-                  <svg
-                    viewBox="0 0 100 40"
-                    preserveAspectRatio="none"
-                    className="growth-svg"
-                  >
-                    {/* 배경 라인 */}
-                    <line
-                      x1="0"
-                      y1="35"
-                      x2="100"
-                      y2="35"
-                      className="growth-axis-line"
-                    />
-                    <line
-                      x1="0"
-                      y1="20"
-                      x2="100"
-                      y2="20"
-                      className="growth-grid-line"
-                    />
-                    <line
-                      x1="0"
-                      y1="5"
-                      x2="100"
-                      y2="5"
-                      className="growth-grid-line"
-                    />
-                    {graphPoints && (
-                      <>
-                        <polyline
-                          points={graphPoints}
-                          className="growth-polyline"
-                        />
-                        {growthDays.map((g, idx) => {
-                          const lastIndex = Math.max(
-                            growthDays.length - 1,
-                            1
-                          );
-                          const x = (idx / lastIndex) * 100;
-                          const rate =
-                            g.rate < 0 ? 0 : g.rate > 1 ? 1 : g.rate;
-                          const y = 35 - rate * 30;
+              <div className="growth-graph-wrap">
+                <div className="growth-graph">
+                  {Array.from(
+                    { length: growthDays.length || 31 },
+                    (_, idx) => {
+                      const day = idx + 1;
+                      const found =
+                        growthDays.find((g) =>
+                          g.date.endsWith(
+                            `-${day.toString().padStart(2, '0')}`
+                          )
+                        ) ?? null;
+                      const hasRecord = !!found && found.rate > 0;
 
-                          let dotClass = 'growth-dot-zero';
-                          if (rate === 0) {
-                            dotClass = 'growth-dot-zero';
-                          } else if (rate < 0.5) {
-                            dotClass = 'growth-dot-low';
-                          } else if (rate < 1) {
-                            dotClass = 'growth-dot-mid';
-                          } else {
-                            dotClass = 'growth-dot-full';
-                          }
-
-                          return (
-                            <circle
-                              key={g.date}
-                              cx={x}
-                              cy={y}
-                              r={1.4}
-                              className={dotClass}
-                            />
-                          );
-                        })}
-                      </>
-                    )}
-                  </svg>
-                  <div className="growth-x-labels">
-                    <span>1일</span>
-                    <span>5일</span>
-                    <span>10일</span>
-                    <span>15일</span>
-                    <span>20일</span>
-                    <span>25일</span>
-                    <span>말일</span>
-                  </div>
+                      return (
+                        <div key={day} className="growth-column">
+                          <div
+                            className={
+                              'growth-bar ' +
+                              (hasRecord ? 'growth-bar-on' : 'growth-bar-off')
+                            }
+                          />
+                          <div className="growth-day-label">{day}</div>
+                        </div>
+                      );
+                    }
+                  )}
                 </div>
               </div>
             </div>
           </section>
 
-          {/* 아래쪽: 스케줄 달력 / 친구 목록 */}
+          {/* 달력 + 친구 카드 */}
           <section className="home-section calendar-section">
             <div className="section-header">
               <div>
                 <div className="section-title">스케줄 달력</div>
                 <div className="section-sub">
-                  날짜마다 등록된 스케줄만 한눈에 확인해요.
+                  나의 U P 관리 · 고객관리에서 등록한 스케줄을 한눈에 볼 수 있어요.
                 </div>
               </div>
               <div className="month-nav">
@@ -956,8 +977,12 @@ export default function HomePage() {
                   d.getMonth() === currentMonth.getMonth();
                 const isToday = dStr === todayStr;
                 const isSelected = dStr === selectedDate;
-                const summary = daySummaries.find((s) => s.date === dStr);
-                const hasSchedule = !!summary;
+
+                const schedulesForDay = schedules.filter(
+                  (s) => s.schedule_date === dStr
+                );
+
+                const moodCode = moodByDate[dStr];
 
                 return (
                   <button
@@ -973,12 +998,46 @@ export default function HomePage() {
                       .join(' ')}
                     onClick={() => setSelectedDate(dStr)}
                   >
-                    <div className="calendar-day-number">{d.getDate()}</div>
-                    {hasSchedule && (
-                      <div className="calendar-day-dot">
-                        {summary?.count ?? 0}개
-                      </div>
-                    )}
+                    <div className="calendar-day-head">
+                      <div className="calendar-day-number">{d.getDate()}</div>
+                      {moodCode && (
+                        <div className="calendar-day-mood">
+                          {getMoodEmoji(moodCode)}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="calendar-day-dots">
+                      {schedulesForDay.slice(0, 2).map((s) => {
+                        const info = getScheduleDotClassAndLabel(s.title);
+                        const shortTitle =
+                          s.title.length > 9
+                            ? s.title.slice(0, 9) + '…'
+                            : s.title;
+
+                        return (
+                          <div
+                            key={s.id}
+                            className={
+                              'calendar-day-dot ' + info.className
+                            }
+                          >
+                            <span className="calendar-dot-label">
+                              {info.label}
+                            </span>
+                            <span className="calendar-dot-title">
+                              {shortTitle}
+                            </span>
+                          </div>
+                        );
+                      })}
+
+                      {schedulesForDay.length > 2 && (
+                        <div className="calendar-day-dot calendar-dot-more">
+                          +{schedulesForDay.length - 2}개
+                        </div>
+                      )}
+                    </div>
                   </button>
                 );
               })}
@@ -991,7 +1050,7 @@ export default function HomePage() {
               </span>
             </div>
 
-            {/* 선택한 날짜 일정 (읽기 전용) */}
+            {/* 선택한 날짜 일정 */}
             <div className="right-card calendar-selected-card">
               <div className="right-card-header">
                 <div>
@@ -1000,17 +1059,12 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <p className="schedule-help">
-                일정 <strong>추가·수정</strong>은{' '}
-                <strong>나의 U P 관리</strong> 또는 <strong>고객관리</strong>에서만
-                할 수 있어요.
-              </p>
-
               {selectedDateSchedules.length === 0 ? (
                 <div className="empty-text">
                   아직 등록된 일정이 없어요.
                   <br />
-                  나의 U P 관리 또는 고객관리에서 일정을 등록해 보세요.
+                  스케줄 추가/수정은{' '}
+                  <strong>나의 U P 관리 · 고객관리</strong>에서 할 수 있어요.
                 </div>
               ) : (
                 <ul className="schedule-list">
@@ -1028,13 +1082,15 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* 친구 목록 카드 (그라데이션 색상 적용) */}
-            <div className="right-card friends-card">
-              <div className="right-card-header friends-header">
+            {/* 친구 목록 카드 */}
+            <div className="right-card friend-card">
+              <div className="friend-card-header">
                 <div>
-                  <div className="section-title friends-title">친구 목록</div>
-                  <div className="section-sub friends-sub">
-                    팀원들과 함께 U P 채팅을 이어가요.
+                  <div className="section-title friend-title">
+                    친구 목록 · U P 채팅
+                  </div>
+                  <div className="section-sub friend-sub">
+                    함께 올라가는 동료들의 상태와 프로필을 확인해요.
                   </div>
                 </div>
                 <button
@@ -1047,28 +1103,53 @@ export default function HomePage() {
               </div>
 
               {friends.length === 0 ? (
-                <div className="empty-text friends-empty">
+                <div className="empty-text">
                   아직 등록된 친구가 없어요.
                   <br />
-                  먼저 나의 U P를 채우고, 나중에 함께 U P해봐요 ✨
+                  나중에 함께 U P 해봐요. ✨
                 </div>
               ) : (
                 <ul className="friends-list">
                   {friends.map((friend) => (
-                    <li key={friend.id} className="friend-item">
-                      <span
-                        className={
-                          'friend-dot ' +
-                          (friend.online ? 'friend-dot-on' : 'friend-dot-off')
-                        }
-                      />
-                      <span className="friend-name">{friend.name}</span>
-                      {friend.role && (
-                        <span className="friend-role">{friend.role}</span>
-                      )}
-                      <span className="friend-status">
-                        {friend.online ? '온라인' : '오프라인'}
-                      </span>
+                    <li
+                      key={friend.id}
+                      className="friend-item"
+                      onClick={() => setSelectedFriend(friend)}
+                    >
+                      <div className="friend-main-row">
+                        <span
+                          className={
+                            'friend-dot ' +
+                            (friend.online ? 'friend-dot-on' : 'friend-dot-off')
+                          }
+                        />
+
+                        <div className="friend-avatar-small">
+                          {friend.avatarUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={friend.avatarUrl} alt={friend.name} />
+                          ) : (
+                            friend.name[0]
+                          )}
+                        </div>
+
+                        <span className="friend-name-wrap">
+                          <span className="friend-name">{friend.name}</span>
+                          {friend.role && (
+                            <span className="friend-role-pill">
+                              {friend.role}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+
+                      <div className="friend-meta-row">
+                        <span>{friend.industry}</span>
+                        <span>경력 {friend.career}</span>
+                        <span>
+                          {friend.company} · {friend.team}
+                        </span>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -1076,19 +1157,123 @@ export default function HomePage() {
             </div>
           </section>
         </main>
+
+        {/* 친구 프로필 모달 */}
+        {selectedFriend && (
+          <div
+            className="friend-modal-backdrop"
+            onClick={() => setSelectedFriend(null)}
+          >
+            <div
+              className="friend-modal"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="friend-modal-close"
+                onClick={() => setSelectedFriend(null)}
+              >
+                ✕
+              </button>
+
+              <div className="friend-modal-header">
+                <div className="friend-modal-avatar">
+                  {selectedFriend.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={selectedFriend.avatarUrl}
+                      alt={selectedFriend.name}
+                    />
+                  ) : (
+                    selectedFriend.name[0]
+                  )}
+                </div>
+
+                <div className="friend-modal-title">
+                  <div className="friend-modal-name-row">
+                    <span className="friend-modal-name">
+                      {selectedFriend.name}
+                    </span>
+                    {selectedFriend.role && (
+                      <span className="friend-modal-role">
+                        {selectedFriend.role}
+                      </span>
+                    )}
+                    {selectedFriend.mood && (
+                      <span className="friend-modal-mood">
+                        {getMoodEmoji(selectedFriend.mood)}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="friend-modal-sub">
+                    {selectedFriend.industry} · 경력 {selectedFriend.career}
+                  </div>
+                  <div className="friend-modal-sub">
+                    {selectedFriend.company} · {selectedFriend.team}
+                  </div>
+                </div>
+              </div>
+
+              <div className="friend-modal-body">
+                <div className="friend-modal-section">
+                  <div className="friend-modal-label">메인 목표</div>
+                  <div className="friend-modal-main-goal">
+                    “{selectedFriend.mainGoal}”
+                  </div>
+                </div>
+
+                <div className="friend-modal-section">
+                  <div className="friend-modal-label">오늘 · 주 · 월 목표</div>
+                  <ul className="friend-modal-goals">
+                    <li>
+                      <span>오늘</span>
+                      <span>{selectedFriend.dayGoal}</span>
+                    </li>
+                    <li>
+                      <span>이번 주</span>
+                      <span>{selectedFriend.weekGoal}</span>
+                    </li>
+                    <li>
+                      <span>이번 달</span>
+                      <span>{selectedFriend.monthGoal}</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="friend-modal-section cheer-row">
+                  <div>
+                    <div className="friend-modal-label">응원 받은 지수</div>
+                    <div className="friend-modal-cheer">
+                      💜 {selectedFriend.cheerCount}개
+                    </div>
+                  </div>
+                </div>
+
+                <div className="friend-modal-actions">
+                  <button className="friend-modal-btn primary">
+                    U P 채팅하기
+                  </button>
+                  <button className="friend-modal-btn">친구 추가</button>
+                  <button className="friend-modal-btn">응원 보내기 💜</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 문의하기 플로팅 버튼 */}
+        <button
+          type="button"
+          onClick={() => router.push('/support')}
+          className="floating-support-btn"
+        >
+          <span>문의하기</span>
+          <span>실시간 채팅</span>
+        </button>
+
+        <style jsx>{styles}</style>
       </div>
-
-      {/* 오른쪽 하단 문의 버튼 */}
-      <button
-        type="button"
-        onClick={() => router.push('/support')}
-        className="floating-support-btn"
-      >
-        <span>문의하기</span>
-        <span>실시간 채팅</span>
-      </button>
-
-      <style jsx>{styles}</style>
     </div>
   );
 }
@@ -1101,8 +1286,6 @@ const styles = `
   background: linear-gradient(180deg, #ffe6f7 0%, #f5f0ff 45%, #e8f6ff 100%);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: #1b1030;
-  font-size: 15px;
-  line-height: 1.6;
 }
 
 .home-inner {
@@ -1124,8 +1307,6 @@ const styles = `
   color: #8c7ad9;
 }
 
-/* 로딩 */
-
 .home-loading {
   margin-top: 120px;
   text-align: center;
@@ -1138,18 +1319,18 @@ const styles = `
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  padding: 24px 28px;
-  border-radius: 30px;
+  padding: 20px 24px;
+  border-radius: 26px;
   background: linear-gradient(135deg, #ff89bd, #a45bff);
-  box-shadow: 0 22px 44px rgba(0,0,0,0.25);
-  margin-bottom: 20px;
+  box-shadow: 0 18px 34px rgba(0,0,0,0.25);
+  margin-bottom: 16px;
   color: #fffdfd;
 }
 
 .home-header-left {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .home-logo-row {
@@ -1159,24 +1340,24 @@ const styles = `
 }
 
 .home-logo {
-  width: 56px;
-  height: 56px;
-  border-radius: 20px;
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
   object-fit: cover;
   background: rgba(255,255,255,0.25);
-  padding: 8px;
+  padding: 7px;
 }
 
 .home-logo-text-wrap {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .home-logo-text {
   font-size: 24px;
   font-weight: 900;
-  letter-spacing: 5px;
+  letter-spacing: 4px;
   background: linear-gradient(135deg, #ffffff, #ffe9ff);
   -webkit-background-clip: text;
   color: transparent;
@@ -1188,8 +1369,8 @@ const styles = `
 }
 
 .home-welcome {
-  margin-top: 10px;
-  font-size: 19px;
+  margin-top: 6px;
+  font-size: 18px;
   font-weight: 800;
   background: linear-gradient(135deg, #ffffff, #ffe4ff);
   -webkit-background-clip: text;
@@ -1203,26 +1384,26 @@ const styles = `
 
 .home-date {
   font-size: 14px;
-  margin-top: 4px;
+  margin-top: 2px;
   color: #fffdfd;
 }
 
-/* 헤더 오른쪽 카드 */
+/* 헤더 오른쪽 */
 
 .home-header-right {
-  min-width: 380px;
+  min-width: 360px;
   display: flex;
   justify-content: flex-end;
 }
 
 .profile-box {
   background: #ffffff;
-  border-radius: 24px;
-  padding: 16px 18px;
-  box-shadow: 0 18px 34px rgba(0,0,0,0.16);
+  border-radius: 22px;
+  padding: 14px 16px;
+  box-shadow: 0 16px 30px rgba(0,0,0,0.16);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   border: 1px solid #e3dafb;
   color: #211437;
 }
@@ -1230,12 +1411,12 @@ const styles = `
 .profile-main {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .profile-avatar {
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
   border-radius: 999px;
   background: radial-gradient(circle at top left, #ff9bd6 0, #8f5bff 60%);
   display: flex;
@@ -1243,7 +1424,7 @@ const styles = `
   justify-content: center;
   color: #fff;
   font-weight: 800;
-  font-size: 24px;
+  font-size: 22px;
   overflow: hidden;
   box-shadow: 0 0 14px rgba(193, 126, 255, 0.7);
 }
@@ -1256,7 +1437,7 @@ const styles = `
 
 .profile-name {
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 800;
   color: #211437;
 }
 
@@ -1310,14 +1491,14 @@ const styles = `
   text-decoration: none;
 }
 
-/* 오늘의 U P 감성 배너 */
+/* 오늘의 U P 감성 */
 
 .emo-banner {
-  margin-bottom: 20px;
-  padding: 22px 26px 24px;
-  border-radius: 26px;
+  margin-bottom: 12px;
+  padding: 16px 20px 18px;
+  border-radius: 22px;
   background: linear-gradient(135deg, #8e7dff, #ff8fd2);
-  box-shadow: 0 20px 40px rgba(107, 71, 183, 0.3);
+  box-shadow: 0 16px 32px rgba(107, 71, 183, 0.28);
   position: relative;
   overflow: hidden;
   color: #fffdfd;
@@ -1325,19 +1506,18 @@ const styles = `
 
 .emo-pill {
   display: inline-flex;
-  padding: 6px 20px;
+  padding: 4px 16px;
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.9);
   font-size: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   background: rgba(0,0,0,0.12);
 }
 
 .emo-title {
   font-size: 24px;
-  line-height: 1.7;
-  margin-bottom: 12px;
-  font-weight: 800;
+  line-height: 1.5;
+  margin-bottom: 10px;
 }
 
 .emo-title span {
@@ -1346,24 +1526,24 @@ const styles = `
 
 .emo-body p {
   font-size: 14px;
-  margin: 2px 0;
+  margin: 1px 0;
 }
 
 .emo-footer {
-  margin-top: 12px;
+  margin-top: 10px;
   font-size: 14px;
   color: #fff4ff;
 }
 
 .emo-dots {
-  margin-top: 12px;
+  margin-top: 8px;
   display: flex;
   gap: 6px;
 }
 
 .emo-dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   border: none;
   background: rgba(255,255,255,0.55);
@@ -1371,62 +1551,62 @@ const styles = `
 }
 
 .emo-dot-active {
-  width: 22px;
+  width: 18px;
   background: #ffffff;
 }
 
-/* 퀵 메뉴 - 밝은 버튼 */
+/* 퀵 메뉴 */
 
 .home-quick-nav {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .quick-card {
-  border-radius: 18px;
-  padding: 14px 16px;
-  background: linear-gradient(135deg, #ffffff, #ffe9f7);
-  box-shadow: 0 14px 26px rgba(212, 170, 245, 0.45);
+  border-radius: 16px;
+  padding: 10px 12px;
+  background: radial-gradient(circle at top left, #ffffff 0, #f8ecff 55%, #f0f7ff 100%);
+  box-shadow: 0 12px 22px rgba(0,0,0,0.16);
   text-decoration: none;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, border 0.14s ease;
-  border: 1px solid rgba(241, 153, 214, 0.8);
-  color: #2b1037;
+  border: 1px solid rgba(166, 143, 255, 0.4);
+  color: #241336;
 }
 
 .quick-card:hover {
-  transform: translateY(-2px);
-  background: linear-gradient(135deg, #ffe9f7, #f2e8ff);
-  box-shadow: 0 18px 32px rgba(199, 149, 255, 0.7);
-  border-color: rgba(241, 83, 170, 0.9);
+  transform: translateY(-1px);
+  background: radial-gradient(circle at top left, #ffffff 0, #ffe8f8 40%, #edf3ff 100%);
+  box-shadow: 0 16px 26px rgba(0,0,0,0.2);
+  border-color: rgba(125, 97, 255, 0.8);
 }
 
 .quick-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
-  color: #f153aa;
+  color: #402064;
 }
 
 .quick-desc {
   font-size: 13px;
-  color: #5b456e;
+  color: #7c6ac2;
 }
 
 /* 날씨 */
 
 .weather-wide {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 .weather-panel {
-  border-radius: 20px;
+  border-radius: 18px;
   background: #ffffff;
-  padding: 14px 18px 12px;
-  box-shadow: 0 14px 30px rgba(0,0,0,0.12);
+  padding: 10px 14px 10px;
+  box-shadow: 0 12px 24px rgba(0,0,0,0.12);
   border: 1px solid #e3dafb;
   color: #241336;
 }
@@ -1435,27 +1615,27 @@ const styles = `
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .weather-strip {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   overflow-x: auto;
   padding-bottom: 4px;
 }
 
 .weather-slot {
-  min-width: 130px;
-  border-radius: 14px;
+  min-width: 100px;
+  border-radius: 12px;
   background: #f7f3ff;
-  padding: 9px;
+  padding: 6px;
   font-size: 12px;
 }
 
 .weather-time {
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .weather-temp {
@@ -1474,7 +1654,7 @@ const styles = `
 .home-main {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
 .home-section {
@@ -1484,23 +1664,21 @@ const styles = `
 }
 
 .calendar-section {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(1, minmax(0, 1fr));
 }
 
-/* 상단 요약 카드 */
-
 .home-top-summary {
-  margin-top: 4px;
+  margin-top: 2px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  gap: 12px;
 }
 
 .summary-card {
-  border-radius: 24px;
-  padding: 20px 22px;
+  border-radius: 20px;
+  padding: 14px 16px;
   background: #ffffff;
-  box-shadow: 0 16px 30px rgba(0,0,0,0.12);
+  box-shadow: 0 14px 26px rgba(0,0,0,0.12);
   border: 1px solid #e5ddff;
   color: #211437;
 }
@@ -1508,8 +1686,13 @@ const styles = `
 .summary-title {
   font-size: 16px;
   font-weight: 800;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   color: #6b41ff;
+}
+
+.summary-desc {
+  font-size: 13px;
+  color: #7a69c4;
 }
 
 /* 목표 카드 */
@@ -1517,44 +1700,43 @@ const styles = `
 .goals-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 4px;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .goal-card {
-  border-radius: 18px;
-  padding: 10px 12px;
+  border-radius: 16px;
+  padding: 8px 10px;
   background: #faf7ff;
   border: 1px solid rgba(194, 179, 255, 0.6);
 }
 
 .goal-card-today {
   background: linear-gradient(135deg, #ffb5df, #ff8cc7);
-  box-shadow: 0 0 14px rgba(255, 128, 205, 0.6);
+  box-shadow: 0 0 12px rgba(255, 128, 205, 0.6);
   color: #2b1131;
 }
 
 .goal-label {
   font-size: 13px;
   color: #694292;
-  font-weight: 600;
 }
 
 .goal-text {
-  margin-top: 4px;
+  margin-top: 3px;
   font-size: 15px;
   font-weight: 600;
 }
 
 .goal-main {
-  margin-top: 12px;
-  font-size: 14px;
+  margin-top: 10px;
+  font-size: 13px;
   color: #7e68c7;
 }
 
 .goal-main-strong {
   color: #f153aa;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 /* 오늘 할 일 */
@@ -1563,24 +1745,19 @@ const styles = `
   position: relative;
 }
 
-.summary-desc {
-  font-size: 13px;
-  color: #7a69c4;
-}
-
 .todo-empty {
-  margin-top: 12px;
-  border-radius: 18px;
-  padding: 12px 14px;
+  margin-top: 10px;
+  border-radius: 16px;
+  padding: 10px 12px;
   background: #faf7ff;
   border: 1px dashed rgba(165, 148, 230, 0.9);
-  font-size: 14px;
+  font-size: 13px;
   color: #7461be;
   line-height: 1.5;
 }
 
 .todo-empty-sub {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .todo-list {
@@ -1592,21 +1769,31 @@ const styles = `
 .todo-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 0;
+  gap: 10px;
+  padding: 4px 0;
   font-size: 14px;
 }
 
 .todo-check {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  border: 1px solid #f153aa;
+  width: 20px;
+  height: 20px;
+  border-radius: 8px;
+  border: 1.5px solid #f153aa;
   box-sizing: border-box;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.16s ease;
 }
 
 .todo-check-done {
   background: linear-gradient(135deg, #f153aa, #a36dff);
+  box-shadow: 0 0 10px rgba(241, 83, 170, 0.6);
 }
 
 .todo-text {
@@ -1618,7 +1805,7 @@ const styles = `
   text-decoration: line-through;
 }
 
-/* 성장 그래프 카드 */
+/* 성장 그래프 */
 
 .growth-header {
   display: flex;
@@ -1627,13 +1814,13 @@ const styles = `
 }
 
 .growth-month {
-  font-size: 13px;
+  font-size: 12px;
   color: #7e6fd6;
 }
 
 .growth-caption {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 12px;
   color: #7c6acd;
 }
 
@@ -1643,10 +1830,10 @@ const styles = `
 }
 
 .growth-legend {
-  margin-top: 10px;
+  margin-top: 6px;
   display: flex;
-  gap: 12px;
-  font-size: 12px;
+  gap: 10px;
+  font-size: 11px;
   color: #7e6fd6;
 }
 
@@ -1657,102 +1844,79 @@ const styles = `
 }
 
 .legend-dot {
-  width: 11px;
-  height: 11px;
+  width: 10px;
+  height: 10px;
   border-radius: 999px;
 }
 
-.legend-dot-zero {
+.legend-dot-on {
+  background: linear-gradient(135deg, #ff9ed8, #ff73b5);
+  box-shadow: 0 0 10px rgba(255, 140, 220, 0.7);
+}
+
+.legend-dot-off {
   background: #e3dafb;
 }
 
-.legend-dot-mid {
-  background: linear-gradient(135deg, #f9a8d4, #fb923c);
+.growth-graph-wrap {
+  margin-top: 8px;
+  padding: 8px 8px 6px;
+  border-radius: 16px;
+  background: radial-gradient(circle at top, #ffe9ff 0, #f5f0ff 50%, #ffffff 100%);
+  border: 1px solid rgba(214, 196, 255, 0.8);
 }
 
-.legend-dot-full {
-  background: linear-gradient(135deg, #ff9ed8, #ff73b5);
-  box-shadow: 0 0 10px rgba(255, 115, 181, 0.7);
-}
-
-/* 꺾은선 그래프 영역 */
-
-.growth-chart-wrapper {
-  margin-top: 14px;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 8px;
-  align-items: stretch;
-}
-
-.growth-y-labels {
+.growth-graph {
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  font-size: 11px;
-  color: #7e6fd6;
-  padding: 4px 0;
-}
-
-.growth-svg-area {
-  display: flex;
-  flex-direction: column;
+  align-items: flex-end;
   gap: 4px;
+  height: 100px;
 }
 
-.growth-svg {
-  width: 100%;
-  height: 120px;
-}
-
-.growth-axis-line {
-  stroke: #c7bdf4;
-  stroke-width: 0.6;
-}
-
-.growth-grid-line {
-  stroke: #e3dafb;
-  stroke-width: 0.4;
-  stroke-dasharray: 1.5 2;
-}
-
-.growth-polyline {
-  fill: none;
-  stroke: url(#growthGradient);
-  stroke-width: 1.2;
-}
-
-/* 점 색상 */
-.growth-dot-zero {
-  fill: #d4c9ff;
-}
-.growth-dot-low {
-  fill: #fca5a5;
-}
-.growth-dot-mid {
-  fill: #fb923c;
-}
-.growth-dot-full {
-  fill: #ff73b5;
-}
-
-/* X축 라벨 */
-
-.growth-x-labels {
+.growth-column {
+  flex: 1;
+  min-width: 10px;
   display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: #a093e4;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
 }
 
-/* 공통 카드 (달력/친구) */
+.growth-bar {
+  width: 100%;
+  border-radius: 999px;
+  background: #eee7ff;
+  box-shadow: inset 0 0 0 1px rgba(180, 164, 255, 0.4);
+  height: 16px;
+  transition: height 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.growth-bar-on {
+  background: linear-gradient(180deg, #ffcef0 0%, #ff78bd 40%, #a96dff 100%);
+  box-shadow:
+    0 8px 16px rgba(188, 104, 255, 0.5),
+    0 0 10px rgba(255, 150, 220, 0.7);
+  height: 80px;
+  transform: translateY(-2px);
+}
+
+.growth-bar-off {
+  height: 18px;
+}
+
+.growth-day-label {
+  font-size: 10px;
+  color: #8775c8;
+}
+
+/* 공통 카드 */
 
 .right-card {
   background: #ffffff;
   border-radius: 20px;
-  padding: 14px 16px;
-  box-shadow: 0 16px 30px rgba(0,0,0,0.12);
-  border: 1px solid #e5ddff;
+  padding: 12px 14px;
+  box-shadow: 0 14px 26px rgba(0,0,0,0.12);
+  border: 1px solid #d9ccff;
   color: #211437;
 }
 
@@ -1760,17 +1924,11 @@ const styles = `
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 8px;
-}
-
-.small-link {
-  font-size: 12px;
-  color: #a24cff;
-  text-decoration: none;
+  margin-bottom: 6px;
 }
 
 .empty-text {
-  font-size: 13px;
+  font-size: 12px;
   color: #7a69c4;
   line-height: 1.5;
 }
@@ -1778,7 +1936,7 @@ const styles = `
 /* 달력 */
 
 .section-header {
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   grid-column: 1 / -1;
 }
 
@@ -1791,9 +1949,8 @@ const styles = `
 .nav-btn {
   border-radius: 999px;
   border: none;
-  padding: 5px 9px;
+  padding: 4px 8px;
   font-size: 12px;
-  font-weight: 600;
   background: #f0e8ff;
   color: #5a3cb2;
   cursor: pointer;
@@ -1801,15 +1958,15 @@ const styles = `
 
 .month-label {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   color: #372153;
 }
 
 .calendar-grid {
   background: #ffffff;
-  border-radius: 18px;
-  padding: 10px;
-  box-shadow: 0 16px 30px rgba(0,0,0,0.12);
+  border-radius: 16px;
+  padding: 6px;
+  box-shadow: 0 14px 26px rgba(0,0,0,0.12);
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
@@ -1828,14 +1985,15 @@ const styles = `
   border-radius: 14px;
   border: none;
   background: #faf7ff;
-  padding: 6px 4px;
-  min-height: 58px;
-  font-size: 12px;
+  padding: 5px 4px;
+  min-height: 64px;
+  font-size: 11px;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   cursor: pointer;
   color: #241336;
+  transition: all 0.12s ease;
 }
 
 .calendar-day-out {
@@ -1851,39 +2009,90 @@ const styles = `
   background: linear-gradient(135deg, #f5e6ff, #ffe1f1);
 }
 
+.calendar-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 .calendar-day-number {
   font-weight: 700;
+  font-size: 12px;
+}
+
+.calendar-day-mood {
+  font-size: 13px;
+}
+
+.calendar-day-dots {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .calendar-day-dot {
-  margin-top: 2px;
-  font-size: 11px;
-  padding: 2px 5px;
+  font-size: 10px;
+  padding: 3px 5px;
   border-radius: 999px;
-  background: #f153aa;
   color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.calendar-dot-label {
+  font-weight: 600;
+}
+
+.calendar-dot-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 카테고리 색상 */
+
+.calendar-dot-consult {
+  background: linear-gradient(135deg, #ff8bb3, #ff5a95);
+}
+
+.calendar-dot-visit {
+  background: linear-gradient(135deg, #7dd3fc, #2563eb);
+}
+
+.calendar-dot-happy {
+  background: linear-gradient(135deg, #facc15, #fb923c);
+}
+
+.calendar-dot-delivery {
+  background: linear-gradient(135deg, #a3e635, #22c55e);
+}
+
+.calendar-dot-etc {
+  background: linear-gradient(135deg, #e5e7eb, #9ca3af);
+  color: #111827;
+}
+
+.calendar-dot-more {
+  background: #f3efff;
+  color: #5b43b1;
 }
 
 .calendar-footer {
   grid-column: 1 / -1;
-  margin-top: 8px;
+  margin-top: 4px;
   font-size: 13px;
   color: #7e6fd6;
 }
 
-/* 선택 날짜 - 읽기전용 안내 */
+/* 선택 날짜 카드 */
 
 .calendar-selected-card {
   grid-column: 1 / -1;
+  margin-top: 8px;
 }
-
-.schedule-help {
-  font-size: 13px;
-  margin-bottom: 8px;
-  color: #5d4b9d;
-}
-
-/* 스케줄 목록 */
 
 .schedule-list {
   list-style: none;
@@ -1896,7 +2105,7 @@ const styles = `
   grid-template-columns: 80px minmax(0, 1fr);
   gap: 8px;
   font-size: 13px;
-  padding: 5px 0;
+  padding: 4px 0;
   border-bottom: 1px dashed #e0d4ff;
 }
 
@@ -1906,99 +2115,318 @@ const styles = `
 
 .schedule-time {
   color: #f153aa;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .schedule-title {
   color: #241336;
 }
 
-/* 친구 카드 - 감성 그라데이션 */
+/* 친구 카드 */
 
-.friends-card {
-  background: linear-gradient(135deg, #8e7dff, #ff8fd2);
-  border-color: rgba(255,255,255,0.6);
-  color: #fffdfd;
+.friend-card {
+  margin-top: 24px; /* 선택 날짜 카드와 충분한 간격 */
+  padding: 16px 20px 20px; /* 테두리와 헤더/리스트 사이 여백 */
+  border-radius: 26px;
+  border: 4px solid rgba(162, 125, 255, 0.95);
+  background: #ffffff;
+  box-shadow:
+    0 20px 40px rgba(0,0,0,0.18),
+    0 0 0 1px rgba(255,255,255,0.7);
+  overflow: hidden;
 }
 
-.friends-header {
+.friend-card-header {
+  padding: 16px 20px 12px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #8b5cf6, #ec4899);
+  display: flex;
+  justify-content: space-between;
   align-items: center;
 }
 
-.friends-title {
-  color: #ffe9ff;
+.friend-title {
+  color: #ffffff;
 }
 
-.friends-sub {
-  color: #ffe4ff;
+.friend-sub {
+  color: #fee2f2;
 }
-
-.friends-empty {
-  color: #fdf2ff;
-}
-
-/* 친구 */
 
 .friend-chat-banner {
-  border: none;
   border-radius: 999px;
-  padding: 7px 14px;
+  border: none;
+  padding: 8px 14px;
   font-size: 13px;
   font-weight: 700;
-  background: radial-gradient(circle at top left, #ffe3fb 0, #ffb1e3 45%, #ff99d6 80%);
-  color: #4b1840;
+  background: #f9fafb;
+  color: #7c3aed;
   cursor: pointer;
-  box-shadow: 0 10px 20px rgba(163, 110, 255, 0.55);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.18);
 }
 
 .friend-chat-banner.big {
-  padding: 10px 26px;
-  font-size: 14px;
+  min-width: 140px;
+  text-align: center;
 }
 
 .friends-list {
   list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
+  margin: 16px 0 0;          /* 헤더와 리스트 사이 간격 */
+  padding: 4px 4px 0 4px;    /* 내부 여백 (친구 카드와 여유 공백) */
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .friend-item {
+  padding: 14px 16px;
+  border-radius: 20px;
+  margin-bottom: 12px;
+  background: #fbf8ff;
+  border: 1px solid rgba(211,196,255,0.9);
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.friend-item:last-child {
+  margin-bottom: 0;
+}
+
+.friend-item:hover {
+  background: #f4eeff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+}
+
+.friend-main-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  padding: 5px 0;
+  gap: 12px;
 }
 
-.friend-dot {
-  width: 9px;
-  height: 9px;
+.friend-avatar-small {
+  width: 34px;
+  height: 34px;
   border-radius: 999px;
-  background: #999;
+  background: radial-gradient(circle at top left, #ff9ed5 0, #a855f7 60%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px white;
 }
 
-.friend-dot-on {
-  background: #4ade80;
-  box-shadow: 0 0 10px rgba(74, 222, 128, 0.7);
+.friend-avatar-small img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.friend-dot-off {
-  background: #e5e7eb;
+.friend-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .friend-name {
-  font-weight: 600;
+  font-weight: 800;
+  font-size: 14px;
 }
 
-.friend-role {
-  font-size: 12px;
-  color: #fde68a;
+.friend-role-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
 }
 
-.friend-status {
-  margin-left: auto;
+.friend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.friend-dot-on { background: #22c55e; }
+.friend-dot-off { background: #c5c5c5; }
+
+.friend-meta-row {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-left: 32px;
   font-size: 12px;
-  color: #e5e7eb;
+  color: #7a69c4;
+}
+
+/* 모달 */
+
+.friend-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99;
+}
+
+.friend-modal {
+  width: 420px;
+  background: white;
+  border-radius: 28px;
+  padding: 24px 20px;
+  box-shadow: 0 24px 50px rgba(0,0,0,0.35);
+  position: relative;
+}
+
+.friend-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: #eee;
+  border: none;
+  border-radius: 999px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+
+.friend-modal-header {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.friend-modal-avatar {
+  width: 70px;
+  height: 70px;
+  border-radius: 999px;
+  background: radial-gradient(circle at top left, #ff9ed5 0, #a855f7 60%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 800;
+  font-size: 28px;
+  overflow: hidden;
+}
+
+.friend-modal-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.friend-modal-title {
+  flex: 1;
+}
+
+.friend-modal-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.friend-modal-name {
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.friend-modal-role {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.friend-modal-mood {
+  font-size: 18px;
+}
+
+.friend-modal-sub {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.friend-modal-label {
+  font-size: 12px;
+  color: #8c7ad9;
+  margin-bottom: 6px;
+}
+
+.friend-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.friend-modal-section {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #faf7ff;
+  border: 1px solid #e0d4ff;
+}
+
+.friend-modal-main-goal {
+  font-size: 14px;
+  font-weight: 700;
+  color: #4c1d95;
+}
+
+.friend-modal-goals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.friend-modal-goals li {
+  display: flex;
+  justify-content: space-between;
+}
+
+.cheer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.friend-modal-cheer {
+  font-size: 14px;
+  font-weight: 700;
+  color: #db2777;
+}
+
+.friend-modal-actions {
+  margin-top: 4px;
+  display: flex;
+  gap: 8px;
+}
+
+.friend-modal-btn {
+  flex: 1;
+  border-radius: 999px;
+  padding: 8px 10px;
+  border: 1px solid #d7c7ff;
+  background: #f7f2ff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.friend-modal-btn.primary {
+  background: linear-gradient(135deg, #ff8dc8, #a855f7);
+  color: white;
+  border-color: transparent;
 }
 
 /* 플로팅 버튼 */
@@ -2007,20 +2435,21 @@ const styles = `
   position: fixed;
   right: 24px;
   bottom: 24px;
-  width: 70px;
-  height: 70px;
+  width: 64px;
+  height: 64px;
   border-radius: 999px;
   border: none;
-  background: radial-gradient(circle at top left, #ffb0e3 0, #b26bff 70%);
+  background: radial-gradient(circle at top left, #ff9ed5 0, #a35dff 70%);
   box-shadow: 0 20px 40px rgba(0,0,0,0.6);
   color: #fff;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 10px;
+  font-weight: 600;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  z-index: 50;
 }
 
 /* 반응형 */
