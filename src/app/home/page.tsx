@@ -203,9 +203,6 @@ export default function HomePage() {
     return new Date().getDate() % EMO_SLIDES.length;
   });
 
-  const [scheduleTimeInput, setScheduleTimeInput] = useState('');
-  const [scheduleTitleInput, setScheduleTitleInput] = useState('');
-
   const friends: Friend[] = [
     { id: 'f1', name: '김영업 팀장', role: '팀장', online: true },
     { id: 'f2', name: '박성장 사원', role: '사원', online: true },
@@ -303,7 +300,7 @@ export default function HomePage() {
       `${monthStart.getFullYear()}년 ${monthStart.getMonth() + 1}월`
     );
 
-    // schedules
+    // 1) schedules
     const { data: scheduleRows, error: scheduleError } = await supabase
       .from('schedules')
       .select('id, title, schedule_date, schedule_time')
@@ -330,7 +327,9 @@ export default function HomePage() {
     );
     setDaySummaries(summaries);
 
-    // up_logs for goals + growth graph
+    // 2) up_logs (목표 + 기록 여부)
+    const loggedSet = new Set<string>();
+
     const { data: upRows, error: upError } = await supabase
       .from('up_logs')
       .select('id, day_goal, week_goal, month_goal, log_date')
@@ -347,7 +346,6 @@ export default function HomePage() {
         month_goal: last.month_goal ?? null,
       });
 
-      const loggedSet = new Set<string>();
       (upRows as any[]).forEach((row) => {
         if (!row.log_date) return;
         const raw = row.log_date;
@@ -357,29 +355,12 @@ export default function HomePage() {
             : formatDate(new Date(raw));
         loggedSet.add(str);
       });
-
-      const daysInThisMonth = monthEnd.getDate();
-      const growth: GrowthDay[] = [];
-      for (let d = 1; d <= daysInThisMonth; d++) {
-        const cur = new Date(
-          monthStart.getFullYear(),
-          monthStart.getMonth(),
-          d
-        );
-        const dateStr = formatDate(cur);
-        growth.push({
-          date: dateStr,
-          rate: loggedSet.has(dateStr) ? 1 : 0,
-        });
-      }
-      setGrowthDays(growth);
     } else {
       setLatestGoals(null);
-      setGrowthDays([]);
       if (upError) console.error('up_logs error', upError);
     }
 
-    // rebuttals
+    // 3) 최근 반론 (상단 통계용)
     const { data: rebutRows, error: rebutError } = await supabase
       .from('rebuttals')
       .select('id, category, content')
@@ -394,30 +375,84 @@ export default function HomePage() {
       if (rebutError) console.error('rebuttals error', rebutError);
     }
 
-    // 오늘 할 일
+    // 4) 한 달치 daily_tasks
     const today = formatDate(new Date());
-    const { data: taskRows, error: taskError } = await supabase
+    const { data: monthTaskRows, error: monthTaskError } = await supabase
       .from('daily_tasks')
       .select('id, task_date, content, done')
       .eq('user_id', uid)
-      .eq('task_date', today)
-      .order('id', { ascending: true });
+      .gte('task_date', from)
+      .lte('task_date', to)
+      .order('task_date', { ascending: true });
 
-    if (!taskError && taskRows) {
-      setTodayTasks(
-        taskRows.map((t: any) => ({
-          id: t.id,
-          task_date: t.task_date,
-          content: t.content ?? '',
-          done: !!t.done,
-        }))
-      );
+    const taskSummary: Record<
+      string,
+      { total: number; done: number }
+    > = {};
+    const todayList: DailyTask[] = [];
+
+    if (!monthTaskError && monthTaskRows) {
+      (monthTaskRows as any[]).forEach((t) => {
+        const dateStr: string = t.task_date;
+        if (!dateStr) return;
+
+        if (!taskSummary[dateStr]) {
+          taskSummary[dateStr] = { total: 0, done: 0 };
+        }
+        taskSummary[dateStr].total += 1;
+        if (t.done) taskSummary[dateStr].done += 1;
+
+        if (dateStr === today) {
+          todayList.push({
+            id: String(t.id),
+            task_date: dateStr,
+            content: t.content ?? '',
+            done: !!t.done,
+          });
+        }
+      });
+
+      setTodayTasks(todayList);
     } else {
       setTodayTasks([]);
-      if (taskError) console.error('daily_tasks error', taskError);
+      if (monthTaskError)
+        console.error('daily_tasks month error', monthTaskError);
     }
 
-    // 날씨 (mock)
+    // 5) 성장 그래프용 데이터
+    const daysInThisMonth = monthEnd.getDate();
+    const growth: GrowthDay[] = [];
+
+    for (let d = 1; d <= daysInThisMonth; d++) {
+      const cur = new Date(
+        monthStart.getFullYear(),
+        monthStart.getMonth(),
+        d
+      );
+      const dateStr = formatDate(cur);
+      const taskInfo = taskSummary[dateStr];
+
+      let rate = 0;
+
+      if (taskInfo && taskInfo.total > 0) {
+        // 오늘 할 일 달성률
+        rate = taskInfo.done / taskInfo.total;
+      } else if (loggedSet.has(dateStr)) {
+        // 할 일은 없지만 up_logs 기록만 있는 날
+        rate = 0.4;
+      } else {
+        rate = 0;
+      }
+
+      growth.push({
+        date: dateStr,
+        rate,
+      });
+    }
+
+    setGrowthDays(growth);
+
+    // 6) 날씨 (mock)
     const now = new Date();
     const mockWeather: WeatherSlot[] = [];
     for (let i = 0; i < 6; i++) {
@@ -494,33 +529,20 @@ export default function HomePage() {
     });
   };
 
-  const handleScheduleSave = async () => {
-    if (!userId) return;
+  // 성장 그래프용 SVG 포인트 (한 달 구성 꺾은선 그래프)
+  const graphPoints = useMemo(() => {
+    if (!growthDays.length) return '';
+    const lastIndex = Math.max(growthDays.length - 1, 1);
 
-    if (!scheduleTitleInput.trim()) {
-      alert('일정 내용을 입력해 주세요.');
-      return;
-    }
-
-    const { error } = await supabase.from('schedules').insert({
-      user_id: userId,
-      schedule_date: selectedDate,
-      schedule_time: scheduleTimeInput || null,
-      title: scheduleTitleInput.trim(),
-    });
-
-    if (error) {
-      console.error('insert schedule error', error);
-      alert(
-        '일정 저장 중 오류가 발생했어요.\nSupabase의 schedules 테이블 컬럼/권한을 다시 확인해 주세요.'
-      );
-      return;
-    }
-
-    setScheduleTimeInput('');
-    setScheduleTitleInput('');
-    await loadDashboardData(userId, currentMonth);
-  };
+    return growthDays
+      .map((g, idx) => {
+        const x = (idx / lastIndex) * 100; // 0 ~ 100
+        const rate = g.rate < 0 ? 0 : g.rate > 1 ? 1 : g.rate;
+        const y = 35 - rate * 30; // 0~1 -> 35~5
+        return `${x},${y}`;
+      })
+      .join(' ');
+  }, [growthDays]);
 
   if (loading) {
     return (
@@ -681,9 +703,11 @@ export default function HomePage() {
         <section className="weather-wide">
           <div className="weather-panel">
             <div className="weather-panel-header">
-              <div className="section-title">오늘 날씨</div>
-              <div className="section-sub">
-                외근/미팅 계획 세울 때 참고하세요.
+              <div className="section-title-wrap">
+                <div className="section-title">오늘 날씨</div>
+                <div className="section-sub">
+                  외근/미팅 계획 세울 때 참고하세요.
+                </div>
               </div>
             </div>
             <div className="weather-strip">
@@ -784,54 +808,120 @@ export default function HomePage() {
               </div>
               <p className="growth-caption">
                 중요한 건 <span>빈 날을 줄여가는 것</span>입니다.
+                <br />
+                오늘 할 일 달성률을 한 달 꺾은선 그래프로 보여줘요.
               </p>
 
               <div className="growth-legend">
                 <span className="legend-item">
-                  <span className="legend-dot legend-dot-on" />
-                  기록 있음
+                  <span className="legend-dot legend-dot-zero" />
+                  기록 없음
                 </span>
                 <span className="legend-item">
-                  <span className="legend-dot legend-dot-off" />
-                  빈 날
+                  <span className="legend-dot legend-dot-mid" />
+                  일부 달성
+                </span>
+                <span className="legend-item">
+                  <span className="legend-dot legend-dot-full" />
+                  완전 달성
                 </span>
               </div>
 
-              <div className="growth-grid">
-                {Array.from(
-                  { length: growthDays.length || 31 },
-                  (_, idx) => {
-                    const day = idx + 1;
-                    const found =
-                      growthDays.find((g) =>
-                        g.date.endsWith(`-${day.toString().padStart(2, '0')}`)
-                      ) ?? null;
-                    const hasRecord = !!found && found.rate > 0;
+              <div className="growth-chart-wrapper">
+                <div className="growth-y-labels">
+                  <span>100%</span>
+                  <span>50%</span>
+                  <span>0%</span>
+                </div>
+                <div className="growth-svg-area">
+                  <svg
+                    viewBox="0 0 100 40"
+                    preserveAspectRatio="none"
+                    className="growth-svg"
+                  >
+                    {/* 배경 라인 */}
+                    <line
+                      x1="0"
+                      y1="35"
+                      x2="100"
+                      y2="35"
+                      className="growth-axis-line"
+                    />
+                    <line
+                      x1="0"
+                      y1="20"
+                      x2="100"
+                      y2="20"
+                      className="growth-grid-line"
+                    />
+                    <line
+                      x1="0"
+                      y1="5"
+                      x2="100"
+                      y2="5"
+                      className="growth-grid-line"
+                    />
+                    {graphPoints && (
+                      <>
+                        <polyline
+                          points={graphPoints}
+                          className="growth-polyline"
+                        />
+                        {growthDays.map((g, idx) => {
+                          const lastIndex = Math.max(
+                            growthDays.length - 1,
+                            1
+                          );
+                          const x = (idx / lastIndex) * 100;
+                          const rate =
+                            g.rate < 0 ? 0 : g.rate > 1 ? 1 : g.rate;
+                          const y = 35 - rate * 30;
 
-                    return (
-                      <div
-                        key={day}
-                        className={
-                          'growth-day ' +
-                          (hasRecord ? 'growth-day-on' : 'growth-day-off')
-                        }
-                      >
-                        {day}
-                      </div>
-                    );
-                  }
-                )}
+                          let dotClass = 'growth-dot-zero';
+                          if (rate === 0) {
+                            dotClass = 'growth-dot-zero';
+                          } else if (rate < 0.5) {
+                            dotClass = 'growth-dot-low';
+                          } else if (rate < 1) {
+                            dotClass = 'growth-dot-mid';
+                          } else {
+                            dotClass = 'growth-dot-full';
+                          }
+
+                          return (
+                            <circle
+                              key={g.date}
+                              cx={x}
+                              cy={y}
+                              r={1.4}
+                              className={dotClass}
+                            />
+                          );
+                        })}
+                      </>
+                    )}
+                  </svg>
+                  <div className="growth-x-labels">
+                    <span>1일</span>
+                    <span>5일</span>
+                    <span>10일</span>
+                    <span>15일</span>
+                    <span>20일</span>
+                    <span>25일</span>
+                    <span>말일</span>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
 
-          {/* 아래쪽: 스케줄 달력 / 친구 / 반론 아카이브 */}
+          {/* 아래쪽: 스케줄 달력 / 친구 목록 */}
           <section className="home-section calendar-section">
             <div className="section-header">
               <div>
                 <div className="section-title">스케줄 달력</div>
                 <div className="section-sub">
-                  날짜마다 약속과 할 일을 한눈에 확인해요.
+                  날짜마다 등록된 스케줄만 한눈에 확인해요.
                 </div>
               </div>
               <div className="month-nav">
@@ -901,7 +991,7 @@ export default function HomePage() {
               </span>
             </div>
 
-            {/* 선택한 날짜 일정 + 등록 */}
+            {/* 선택한 날짜 일정 (읽기 전용) */}
             <div className="right-card calendar-selected-card">
               <div className="right-card-header">
                 <div>
@@ -910,37 +1000,17 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="schedule-input-row">
-                <div className="schedule-time-wrap">
-                  <span className="schedule-time-label">시간</span>
-                  <input
-                    type="time"
-                    value={scheduleTimeInput}
-                    onChange={(e) => setScheduleTimeInput(e.target.value)}
-                    className="schedule-time-input"
-                  />
-                </div>
-                <input
-                  type="text"
-                  placeholder="일정 내용 (예: 00고객 상담)"
-                  value={scheduleTitleInput}
-                  onChange={(e) => setScheduleTitleInput(e.target.value)}
-                  className="schedule-title-input"
-                />
-                <button
-                  type="button"
-                  className="schedule-save-btn"
-                  onClick={handleScheduleSave}
-                >
-                  일정 등록
-                </button>
-              </div>
+              <p className="schedule-help">
+                일정 <strong>추가·수정</strong>은{' '}
+                <strong>나의 U P 관리</strong> 또는 <strong>고객관리</strong>에서만
+                할 수 있어요.
+              </p>
 
               {selectedDateSchedules.length === 0 ? (
                 <div className="empty-text">
                   아직 등록된 일정이 없어요.
                   <br />
-                  위에서 시간과 내용을 적고 일정 등록을 눌러 주세요.
+                  나의 U P 관리 또는 고객관리에서 일정을 등록해 보세요.
                 </div>
               ) : (
                 <ul className="schedule-list">
@@ -958,13 +1028,13 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* 친구 목록 */}
-            <div className="right-card">
-              <div className="right-card-header">
+            {/* 친구 목록 카드 (그라데이션 색상 적용) */}
+            <div className="right-card friends-card">
+              <div className="right-card-header friends-header">
                 <div>
-                  <div className="section-title">친구 목록</div>
-                  <div className="section-sub">
-                    팀원들의 상태를 한눈에 볼 수 있어요.
+                  <div className="section-title friends-title">친구 목록</div>
+                  <div className="section-sub friends-sub">
+                    팀원들과 함께 U P 채팅을 이어가요.
                   </div>
                 </div>
                 <button
@@ -977,10 +1047,10 @@ export default function HomePage() {
               </div>
 
               {friends.length === 0 ? (
-                <div className="empty-text">
+                <div className="empty-text friends-empty">
                   아직 등록된 친구가 없어요.
                   <br />
-                  나중에 함께 U P 해봐요. ✨
+                  먼저 나의 U P를 채우고, 나중에 함께 U P해봐요 ✨
                 </div>
               ) : (
                 <ul className="friends-list">
@@ -999,36 +1069,6 @@ export default function HomePage() {
                       <span className="friend-status">
                         {friend.online ? '온라인' : '오프라인'}
                       </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* 최근 반론 아카이브 */}
-            <div className="right-card">
-              <div className="right-card-header">
-                <div className="section-title">최근 반론 아카이브</div>
-                <Link href="/rebuttal" className="small-link">
-                  전체 보기
-                </Link>
-              </div>
-              {recentRebuttals.length === 0 ? (
-                <div className="empty-text">
-                  아직 등록된 반론이 없어요.
-                  <br />
-                  고객의 거절 멘트와 나의 답변을 저장해 보세요.
-                </div>
-              ) : (
-                <ul className="rebuttal-list">
-                  {recentRebuttals.map((r) => (
-                    <li key={r.id} className="rebuttal-item">
-                      <div className="rebuttal-category">
-                        {r.category || '카테고리 미설정'}
-                      </div>
-                      <div className="rebuttal-content">
-                        {r.content || ''}
-                      </div>
                     </li>
                   ))}
                 </ul>
@@ -1058,10 +1098,11 @@ const styles = `
   min-height: 100vh;
   padding: 24px;
   box-sizing: border-box;
-  /* 바탕: 나의 U P 관리처럼 밝은 그라데이션 */
   background: linear-gradient(180deg, #ffe6f7 0%, #f5f0ff 45%, #e8f6ff 100%);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: #1b1030;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .home-inner {
@@ -1072,13 +1113,13 @@ const styles = `
 /* 공통 */
 
 .section-title {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 800;
   color: #6b41ff;
 }
 
 .section-sub {
-  font-size: 12px;
+  font-size: 13px;
   margin-top: 4px;
   color: #8c7ad9;
 }
@@ -1088,7 +1129,7 @@ const styles = `
 .home-loading {
   margin-top: 120px;
   text-align: center;
-  font-size: 16px;
+  font-size: 18px;
 }
 
 /* 헤더 */
@@ -1097,19 +1138,18 @@ const styles = `
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  padding: 22px 26px;
+  padding: 24px 28px;
   border-radius: 30px;
-  /* 상단 큰 배너: 핑크 → 퍼플 그라데이션 유지 (글씨는 거의 흰색이므로 OK) */
   background: linear-gradient(135deg, #ff89bd, #a45bff);
   box-shadow: 0 22px 44px rgba(0,0,0,0.25);
-  margin-bottom: 18px;
+  margin-bottom: 20px;
   color: #fffdfd;
 }
 
 .home-header-left {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .home-logo-row {
@@ -1119,12 +1159,12 @@ const styles = `
 }
 
 .home-logo {
-  width: 50px;
-  height: 50px;
-  border-radius: 18px;
+  width: 56px;
+  height: 56px;
+  border-radius: 20px;
   object-fit: cover;
   background: rgba(255,255,255,0.25);
-  padding: 7px;
+  padding: 8px;
 }
 
 .home-logo-text-wrap {
@@ -1134,23 +1174,23 @@ const styles = `
 }
 
 .home-logo-text {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 900;
-  letter-spacing: 4px;
+  letter-spacing: 5px;
   background: linear-gradient(135deg, #ffffff, #ffe9ff);
   -webkit-background-clip: text;
   color: transparent;
 }
 
 .home-logo-sub {
-  font-size: 12px;
+  font-size: 13px;
   color: rgba(255,255,255,0.9);
 }
 
 .home-welcome {
-  margin-top: 8px;
-  font-size: 17px;
-  font-weight: 700;
+  margin-top: 10px;
+  font-size: 19px;
+  font-weight: 800;
   background: linear-gradient(135deg, #ffffff, #ffe4ff);
   -webkit-background-clip: text;
   color: transparent;
@@ -1162,15 +1202,15 @@ const styles = `
 }
 
 .home-date {
-  font-size: 13px;
+  font-size: 14px;
   margin-top: 4px;
   color: #fffdfd;
 }
 
-/* 헤더 오른쪽 카드: 밝은 박스 */
+/* 헤더 오른쪽 카드 */
 
 .home-header-right {
-  min-width: 360px;
+  min-width: 380px;
   display: flex;
   justify-content: flex-end;
 }
@@ -1178,7 +1218,7 @@ const styles = `
 .profile-box {
   background: #ffffff;
   border-radius: 24px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   box-shadow: 0 18px 34px rgba(0,0,0,0.16);
   display: flex;
   flex-direction: column;
@@ -1190,12 +1230,12 @@ const styles = `
 .profile-main {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .profile-avatar {
-  width: 50px;
-  height: 50px;
+  width: 56px;
+  height: 56px;
   border-radius: 999px;
   background: radial-gradient(circle at top left, #ff9bd6 0, #8f5bff 60%);
   display: flex;
@@ -1203,7 +1243,7 @@ const styles = `
   justify-content: center;
   color: #fff;
   font-weight: 800;
-  font-size: 22px;
+  font-size: 24px;
   overflow: hidden;
   box-shadow: 0 0 14px rgba(193, 126, 255, 0.7);
 }
@@ -1215,13 +1255,13 @@ const styles = `
 }
 
 .profile-name {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   color: #211437;
 }
 
 .profile-email {
-  font-size: 11px;
+  font-size: 12px;
   color: #8b7bd4;
 }
 
@@ -1232,7 +1272,7 @@ const styles = `
 }
 
 .profile-pill {
-  font-size: 11px;
+  font-size: 12px;
   padding: 4px 9px;
   border-radius: 999px;
   background: #f3efff;
@@ -1246,7 +1286,7 @@ const styles = `
 }
 
 .profile-stat-pill {
-  font-size: 11px;
+  font-size: 12px;
   padding: 4px 11px;
   border-radius: 999px;
   background: #f7f2ff;
@@ -1262,7 +1302,7 @@ const styles = `
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .profile-links a {
@@ -1270,11 +1310,11 @@ const styles = `
   text-decoration: none;
 }
 
-/* 오늘의 U P 감성 배너: 나의 U P 관리처럼 보라+핑크 그라데이션 */
+/* 오늘의 U P 감성 배너 */
 
 .emo-banner {
-  margin-bottom: 18px;
-  padding: 20px 24px 22px;
+  margin-bottom: 20px;
+  padding: 22px 26px 24px;
   border-radius: 26px;
   background: linear-gradient(135deg, #8e7dff, #ff8fd2);
   box-shadow: 0 20px 40px rgba(107, 71, 183, 0.3);
@@ -1285,18 +1325,19 @@ const styles = `
 
 .emo-pill {
   display: inline-flex;
-  padding: 5px 18px;
+  padding: 6px 20px;
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.9);
-  font-size: 11px;
-  margin-bottom: 12px;
+  font-size: 12px;
+  margin-bottom: 14px;
   background: rgba(0,0,0,0.12);
 }
 
 .emo-title {
-  font-size: 22px;
-  line-height: 1.6;
+  font-size: 24px;
+  line-height: 1.7;
   margin-bottom: 12px;
+  font-weight: 800;
 }
 
 .emo-title span {
@@ -1304,13 +1345,13 @@ const styles = `
 }
 
 .emo-body p {
-  font-size: 13px;
+  font-size: 14px;
   margin: 2px 0;
 }
 
 .emo-footer {
   margin-top: 12px;
-  font-size: 13px;
+  font-size: 14px;
   color: #fff4ff;
 }
 
@@ -1321,8 +1362,8 @@ const styles = `
 }
 
 .emo-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 999px;
   border: none;
   background: rgba(255,255,255,0.55);
@@ -1330,61 +1371,61 @@ const styles = `
 }
 
 .emo-dot-active {
-  width: 20px;
+  width: 22px;
   background: #ffffff;
 }
 
-/* 퀵 메뉴: 어두운 카드 → 밝은 카드 */
+/* 퀵 메뉴 - 밝은 버튼 */
 
 .home-quick-nav {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .quick-card {
   border-radius: 18px;
-  padding: 12px 14px;
-  background: #1b1029;
-  box-shadow: 0 14px 26px rgba(0,0,0,0.38);
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #ffffff, #ffe9f7);
+  box-shadow: 0 14px 26px rgba(212, 170, 245, 0.45);
   text-decoration: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, border 0.14s ease;
-  border: 1px solid rgba(25, 7, 41, 0.25);
-  color: #ffffff;
+  border: 1px solid rgba(241, 153, 214, 0.8);
+  color: #2b1037;
 }
 
 .quick-card:hover {
   transform: translateY(-2px);
-  background: #291237;
-  box-shadow: 0 18px 32px rgba(0,0,0,0.45);
-  border-color: rgba(125, 97, 255, 0.8);
+  background: linear-gradient(135deg, #ffe9f7, #f2e8ff);
+  box-shadow: 0 18px 32px rgba(199, 149, 255, 0.7);
+  border-color: rgba(241, 83, 170, 0.9);
 }
 
 .quick-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #ffebff;
+  font-size: 15px;
+  font-weight: 800;
+  color: #f153aa;
 }
 
 .quick-desc {
-  font-size: 11px;
-  color: #e0d6ff;
+  font-size: 13px;
+  color: #5b456e;
 }
 
-/* 날씨 패널: 밝은 카드 */
+/* 날씨 */
 
 .weather-wide {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .weather-panel {
   border-radius: 20px;
   background: #ffffff;
-  padding: 12px 16px 10px;
+  padding: 14px 18px 12px;
   box-shadow: 0 14px 30px rgba(0,0,0,0.12);
   border: 1px solid #e3dafb;
   color: #241336;
@@ -1399,17 +1440,17 @@ const styles = `
 
 .weather-strip {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   overflow-x: auto;
   padding-bottom: 4px;
 }
 
 .weather-slot {
-  min-width: 120px;
+  min-width: 130px;
   border-radius: 14px;
   background: #f7f3ff;
-  padding: 8px;
-  font-size: 11px;
+  padding: 9px;
+  font-size: 12px;
 }
 
 .weather-time {
@@ -1418,13 +1459,13 @@ const styles = `
 }
 
 .weather-temp {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 800;
   color: #f35fa6;
 }
 
 .weather-desc {
-  font-size: 11px;
+  font-size: 12px;
   color: #7a68c4;
 }
 
@@ -1457,7 +1498,7 @@ const styles = `
 
 .summary-card {
   border-radius: 24px;
-  padding: 18px 20px;
+  padding: 20px 22px;
   background: #ffffff;
   box-shadow: 0 16px 30px rgba(0,0,0,0.12);
   border: 1px solid #e5ddff;
@@ -1465,8 +1506,8 @@ const styles = `
 }
 
 .summary-title {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 800;
   margin-bottom: 10px;
   color: #6b41ff;
 }
@@ -1494,19 +1535,20 @@ const styles = `
 }
 
 .goal-label {
-  font-size: 12px;
+  font-size: 13px;
   color: #694292;
+  font-weight: 600;
 }
 
 .goal-text {
   margin-top: 4px;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
 }
 
 .goal-main {
   margin-top: 12px;
-  font-size: 13px;
+  font-size: 14px;
   color: #7e68c7;
 }
 
@@ -1521,19 +1563,24 @@ const styles = `
   position: relative;
 }
 
+.summary-desc {
+  font-size: 13px;
+  color: #7a69c4;
+}
+
 .todo-empty {
   margin-top: 12px;
   border-radius: 18px;
   padding: 12px 14px;
   background: #faf7ff;
   border: 1px dashed rgba(165, 148, 230, 0.9);
-  font-size: 13px;
+  font-size: 14px;
   color: #7461be;
   line-height: 1.5;
 }
 
 .todo-empty-sub {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .todo-list {
@@ -1546,13 +1593,13 @@ const styles = `
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
-  font-size: 13px;
+  padding: 6px 0;
+  font-size: 14px;
 }
 
 .todo-check {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 4px;
   border: 1px solid #f153aa;
   box-sizing: border-box;
@@ -1580,13 +1627,13 @@ const styles = `
 }
 
 .growth-month {
-  font-size: 12px;
+  font-size: 13px;
   color: #7e6fd6;
 }
 
 .growth-caption {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: 13px;
   color: #7c6acd;
 }
 
@@ -1599,7 +1646,7 @@ const styles = `
   margin-top: 10px;
   display: flex;
   gap: 12px;
-  font-size: 11px;
+  font-size: 12px;
   color: #7e6fd6;
 }
 
@@ -1610,59 +1657,100 @@ const styles = `
 }
 
 .legend-dot {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
   border-radius: 999px;
 }
 
-.legend-dot-on {
-  background: linear-gradient(135deg, #ff9ed8, #ff73b5);
-  box-shadow: 0 0 10px rgba(255, 140, 220, 0.7);
-}
-
-.legend-dot-off {
+.legend-dot-zero {
   background: #e3dafb;
 }
 
-.growth-grid {
-  margin-top: 12px;
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
+.legend-dot-mid {
+  background: linear-gradient(135deg, #f9a8d4, #fb923c);
 }
 
-.growth-day {
-  height: 30px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 600;
-  transition: all 0.16s ease;
-}
-
-.growth-day-on {
+.legend-dot-full {
   background: linear-gradient(135deg, #ff9ed8, #ff73b5);
-  color: #ffffff;
+  box-shadow: 0 0 10px rgba(255, 115, 181, 0.7);
 }
 
-.growth-day-off {
-  background: #f3efff;
-  color: #8f82c6;
+/* 꺾은선 그래프 영역 */
+
+.growth-chart-wrapper {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: stretch;
 }
 
-.growth-day-off:hover {
-  background: #e7deff;
-  color: #43306a;
+.growth-y-labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #7e6fd6;
+  padding: 4px 0;
 }
 
-/* 공통 카드 (달력/친구/반론) */
+.growth-svg-area {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.growth-svg {
+  width: 100%;
+  height: 120px;
+}
+
+.growth-axis-line {
+  stroke: #c7bdf4;
+  stroke-width: 0.6;
+}
+
+.growth-grid-line {
+  stroke: #e3dafb;
+  stroke-width: 0.4;
+  stroke-dasharray: 1.5 2;
+}
+
+.growth-polyline {
+  fill: none;
+  stroke: url(#growthGradient);
+  stroke-width: 1.2;
+}
+
+/* 점 색상 */
+.growth-dot-zero {
+  fill: #d4c9ff;
+}
+.growth-dot-low {
+  fill: #fca5a5;
+}
+.growth-dot-mid {
+  fill: #fb923c;
+}
+.growth-dot-full {
+  fill: #ff73b5;
+}
+
+/* X축 라벨 */
+
+.growth-x-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #a093e4;
+}
+
+/* 공통 카드 (달력/친구) */
 
 .right-card {
   background: #ffffff;
   border-radius: 20px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   box-shadow: 0 16px 30px rgba(0,0,0,0.12);
   border: 1px solid #e5ddff;
   color: #211437;
@@ -1672,17 +1760,17 @@ const styles = `
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .small-link {
-  font-size: 11px;
+  font-size: 12px;
   color: #a24cff;
   text-decoration: none;
 }
 
 .empty-text {
-  font-size: 11px;
+  font-size: 13px;
   color: #7a69c4;
   line-height: 1.5;
 }
@@ -1690,7 +1778,7 @@ const styles = `
 /* 달력 */
 
 .section-header {
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   grid-column: 1 / -1;
 }
 
@@ -1703,15 +1791,16 @@ const styles = `
 .nav-btn {
   border-radius: 999px;
   border: none;
-  padding: 4px 8px;
-  font-size: 11px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 600;
   background: #f0e8ff;
   color: #5a3cb2;
   cursor: pointer;
 }
 
 .month-label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: #372153;
 }
@@ -1719,7 +1808,7 @@ const styles = `
 .calendar-grid {
   background: #ffffff;
   border-radius: 18px;
-  padding: 8px;
+  padding: 10px;
   box-shadow: 0 16px 30px rgba(0,0,0,0.12);
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -1730,8 +1819,8 @@ const styles = `
 
 .calendar-weekday {
   text-align: center;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   color: #7f6bd5;
 }
 
@@ -1740,8 +1829,8 @@ const styles = `
   border: none;
   background: #faf7ff;
   padding: 6px 4px;
-  min-height: 56px;
-  font-size: 11px;
+  min-height: 58px;
+  font-size: 12px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1763,13 +1852,13 @@ const styles = `
 }
 
 .calendar-day-number {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .calendar-day-dot {
   margin-top: 2px;
-  font-size: 10px;
-  padding: 2px 4px;
+  font-size: 11px;
+  padding: 2px 5px;
   border-radius: 999px;
   background: #f153aa;
   color: #fff;
@@ -1777,89 +1866,37 @@ const styles = `
 
 .calendar-footer {
   grid-column: 1 / -1;
-  margin-top: 6px;
-  font-size: 12px;
+  margin-top: 8px;
+  font-size: 13px;
   color: #7e6fd6;
 }
 
-/* 선택 날짜 */
+/* 선택 날짜 - 읽기전용 안내 */
 
 .calendar-selected-card {
   grid-column: 1 / -1;
 }
 
-.schedule-input-row {
+.schedule-help {
+  font-size: 13px;
   margin-bottom: 8px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.schedule-time-wrap {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.schedule-time-label {
-  font-size: 11px;
-  color: #4b335f;
-}
-
-.schedule-time-input {
-  border-radius: 999px;
-  border: 1px solid #c2b1ff;
-  padding: 4px 8px;
-  font-size: 12px;
-  background: #f9f6ff;
-  color: #241336;
-}
-
-.schedule-time-input::-webkit-calendar-picker-indicator {
-  filter: invert(0.3);
-}
-
-.schedule-title-input {
-  flex: 1;
-  border-radius: 999px;
-  border: 1px solid #c2b1ff;
-  padding: 6px 10px;
-  font-size: 12px;
-  background: #faf7ff;
-  color: #241336;
-}
-
-.schedule-title-input::placeholder {
-  color: #a18ad2;
-}
-
-.schedule-save-btn {
-  border-radius: 999px;
-  border: none;
-  padding: 6px 14px;
-  font-size: 12px;
-  font-weight: 600;
-  background: linear-gradient(135deg, #ff8fba, #a36dff);
-  color: #fff;
-  cursor: pointer;
-  box-shadow: 0 10px 18px rgba(0,0,0,0.25);
+  color: #5d4b9d;
 }
 
 /* 스케줄 목록 */
 
 .schedule-list {
   list-style: none;
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   padding: 0;
 }
 
 .schedule-item {
   display: grid;
-  grid-template-columns: 70px minmax(0, 1fr);
-  gap: 6px;
-  font-size: 11px;
-  padding: 4px 0;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 13px;
+  padding: 5px 0;
   border-bottom: 1px dashed #e0d4ff;
 }
 
@@ -1869,11 +1906,35 @@ const styles = `
 
 .schedule-time {
   color: #f153aa;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .schedule-title {
   color: #241336;
+}
+
+/* 친구 카드 - 감성 그라데이션 */
+
+.friends-card {
+  background: linear-gradient(135deg, #8e7dff, #ff8fd2);
+  border-color: rgba(255,255,255,0.6);
+  color: #fffdfd;
+}
+
+.friends-header {
+  align-items: center;
+}
+
+.friends-title {
+  color: #ffe9ff;
+}
+
+.friends-sub {
+  color: #ffe4ff;
+}
+
+.friends-empty {
+  color: #fdf2ff;
 }
 
 /* 친구 */
@@ -1881,47 +1942,48 @@ const styles = `
 .friend-chat-banner {
   border: none;
   border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 11px;
-  font-weight: 600;
-  background: linear-gradient(135deg, #ff8fba, #a36dff);
-  color: #fff;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  background: radial-gradient(circle at top left, #ffe3fb 0, #ffb1e3 45%, #ff99d6 80%);
+  color: #4b1840;
   cursor: pointer;
-  box-shadow: 0 10px 20px rgba(0,0,0,0.25);
+  box-shadow: 0 10px 20px rgba(163, 110, 255, 0.55);
 }
 
 .friend-chat-banner.big {
-  padding: 9px 24px;
-  font-size: 13px;
+  padding: 10px 26px;
+  font-size: 14px;
 }
 
 .friends-list {
   list-style: none;
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   padding: 0;
 }
 
 .friend-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  padding: 4px 0;
+  gap: 8px;
+  font-size: 13px;
+  padding: 5px 0;
 }
 
 .friend-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 999px;
   background: #999;
 }
 
 .friend-dot-on {
-  background: #3eba63;
+  background: #4ade80;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.7);
 }
 
 .friend-dot-off {
-  background: #bbbbbb;
+  background: #e5e7eb;
 }
 
 .friend-name {
@@ -1929,44 +1991,14 @@ const styles = `
 }
 
 .friend-role {
-  font-size: 10px;
-  color: #7f6bd5;
+  font-size: 12px;
+  color: #fde68a;
 }
 
 .friend-status {
   margin-left: auto;
-  font-size: 10px;
-  color: #9387d5;
-}
-
-/* 반론 리스트 */
-
-.rebuttal-list {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0;
-  max-height: 150px;
-  overflow-y: auto;
-}
-
-.rebuttal-item {
-  padding: 5px 0;
-  border-bottom: 1px dashed #e0d4ff;
-  font-size: 11px;
-}
-
-.rebuttal-item:last-child {
-  border-bottom: none;
-}
-
-.rebuttal-category {
-  font-weight: 600;
-  color: #f153aa;
-  margin-bottom: 2px;
-}
-
-.rebuttal-content {
-  color: #241336;
+  font-size: 12px;
+  color: #e5e7eb;
 }
 
 /* 플로팅 버튼 */
@@ -1975,15 +2007,15 @@ const styles = `
   position: fixed;
   right: 24px;
   bottom: 24px;
-  width: 64px;
-  height: 64px;
+  width: 70px;
+  height: 70px;
   border-radius: 999px;
   border: none;
-  background: radial-gradient(circle at top left, #ff9ed5 0, #a35dff 70%);
+  background: radial-gradient(circle at top left, #ffb0e3 0, #b26bff 70%);
   box-shadow: 0 20px 40px rgba(0,0,0,0.6);
   color: #fff;
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   display: flex;
   flex-direction: column;
   align-items: center;
