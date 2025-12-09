@@ -1859,63 +1859,125 @@ const styles = `
   text-decoration: line-through;
 }
 
-/* 전체 글씨 선명하게 키움 */
-.growth-card, 
-.growth-caption,
-.growth-day-label {
-  font-size: 15px;
+/* 성장 그래프 */
+
+.growth-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.growth-month {
+  font-size: 14px;
+  color: #7e6fd6;
+}
+
+.growth-caption {
+  margin-top: 4px;
+  font-size: 14px;
+  color: #7c6acd;
+}
+
+.growth-caption span {
+  color: #f153aa;
   font-weight: 600;
-  color: #7a62d2;
 }
 
 .growth-graph-wrap {
-  margin-top: 10px;
-  padding: 16px;
-  border-radius: 18px;
-  background: radial-gradient(circle at top, #ffe7fd 0%, #f5e9ff 40%, #ffffff 100%);
-  border: 1px solid rgba(200, 180, 255, 0.6);
+  margin-top: 8px;
+  padding: 10px 8px;
+  border-radius: 16px;
+  background: radial-gradient(circle at top, #ffe9ff 0, #f5f0ff 50%, #ffffff 100%);
+  border: 1px solid rgba(214, 196, 255, 0.8);
 }
+
+/* 여기서부터 핵심: 막대 폭/간격 줄여서 창 안에 꽉 맞게 */
 
 .growth-graph {
   display: flex;
   align-items: flex-end;
-  gap: 10px;
-  height: 180px;
+  gap: 3px;              /* 간격 줄이기 */
+  height: 150px;
+  width: 100%;
 }
 
 .growth-col {
-  flex: 1;
-  min-width: 18px;
-  text-align: center;
+  flex: 1 1 0;           /* 남는 폭 자동 분배 */
+  min-width: 0;          /* 더 이상 안 벌어지게 */
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-/* 막대 공통 */
+/* 막대 공통 스타일 (폭 축소) */
 .bar {
-  width: 16px;
-  border-radius: 8px;
+  width: 8px;            /* 막대 폭 줄이기 (기존 16px 정도였음) */
+  border-radius: 999px;
   margin-bottom: 4px;
 }
 
 /* 체크(핑크) */
 .check-bar {
-  background: linear-gradient(180deg, #ff8ad8, #ff5fbd);
-  box-shadow: 0 2px 6px rgba(255, 90, 180, 0.45);
+  background: linear-gradient(180deg, #ffdef3 0%, #ff9fd6 45%, #f472b6 100%);
+  box-shadow:
+    0 6px 12px rgba(244, 114, 182, 0.45),
+    0 0 8px rgba(244, 114, 182, 0.7);
 }
 
 /* 계약(골드) */
 .contract-bar {
-  background: linear-gradient(180deg, #fde68a, #facc15, #fb923c);
-  box-shadow: 0 2px 6px rgba(255, 170, 60, 0.45);
+  background: linear-gradient(180deg, #fef9c3 0%, #facc15 40%, #fb923c 100%);
+  box-shadow:
+    0 6px 12px rgba(234, 179, 8, 0.55),
+    0 0 8px rgba(251, 146, 60, 0.85);
 }
 
+/* 날짜 글씨는 살짝만 줄이기 */
 .growth-day-label {
-  margin-top: 6px;
-  font-size: 14px;
-  color: #8d7acd;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #8775c8;
 }
+
+/* 범례 그대로 사용 */
+.growth-legend {
+  margin-top: 6px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #7e6fd6;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.legend-dot-log {
+  background: linear-gradient(135deg, #ff9ed8, #ff73b5);
+  box-shadow: 0 0 10px rgba(255, 140, 220, 0.7);
+}
+
+.legend-dot-contract1 {
+  background: linear-gradient(135deg, #fde68a, #facc15);
+}
+
+.legend-dot-contract2 {
+  background: linear-gradient(135deg, #fdba74, #fb923c);
+}
+
+.legend-dot-contract3 {
+  background: linear-gradient(135deg, #f97316, #ec4899);
+}
+
 
 
 
