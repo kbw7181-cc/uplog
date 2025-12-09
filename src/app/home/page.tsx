@@ -7,8 +7,10 @@ import Link from 'next/link';
 import { supabase } from '../../lib/supabaseClient';
 
 type GrowthDay = {
-  date: string; // YYYY-MM-DD
-  rate: number; // 0~1
+  date: string;         // YYYY-MM-DD
+  rate: number;         // 0~1 (기록 여부)
+  prospectCount: number; // (지금은 그래프에서 안 쓰지만 타입은 유지)
+  contractCount: number; // 계약 고객 수
 };
 
 type Friend = {
@@ -67,6 +69,18 @@ type DailyTask = {
 };
 
 const EMO_SLIDES = [
+  {
+    title1: '나를 U P 시키고 싶다면,',
+    title2: '“관리가 성장률의 차이”라는 말 하나만 믿어보세요.',
+    body: [
+      '흩어져 있던 몇 년의 세일즈 노하우를,',
+      '가망고객부터 계약까지 한 곳에서 관리하면,',
+      '노력의 기록이 곧 성장률의 그래프가 됩니다.',
+      'UPLOG와 함께라면, “언젠가”가 아니라 “곧” 세일즈킹이라고 불릴 수 있어요.',
+    ],
+    oneLine:
+      '관리의 차이가 성장률의 차이입니다. 함께 기록하면, 함께 세일즈킹이 됩니다.',
+  },
   {
     title1: '지치지 않도록,',
     title2: '거절 사이의 숨을 챙겨 줄게요.',
@@ -186,7 +200,7 @@ function getScheduleDotClassAndLabel(title: string): {
 
 function getMoodEmoji(code: string | null | undefined): string {
   if (!code) return '';
-  if (code === '🙂' || code === '😎' || code === '🔥') return code; // 이미 이모지면 그대로
+  if (code === '🙂' || code === '😎' || code === '🔥') return code;
   switch (code) {
     case 'tired':
       return '😭';
@@ -245,9 +259,8 @@ export default function HomePage() {
 
   const todayStr = useMemo(() => formatDate(new Date()), []);
 
-  const [quoteIndex, setQuoteIndex] = useState<number>(() => {
-    return new Date().getDate() % EMO_SLIDES.length;
-  });
+  // 감성 배너: 기본은 0번(대표님 버전)으로 고정
+  const [quoteIndex, setQuoteIndex] = useState<number>(0);
 
   // 친구 프로필 모달
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
@@ -397,6 +410,12 @@ export default function HomePage() {
       `${monthStart.getFullYear()}년 ${monthStart.getMonth() + 1}월`
     );
 
+    // 성장/기분/가망/계약 집계용 맵
+    const loggedSet = new Set<string>();
+    const moodMap: Record<string, string> = {};
+    const prospectByDate: Record<string, number> = {};
+    const contractByDate: Record<string, number> = {};
+
     // schedules
     const { data: scheduleRows, error: scheduleError } = await supabase
       .from('schedules')
@@ -424,7 +443,7 @@ export default function HomePage() {
     );
     setDaySummaries(summaries);
 
-    // up_logs for goals + growth graph + 기분
+    // up_logs: 오늘/주/월 목표 + 기분 + 기록 있는 날
     const { data: upRows, error: upError } = await supabase
       .from('up_logs')
       .select('id, day_goal, week_goal, month_goal, log_date, mood')
@@ -441,9 +460,6 @@ export default function HomePage() {
         month_goal: last.month_goal ?? null,
       });
 
-      const loggedSet = new Set<string>();
-      const moodMap: Record<string, string> = {};
-
       (upRows as any[]).forEach((row) => {
         if (!row.log_date) return;
         const raw = row.log_date;
@@ -453,32 +469,70 @@ export default function HomePage() {
             : formatDate(new Date(raw));
         loggedSet.add(str);
         if (row.mood) {
-          moodMap[str] = row.mood;
+          moodMap[str] = row.mood as string;
         }
       });
-
-      const daysInThisMonth = monthEnd.getDate();
-      const growth: GrowthDay[] = [];
-      for (let d = 1; d <= daysInThisMonth; d++) {
-        const cur = new Date(
-          monthStart.getFullYear(),
-          monthStart.getMonth(),
-          d
-        );
-        const dateStr = formatDate(cur);
-        growth.push({
-          date: dateStr,
-          rate: loggedSet.has(dateStr) ? 1 : 0,
-        });
-      }
-      setGrowthDays(growth);
-      setMoodByDate(moodMap);
     } else {
       setLatestGoals(null);
-      setGrowthDays([]);
-      setMoodByDate({});
       if (upError) console.error('up_logs error', upError);
     }
+
+    // customers: 계약(계약1/2/3 등)만 날짜별 집계
+    try {
+      const { data: customerRows, error: customerError } = await supabase
+        .from('customers')
+        .select('id, status, created_at')
+        .eq('user_id', uid)
+        .gte('created_at', from)
+        .lte('created_at', to);
+
+      if (!customerError && customerRows) {
+        (customerRows as any[]).forEach((row) => {
+          const raw = (row as any).created_at;
+          if (!raw) return;
+
+          const dateStr =
+            typeof raw === 'string'
+              ? raw.slice(0, 10)
+              : formatDate(new Date(raw));
+          const status: string = ((row as any).status ?? '') as string;
+
+          if (!status) return;
+
+          // "계약1, 계약2, 계약3..." 만 카운트
+          if (status.includes('계약')) {
+            contractByDate[dateStr] = (contractByDate[dateStr] ?? 0) + 1;
+          } else if (status.includes('가망')) {
+            // 가망은 지금 그래프엔 안 쓰지만, 타입 유지 위해 집계만
+            prospectByDate[dateStr] = (prospectByDate[dateStr] ?? 0) + 1;
+          }
+        });
+      } else if (customerError) {
+        console.error('customers error', customerError);
+      }
+    } catch (err) {
+      console.error('customers fatal error', err);
+    }
+
+    // 성장 그래프 데이터 생성 (기록 + 계약)
+    const daysInThisMonth = monthEnd.getDate();
+    const growth: GrowthDay[] = [];
+    for (let d = 1; d <= daysInThisMonth; d++) {
+      const cur = new Date(
+        monthStart.getFullYear(),
+        monthStart.getMonth(),
+        d
+      );
+      const dateStr = formatDate(cur);
+      growth.push({
+        date: dateStr,
+        rate: loggedSet.has(dateStr) ? 1 : 0,
+        prospectCount: prospectByDate[dateStr] || 0,
+        contractCount: contractByDate[dateStr] || 0,
+      });
+    }
+    setGrowthDays(growth);
+    setMoodByDate(moodMap);
 
     // rebuttals
     const { data: rebutRows, error: rebutError } = await supabase
@@ -690,7 +744,9 @@ export default function HomePage() {
               </div>
 
               <div className="profile-meta">
-                <span className="profile-pill">{industry ?? '업종 미설정'}</span>
+                <span className="profile-pill">
+                  {industry ?? '업종 미설정'}
+                </span>
                 <span className="profile-pill">{careerCombined}</span>
                 <span className="profile-pill">{orgCombined}</span>
               </div>
@@ -880,60 +936,58 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* 성장 그래프 */}
-            <div className="summary-card growth-card">
-              <div className="growth-header">
-                <h3 className="summary-title">성장 그래프</h3>
-                <span className="growth-month">
-                  {currentMonthLabel || '2025년 12월'}
-                </span>
-              </div>
+     {/* 성장 그래프 */}
+<div className="summary-card growth-card">
+  <div className="growth-header">
+    <h3 className="summary-title">성장 그래프</h3>
+    <span className="growth-month">{currentMonthLabel}</span>
+  </div>
 
-              <p className="growth-caption">
-                중요한 건 <span>빈 날을 줄여가는 것</span>입니다.
-              </p>
+  <p className="growth-caption">
+    체크 입력이 많을수록 핑크 막대가 높아지고,
+    계약 입력이 많을수록 골드 막대가 높아집니다.
+  </p>
 
-              <div className="growth-legend">
-                <span className="legend-item">
-                  <span className="legend-dot legend-dot-on" />
-                  기록 있는 날
-                </span>
-                <span className="legend-item">
-                  <span className="legend-dot legend-dot-off" />
-                  아직 비어 있는 날
-                </span>
-              </div>
+  <div className="growth-graph-wrap">
+    <div className="growth-graph">
 
-              <div className="growth-graph-wrap">
-                <div className="growth-graph">
-                  {Array.from(
-                    { length: growthDays.length || 31 },
-                    (_, idx) => {
-                      const day = idx + 1;
-                      const found =
-                        growthDays.find((g) =>
-                          g.date.endsWith(
-                            `-${day.toString().padStart(2, '0')}`
-                          )
-                        ) ?? null;
-                      const hasRecord = !!found && found.rate > 0;
+      {growthDays.map((g) => {
+        const day = Number(g.date.split('-')[2]);
 
-                      return (
-                        <div key={day} className="growth-column">
-                          <div
-                            className={
-                              'growth-bar ' +
-                              (hasRecord ? 'growth-bar-on' : 'growth-bar-off')
-                            }
-                          />
-                          <div className="growth-day-label">{day}</div>
-                        </div>
-                      );
-                    }
-                  )}
-                </div>
-              </div>
-            </div>
+        const checkCount = g.rate;            // 체크 입력개수
+        const contractCount = g.contractCount; // 계약 입력개수
+
+        // 최소 높이 보이도록 설정
+        const checkHeight = Math.max(checkCount * 12, 8);
+        const contractHeight = Math.max(contractCount * 14, 8);
+
+        return (
+          <div key={g.date} className="growth-col">
+
+            {/* 계약 막대 */}
+            <div
+              className="bar contract-bar"
+              style={{ height: `${contractHeight}px` }}
+            />
+
+            {/* 체크 막대 */}
+            <div
+              className="bar check-bar"
+              style={{ height: `${checkHeight}px` }}
+            />
+
+            {/* 날짜 */}
+            <div className="growth-day-label">{day}</div>
+          </div>
+        );
+      })}
+
+    </div>
+  </div>
+</div>
+
+
+
           </section>
 
           {/* 달력 + 친구 카드 */}
@@ -1296,13 +1350,13 @@ const styles = `
 /* 공통 */
 
 .section-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 800;
   color: #6b41ff;
 }
 
 .section-sub {
-  font-size: 13px;
+  font-size: 14px;
   margin-top: 4px;
   color: #8c7ad9;
 }
@@ -1310,7 +1364,7 @@ const styles = `
 .home-loading {
   margin-top: 120px;
   text-align: center;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 /* 헤더 */
@@ -1355,7 +1409,7 @@ const styles = `
 }
 
 .home-logo-text {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 900;
   letter-spacing: 4px;
   background: linear-gradient(135deg, #ffffff, #ffe9ff);
@@ -1364,13 +1418,13 @@ const styles = `
 }
 
 .home-logo-sub {
-  font-size: 13px;
+  font-size: 14px;
   color: rgba(255,255,255,0.9);
 }
 
 .home-welcome {
   margin-top: 6px;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 800;
   background: linear-gradient(135deg, #ffffff, #ffe4ff);
   -webkit-background-clip: text;
@@ -1383,7 +1437,7 @@ const styles = `
 }
 
 .home-date {
-  font-size: 14px;
+  font-size: 15px;
   margin-top: 2px;
   color: #fffdfd;
 }
@@ -1436,13 +1490,13 @@ const styles = `
 }
 
 .profile-name {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 800;
   color: #211437;
 }
 
 .profile-email {
-  font-size: 12px;
+  font-size: 13px;
   color: #8b7bd4;
 }
 
@@ -1453,7 +1507,7 @@ const styles = `
 }
 
 .profile-pill {
-  font-size: 12px;
+  font-size: 13px;
   padding: 4px 9px;
   border-radius: 999px;
   background: #f3efff;
@@ -1467,7 +1521,7 @@ const styles = `
 }
 
 .profile-stat-pill {
-  font-size: 12px;
+  font-size: 13px;
   padding: 4px 11px;
   border-radius: 999px;
   background: #f7f2ff;
@@ -1483,7 +1537,7 @@ const styles = `
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .profile-links a {
@@ -1495,7 +1549,7 @@ const styles = `
 
 .emo-banner {
   margin-bottom: 12px;
-  padding: 16px 20px 18px;
+  padding: 18px 22px 20px;
   border-radius: 22px;
   background: linear-gradient(135deg, #8e7dff, #ff8fd2);
   box-shadow: 0 16px 32px rgba(107, 71, 183, 0.28);
@@ -1506,16 +1560,16 @@ const styles = `
 
 .emo-pill {
   display: inline-flex;
-  padding: 4px 16px;
+  padding: 5px 18px;
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.9);
-  font-size: 12px;
+  font-size: 13px;
   margin-bottom: 10px;
   background: rgba(0,0,0,0.12);
 }
 
 .emo-title {
-  font-size: 24px;
+  font-size: 26px;
   line-height: 1.5;
   margin-bottom: 10px;
 }
@@ -1525,13 +1579,13 @@ const styles = `
 }
 
 .emo-body p {
-  font-size: 14px;
+  font-size: 15px;
   margin: 1px 0;
 }
 
 .emo-footer {
   margin-top: 10px;
-  font-size: 14px;
+  font-size: 15px;
   color: #fff4ff;
 }
 
@@ -1586,13 +1640,13 @@ const styles = `
 }
 
 .quick-title {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 800;
   color: #402064;
 }
 
 .quick-desc {
-  font-size: 13px;
+  font-size: 14px;
   color: #7c6ac2;
 }
 
@@ -1630,7 +1684,7 @@ const styles = `
   border-radius: 12px;
   background: #f7f3ff;
   padding: 6px;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .weather-time {
@@ -1639,13 +1693,13 @@ const styles = `
 }
 
 .weather-temp {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 800;
   color: #f35fa6;
 }
 
 .weather-desc {
-  font-size: 12px;
+  font-size: 13px;
   color: #7a68c4;
 }
 
@@ -1684,14 +1738,14 @@ const styles = `
 }
 
 .summary-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 800;
   margin-bottom: 8px;
   color: #6b41ff;
 }
 
 .summary-desc {
-  font-size: 13px;
+  font-size: 14px;
   color: #7a69c4;
 }
 
@@ -1718,19 +1772,19 @@ const styles = `
 }
 
 .goal-label {
-  font-size: 13px;
+  font-size: 14px;
   color: #694292;
 }
 
 .goal-text {
   margin-top: 3px;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
 }
 
 .goal-main {
   margin-top: 10px;
-  font-size: 13px;
+  font-size: 14px;
   color: #7e68c7;
 }
 
@@ -1751,13 +1805,13 @@ const styles = `
   padding: 10px 12px;
   background: #faf7ff;
   border: 1px dashed rgba(165, 148, 230, 0.9);
-  font-size: 13px;
+  font-size: 14px;
   color: #7461be;
   line-height: 1.5;
 }
 
 .todo-empty-sub {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .todo-list {
@@ -1771,7 +1825,7 @@ const styles = `
   align-items: center;
   gap: 10px;
   padding: 4px 0;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .todo-check {
@@ -1805,109 +1859,65 @@ const styles = `
   text-decoration: line-through;
 }
 
-/* 성장 그래프 */
-
-.growth-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-
-.growth-month {
-  font-size: 12px;
-  color: #7e6fd6;
-}
-
-.growth-caption {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #7c6acd;
-}
-
-.growth-caption span {
-  color: #f153aa;
+/* 전체 글씨 선명하게 키움 */
+.growth-card, 
+.growth-caption,
+.growth-day-label {
+  font-size: 15px;
   font-weight: 600;
-}
-
-.growth-legend {
-  margin-top: 6px;
-  display: flex;
-  gap: 10px;
-  font-size: 11px;
-  color: #7e6fd6;
-}
-
-.legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.legend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-}
-
-.legend-dot-on {
-  background: linear-gradient(135deg, #ff9ed8, #ff73b5);
-  box-shadow: 0 0 10px rgba(255, 140, 220, 0.7);
-}
-
-.legend-dot-off {
-  background: #e3dafb;
+  color: #7a62d2;
 }
 
 .growth-graph-wrap {
-  margin-top: 8px;
-  padding: 8px 8px 6px;
-  border-radius: 16px;
-  background: radial-gradient(circle at top, #ffe9ff 0, #f5f0ff 50%, #ffffff 100%);
-  border: 1px solid rgba(214, 196, 255, 0.8);
+  margin-top: 10px;
+  padding: 16px;
+  border-radius: 18px;
+  background: radial-gradient(circle at top, #ffe7fd 0%, #f5e9ff 40%, #ffffff 100%);
+  border: 1px solid rgba(200, 180, 255, 0.6);
 }
 
 .growth-graph {
   display: flex;
   align-items: flex-end;
-  gap: 4px;
-  height: 100px;
+  gap: 10px;
+  height: 180px;
 }
 
-.growth-column {
+.growth-col {
   flex: 1;
-  min-width: 10px;
+  min-width: 18px;
+  text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
 }
 
-.growth-bar {
-  width: 100%;
-  border-radius: 999px;
-  background: #eee7ff;
-  box-shadow: inset 0 0 0 1px rgba(180, 164, 255, 0.4);
-  height: 16px;
-  transition: height 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+/* 막대 공통 */
+.bar {
+  width: 16px;
+  border-radius: 8px;
+  margin-bottom: 4px;
 }
 
-.growth-bar-on {
-  background: linear-gradient(180deg, #ffcef0 0%, #ff78bd 40%, #a96dff 100%);
-  box-shadow:
-    0 8px 16px rgba(188, 104, 255, 0.5),
-    0 0 10px rgba(255, 150, 220, 0.7);
-  height: 80px;
-  transform: translateY(-2px);
+/* 체크(핑크) */
+.check-bar {
+  background: linear-gradient(180deg, #ff8ad8, #ff5fbd);
+  box-shadow: 0 2px 6px rgba(255, 90, 180, 0.45);
 }
 
-.growth-bar-off {
-  height: 18px;
+/* 계약(골드) */
+.contract-bar {
+  background: linear-gradient(180deg, #fde68a, #facc15, #fb923c);
+  box-shadow: 0 2px 6px rgba(255, 170, 60, 0.45);
 }
 
 .growth-day-label {
-  font-size: 10px;
-  color: #8775c8;
+  margin-top: 6px;
+  font-size: 14px;
+  color: #8d7acd;
 }
+
+
 
 /* 공통 카드 */
 
@@ -1928,7 +1938,7 @@ const styles = `
 }
 
 .empty-text {
-  font-size: 12px;
+  font-size: 13px;
   color: #7a69c4;
   line-height: 1.5;
 }
@@ -1950,14 +1960,14 @@ const styles = `
   border-radius: 999px;
   border: none;
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: 13px;
   background: #f0e8ff;
   color: #5a3cb2;
   cursor: pointer;
 }
 
 .month-label {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: #372153;
 }
@@ -1976,7 +1986,7 @@ const styles = `
 
 .calendar-weekday {
   text-align: center;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   color: #7f6bd5;
 }
@@ -1987,7 +1997,7 @@ const styles = `
   background: #faf7ff;
   padding: 5px 4px;
   min-height: 64px;
-  font-size: 11px;
+  font-size: 12px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -2017,11 +2027,11 @@ const styles = `
 
 .calendar-day-number {
   font-weight: 700;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .calendar-day-mood {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .calendar-day-dots {
@@ -2032,7 +2042,7 @@ const styles = `
 }
 
 .calendar-day-dot {
-  font-size: 10px;
+  font-size: 11px;
   padding: 3px 5px;
   border-radius: 999px;
   color: #fff;
@@ -2083,7 +2093,7 @@ const styles = `
 .calendar-footer {
   grid-column: 1 / -1;
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 14px;
   color: #7e6fd6;
 }
 
@@ -2104,7 +2114,7 @@ const styles = `
   display: grid;
   grid-template-columns: 80px minmax(0, 1fr);
   gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
   padding: 4px 0;
   border-bottom: 1px dashed #e0d4ff;
 }
@@ -2125,8 +2135,8 @@ const styles = `
 /* 친구 카드 */
 
 .friend-card {
-  margin-top: 24px; /* 선택 날짜 카드와 충분한 간격 */
-  padding: 16px 20px 20px; /* 테두리와 헤더/리스트 사이 여백 */
+  margin-top: 24px;
+  padding: 16px 20px 20px;
   border-radius: 26px;
   border: 4px solid rgba(162, 125, 255, 0.95);
   background: #ffffff;
@@ -2157,7 +2167,7 @@ const styles = `
   border-radius: 999px;
   border: none;
   padding: 8px 14px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   background: #f9fafb;
   color: #7c3aed;
@@ -2172,8 +2182,8 @@ const styles = `
 
 .friends-list {
   list-style: none;
-  margin: 16px 0 0;          /* 헤더와 리스트 사이 간격 */
-  padding: 4px 4px 0 4px;    /* 내부 여백 (친구 카드와 여유 공백) */
+  margin: 16px 0 0;
+  padding: 4px 4px 0 4px;
   max-height: 320px;
   overflow-y: auto;
 }
@@ -2213,106 +2223,117 @@ const styles = `
   align-items: center;
   justify-content: center;
   color: #fff;
+  font-weight: 700;
   font-size: 15px;
-  font-weight: 800;
-  overflow: hidden;
-  box-shadow: 0 0 0 2px white;
+  box-shadow: 0 0 10px rgba(185, 129, 255, 0.8);
 }
 
-.friend-avatar-small img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+/* 온라인/오프라인 점 + 이름 · 역할 */
+
+.friend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.friend-dot-on {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.9);
+}
+
+.friend-dot-off {
+  background: #9ca3af;
+  opacity: 0.8;
 }
 
 .friend-name-wrap {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 .friend-name {
+  font-size: 15px;
   font-weight: 800;
-  font-size: 14px;
+  color: #1f1333;
 }
 
 .friend-role-pill {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: #fef3c7;
-  color: #92400e;
+  background: rgba(255, 255, 255, 0.9);
+  color: #7c3aed;
+  border: 1px solid rgba(167, 139, 250, 0.9);
 }
-
-.friend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-}
-
-.friend-dot-on { background: #22c55e; }
-.friend-dot-off { background: #c5c5c5; }
 
 .friend-meta-row {
   margin-top: 8px;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  padding-left: 32px;
+  gap: 8px;
   font-size: 12px;
   color: #7a69c4;
 }
 
-/* 모달 */
+/* 친구 프로필 모달 */
 
 .friend-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.4);
+  background: rgba(15, 23, 42, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 99;
+  z-index: 40;
 }
 
 .friend-modal {
-  width: 420px;
-  background: white;
-  border-radius: 28px;
-  padding: 24px 20px;
-  box-shadow: 0 24px 50px rgba(0,0,0,0.35);
+  width: 360px;
+  max-width: 90vw;
+  border-radius: 26px;
+  background: #ffffff;
+  box-shadow:
+    0 24px 60px rgba(15, 23, 42, 0.45),
+    0 0 0 1px rgba(226, 232, 240, 0.9);
+  padding: 18px 18px 16px;
   position: relative;
 }
 
 .friend-modal-close {
   position: absolute;
-  top: 12px;
+  top: 10px;
   right: 12px;
-  background: #eee;
-  border: none;
+  width: 26px;
+  height: 26px;
   border-radius: 999px;
-  width: 28px;
-  height: 28px;
+  border: none;
+  background: #f3f4ff;
+  color: #4b2d7a;
   cursor: pointer;
+  font-size: 14px;
 }
 
 .friend-modal-header {
   display: flex;
-  gap: 16px;
-  margin-bottom: 14px;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
 }
 
 .friend-modal-avatar {
-  width: 70px;
-  height: 70px;
+  width: 54px;
+  height: 54px;
   border-radius: 999px;
   background: radial-gradient(circle at top left, #ff9ed5 0, #a855f7 60%);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  color: #ffffff;
   font-weight: 800;
-  font-size: 28px;
+  font-size: 22px;
   overflow: hidden;
 }
 
@@ -2323,26 +2344,29 @@ const styles = `
 }
 
 .friend-modal-title {
-  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .friend-modal-name-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .friend-modal-name {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 900;
+  color: #1e1034;
 }
 
 .friend-modal-role {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: #fef3c7;
-  color: #92400e;
+  background: #f3e8ff;
+  color: #7c3aed;
 }
 
 .friend-modal-mood {
@@ -2350,34 +2374,35 @@ const styles = `
 }
 
 .friend-modal-sub {
-  margin-top: 4px;
   font-size: 13px;
-  color: #6b7280;
-}
-
-.friend-modal-label {
-  font-size: 12px;
-  color: #8c7ad9;
-  margin-bottom: 6px;
+  color: #7a69c4;
 }
 
 .friend-modal-body {
+  margin-top: 8px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
 .friend-modal-section {
-  padding: 12px 14px;
-  border-radius: 16px;
+  padding: 8px 10px;
+  border-radius: 14px;
   background: #faf7ff;
-  border: 1px solid #e0d4ff;
+  border: 1px solid rgba(212, 200, 255, 0.9);
+}
+
+.friend-modal-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7c6acd;
+  margin-bottom: 4px;
 }
 
 .friend-modal-main-goal {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
-  color: #4c1d95;
+  color: #f153aa;
 }
 
 .friend-modal-goals {
@@ -2395,86 +2420,123 @@ const styles = `
   justify-content: space-between;
 }
 
-.cheer-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 .friend-modal-cheer {
+  margin-top: 4px;
   font-size: 14px;
   font-weight: 700;
-  color: #db2777;
+  color: #7c3aed;
 }
 
 .friend-modal-actions {
-  margin-top: 4px;
+  margin-top: 6px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
 .friend-modal-btn {
   flex: 1;
+  min-width: 90px;
   border-radius: 999px;
-  padding: 8px 10px;
-  border: 1px solid #d7c7ff;
-  background: #f7f2ff;
+  border: 1px solid #e0d4ff;
+  background: #f9f5ff;
+  color: #7c3aed;
   font-size: 13px;
+  padding: 7px 10px;
   cursor: pointer;
 }
 
 .friend-modal-btn.primary {
-  background: linear-gradient(135deg, #ff8dc8, #a855f7);
-  color: white;
+  background: linear-gradient(135deg, #f153aa, #a855f7);
+  color: #ffffff;
   border-color: transparent;
+  box-shadow: 0 10px 20px rgba(148, 60, 180, 0.45);
 }
 
-/* 플로팅 버튼 */
+/* 플로팅 문의하기 버튼 */
 
 .floating-support-btn {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
-  width: 64px;
-  height: 64px;
+  right: 26px;
+  bottom: 26px;
   border-radius: 999px;
   border: none;
-  background: radial-gradient(circle at top left, #ff9ed5 0, #a35dff 70%);
-  box-shadow: 0 20px 40px rgba(0,0,0,0.6);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 600;
+  padding: 10px 18px;
+  background: radial-gradient(circle at top left, #ff9ed5 0, #a855f7 60%);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow:
+    0 14px 30px rgba(124, 58, 237, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.7);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  gap: 2px;
   cursor: pointer;
-  z-index: 50;
+  z-index: 30;
+}
+
+/* 링크 리셋 */
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: none;
 }
 
 /* 반응형 */
 
-@media (max-width: 960px) {
+@media (max-width: 1024px) {
   .home-root {
-    padding: 14px;
+    padding: 16px;
   }
+
   .home-header {
     flex-direction: column;
   }
-  .home-header-right {
-    min-width: 100%;
-  }
+
   .home-quick-nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .home-section {
-    grid-template-columns: 1fr;
-  }
-  .calendar-section {
-    grid-template-columns: 1fr;
-  }
+
   .home-top-summary {
     grid-template-columns: 1fr;
   }
+
+  .calendar-grid {
+    font-size: 11px;
+  }
+
+  .friend-card {
+    margin-top: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .home-inner {
+    max-width: 100%;
+  }
+
+  .home-header {
+    padding: 14px 12px;
+  }
+
+  .home-quick-nav {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .weather-slot {
+    min-width: 88px;
+  }
+
+  .floating-support-btn {
+    right: 16px;
+    bottom: 16px;
+  }
 }
 `;
+
+export {};
