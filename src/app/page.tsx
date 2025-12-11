@@ -1,3 +1,4 @@
+// src/app/page.tsx
 'use client';
 
 import Image from 'next/image';
@@ -11,12 +12,58 @@ export default function Home() {
       style={{
         minHeight: '100vh',
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
-        padding: '40px 16px',
-        background: 'linear-gradient(180deg,#B982FF,#9D60FF)',
+        justifyContent: 'flex-start',
+        padding: '100px 16px 40px',
+        background:
+          'linear-gradient(180deg, #C9A6FF 0%, #B982FF 35%, #9D60FF 80%, #6C3BC8 100%)',
       }}
     >
+      {/* ===== 상단 헤더 ===== */}
+      <header
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          zIndex: 50,
+          padding: '14px 22px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'rgba(0, 0, 0, 0.25)',
+          backdropFilter: 'blur(10px)',
+          borderBottom: '1px solid rgba(255,255,255,0.15)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            color: '#FFD6FF',
+            fontWeight: 800,
+            fontSize: 18,
+            letterSpacing: '-0.5px',
+          }}
+        >
+          UPLOG
+          <span
+            style={{
+              padding: '2px 8px',
+              background: 'rgba(255,255,255,0.15)',
+              borderRadius: 12,
+              fontSize: 11,
+              color: '#FFD6FF',
+            }}
+          >
+            대표님 전용
+          </span>
+        </div>
+      </header>
+
+      {/* ===== 메인 컨테이너 ===== */}
       <div
         style={{
           width: '100%',
@@ -25,79 +72,141 @@ export default function Home() {
           flexDirection: 'column',
           alignItems: 'center',
           gap: 32,
+          marginTop: 40,
         }}
       >
-        {/* ✅ 대표님이 준 메인 이미지 (카드처럼) */}
+        {/* 업쯔 캐릭터 영역 */}
         <div
           style={{
             width: '100%',
             borderRadius: 32,
-            overflow: 'hidden',
-            boxShadow: '0 24px 60px rgba(120,60,180,0.55)',
+            padding: '32px 16px 40px',
+            background:
+              'linear-gradient(180deg, rgba(255,255,255,0.28), rgba(255,255,255,0.08))',
+            boxShadow: '0 30px 70px rgba(120,60,180,0.45)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 24,
           }}
         >
-          <Image
-            src="/main.png" // 대표님이 준 이미지 파일명 (public/main.png)
-            alt="UPLOG - 오늘도 나를 UP시키다"
-            width={900}
-            height={600}
-            style={{ width: '100%', height: 'auto', display: 'block' }}
-            priority
-          />
+          {/* 🟣 영상이 들어가는 둥근 영역 */}
+          <div
+            style={{
+              width: 260,
+              height: 260,
+              borderRadius: 999,
+              overflow: 'hidden',
+              background: 'rgba(255,255,255,0.9)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.18)',
+              animation: 'float 3s ease-in-out infinite',
+            }}
+          >
+            {/* 🔥 기존 Image → mp4 영상으로 변경 (경로 그대로 적용됨) */}
+            <video
+              src="/assets/videos/upzzu-mascot.mp4"
+              autoPlay
+              loop
+              muted
+              playsInline
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+              }}
+            />
+          </div>
+
+          {/* 텍스트 영역 */}
+          <div
+            style={{
+              textAlign: 'center',
+              color: '#F9FAFB',
+            }}
+          >
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 800,
+                letterSpacing: '-0.5px',
+                marginBottom: 8,
+              }}
+            >
+              오늘도 나를 UP시키다
+            </div>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 500,
+                opacity: 0.95,
+              }}
+            >
+              “관리가 성장률의 차이”
+            </div>
+          </div>
         </div>
 
-        {/* ✅ 로고 밑, 중앙에 떠 있는 버튼 두 개 */}
+        {/* 로그인 / 회원가입 버튼 */}
         <div
           style={{
             width: '100%',
-            maxWidth: 420,
+            maxWidth: 440,
             display: 'flex',
             flexDirection: 'row',
             gap: 16,
             justifyContent: 'center',
+            marginTop: 10,
           }}
         >
-          {/* 로그인 버튼 */}
           <button
-            type="button"
             onClick={() => router.push('/login')}
             style={{
               flex: 1,
-              padding: '12px 20px',
+              padding: '14px 20px',
               borderRadius: 999,
               border: 'none',
               background: 'linear-gradient(90deg,#2A1A4F,#000000)',
               color: '#FFFFFF',
-              fontWeight: 700,
-              fontSize: 14,
+              fontWeight: 800,
+              fontSize: 15,
               cursor: 'pointer',
-              boxShadow: '0 10px 24px rgba(0,0,0,0.6)',
+              boxShadow: '0 12px 26px rgba(0,0,0,0.6)',
             }}
           >
             로그인하기
           </button>
 
-          {/* 회원가입 버튼 */}
           <button
-            type="button"
             onClick={() => router.push('/register')}
             style={{
               flex: 1,
-              padding: '12px 20px',
+              padding: '14px 20px',
               borderRadius: 999,
               border: 'none',
               background: 'linear-gradient(90deg,#FF69C8,#FFB4EC)',
               color: '#4B1A6C',
-              fontWeight: 700,
-              fontSize: 14,
+              fontWeight: 800,
+              fontSize: 15,
               cursor: 'pointer',
-              boxShadow: '0 10px 24px rgba(255,105,200,0.6)',
+              boxShadow: '0 12px 26px rgba(255,105,200,0.55)',
             }}
           >
             회원가입
           </button>
         </div>
       </div>
+
+      {/* 둥둥 애니메이션 */}
+      <style>{`
+        @keyframes float {
+          0% { transform: translateY(0px); }
+          50% { transform: translateY(-8px); }
+          100% { transform: translateY(0px); }
+        }
+      `}</style>
     </main>
   );
 }

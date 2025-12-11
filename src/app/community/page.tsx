@@ -1,3 +1,4 @@
+// src/app/community/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -11,6 +12,7 @@ const CATEGORIES = [
   '멘탈 관리',
   '오늘의 기록',
   '자유',
+  '피드백',
 ] as const;
 
 type Category = (typeof CATEGORIES)[number];
@@ -61,10 +63,13 @@ export default function CommunityPage() {
       const matchCategory =
         activeCategory === '전체' || post.category === activeCategory;
 
+      const titleText = (post.title || '').toLowerCase();
+      const contentText = (post.content || '').toLowerCase();
+
       const matchSearch =
         !keyword ||
-        post.title.toLowerCase().includes(keyword) ||
-        post.content.toLowerCase().includes(keyword);
+        titleText.includes(keyword) ||
+        contentText.includes(keyword);
 
       return matchCategory && matchSearch;
     });
@@ -72,48 +77,41 @@ export default function CommunityPage() {
 
   return (
     <div
-      className="min-h-screen py-10 px-4"
       style={{
-        backgroundColor: '#fafaff',
+        minHeight: '100vh',
+        padding: '32px 16px 40px',
+        boxSizing: 'border-box',
+        background:
+          'linear-gradient(180deg,#ffe4f3 0%,#f1e4ff 45%,#e0f2ff 100%)',
         color: '#111827',
-        position: 'relative',
-        zIndex: 0,
       }}
     >
-      {/* 뒤 배경 덮는 레이어 */}
       <div
         style={{
-          position: 'fixed',
-          inset: 0,
-          backgroundColor: '#fafaff',
-          zIndex: -1,
-        }}
-      />
-
-      {/* 섹션 간 간격 넉넉하게 */}
-      <div
-        className="max-w-4xl mx-auto"
-        style={{
+          maxWidth: '980px',
+          margin: '0 auto',
           display: 'flex',
           flexDirection: 'column',
-          rowGap: 36,
+          rowGap: 28,
         }}
       >
         {/* 상단 타이틀 카드 */}
         <section
-          className="rounded-3xl px-6 py-7 shadow-lg border"
           style={{
+            borderRadius: 28,
+            padding: '22px 26px 20px',
             background:
-              'linear-gradient(90deg, #fef6ff, #eaf3ff, #ffeefe)',
-            borderColor: 'rgba(180, 180, 255, 0.6)',
+              'linear-gradient(120deg,#ff9ecf 0%,#a855f7 45%,#6366f1 100%)',
+            boxShadow: '0 22px 40px rgba(0,0,0,0.32)',
+            color: '#fdfcff',
           }}
         >
           <p
             style={{
-              fontSize: '11px',
-              letterSpacing: '0.4em',
+              fontSize: 12,
+              letterSpacing: '0.32em',
               textTransform: 'uppercase',
-              color: '#ec4899',
+              opacity: 0.95,
               fontWeight: 600,
             }}
           >
@@ -121,47 +119,54 @@ export default function CommunityPage() {
           </p>
           <h1
             style={{
-              marginTop: '8px',
-              fontSize: '26px',
-              fontWeight: 800,
-              color: '#111827',
+              marginTop: 10,
+              fontSize: 30,
+              fontWeight: 900,
+              letterSpacing: 1,
             }}
           >
-            영업인 커뮤니티
+            성장하는 U P 커뮤니티
           </h1>
           <p
             style={{
-              marginTop: '12px',
-              fontSize: '14px',
-              color: '#4b5563',
-              lineHeight: 1.6,
+              marginTop: 10,
+              fontSize: 15,
+              lineHeight: 1.7,
+              maxWidth: 520,
+              opacity: 0.96,
             }}
           >
-            영업 노하우 · 거절 경험 · 멘탈 관리까지.
+            영업 노하우, 거절 경험, 멘탈 관리까지.
             <br />
-            대표님의 하루를 함께 나누는 공간입니다.
+            대표님의 하루를 함께 나누고 서로 성장하는 공간입니다.
           </p>
         </section>
 
         {/* 검색 + 새 글쓰기 */}
         <section
-          className="rounded-3xl px-6 py-5 shadow border"
           style={{
+            borderRadius: 24,
+            padding: '18px 22px',
             backgroundColor: '#ffffff',
-            borderColor: '#e9d5ff',
+            border: '1px solid #e9d5ff',
+            boxShadow: '0 14px 28px rgba(148,163,184,0.25)',
           }}
         >
           <div
-            className="flex flex-col md:flex-row md:items-center"
-            style={{ rowGap: 12, columnGap: 16 }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              rowGap: 12,
+            }}
           >
-            <div className="flex-1">
+            <div style={{ flex: 1 }}>
               <label
                 style={{
                   display: 'block',
-                  fontSize: '12px',
+                  fontSize: 13,
                   color: '#4b5563',
-                  marginBottom: '4px',
+                  marginBottom: 4,
+                  fontWeight: 500,
                 }}
               >
                 제목·내용 검색
@@ -172,48 +177,53 @@ export default function CommunityPage() {
                 placeholder="예) 거절 후 회복, 계약 성사 스토리"
                 style={{
                   width: '100%',
-                  height: '44px',
-                  borderRadius: '999px',
+                  height: 46,
+                  borderRadius: 999,
                   border: '1px solid #ddd6fe',
-                  backgroundColor: '#ffffff',
-                  padding: '0 16px',
-                  fontSize: '14px',
+                  backgroundColor: '#f9fafb',
+                  padding: '0 18px',
+                  fontSize: 14,
                   color: '#111827',
                   outline: 'none',
+                  boxSizing: 'border-box',
                 }}
               />
             </div>
 
-            <button
-              type="button"
-              onClick={() => router.push('/community/new')}
-              style={{
-                height: '44px',
-                padding: '0 24px',
-                borderRadius: '999px',
-                border: 'none',
-                background:
-                  'linear-gradient(90deg, #fb7185, #e879f9, #a855f7)',
-                color: '#ffffff',
-                fontSize: '14px',
-                fontWeight: 600,
-                boxShadow: '0 0 20px rgba(244,114,182,0.45)',
-                cursor: 'pointer',
-                marginTop: 4,
-              }}
-            >
-              + 새 글쓰기
-            </button>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => router.push('/community/new')}
+                style={{
+                  height: 46,
+                  padding: '0 28px',
+                  borderRadius: 999,
+                  border: 'none',
+                  background:
+                    'linear-gradient(90deg,#fb7185,#e879f9,#a855f7)',
+                  color: '#ffffff',
+                  fontSize: 14,
+                  fontWeight: 700,
+                  boxShadow: '0 0 22px rgba(244,114,182,0.5)',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  marginTop: 4,
+                }}
+              >
+                + 새 글쓰기
+              </button>
+            </div>
           </div>
         </section>
 
-        {/* 커뮤니티 가이드 – 더 눈에 띄게 */}
+        {/* 커뮤니티 가이드 */}
         <section
-          className="rounded-3xl px-6 py-6 shadow border"
           style={{
+            borderRadius: 24,
+            padding: '18px 22px 20px',
             background:
               'linear-gradient(135deg,#fdf2ff,#ffe4f4,#e0f2fe)',
-            borderColor: '#f9a8d4',
+            border: '1px solid #f9a8d4',
             boxShadow: '0 18px 40px rgba(236,72,153,0.18)',
           }}
         >
@@ -221,14 +231,14 @@ export default function CommunityPage() {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 8,
-              marginBottom: 6,
+              gap: 10,
+              marginBottom: 8,
             }}
           >
             <span
               style={{
-                width: 8,
-                height: 32,
+                width: 9,
+                height: 34,
                 borderRadius: 999,
                 background:
                   'linear-gradient(180deg,#ec4899,#a855f7)',
@@ -237,8 +247,8 @@ export default function CommunityPage() {
             <div>
               <h2
                 style={{
-                  fontSize: '18px',
-                  fontWeight: 700,
+                  fontSize: 19,
+                  fontWeight: 800,
                   color: '#111827',
                 }}
               >
@@ -247,7 +257,7 @@ export default function CommunityPage() {
               <p
                 style={{
                   marginTop: 2,
-                  fontSize: '12px',
+                  fontSize: 13,
                   color: '#4b5563',
                 }}
               >
@@ -259,31 +269,37 @@ export default function CommunityPage() {
           <ul
             style={{
               marginTop: 10,
-              fontSize: '14px',
+              fontSize: 14,
               color: '#374151',
-              lineHeight: 1.7,
-              paddingLeft: 18,
+              lineHeight: 1.8,
+              paddingLeft: 20,
             }}
           >
             <li>개인정보(연락처/고객정보)는 절대 올리지 않습니다.</li>
-            <li>비방/욕설/허위 사실 업로드 시 글 삭제 및 퇴출될 수 있습니다.</li>
-            <li>실질적 도움이 되는 영업 경험/노하우/멘탈 관리 공유를 권장합니다.</li>
+            <li>비방·욕설·허위 사실 업로드 시 글 삭제 및 퇴출될 수 있습니다.</li>
+            <li>실질적 도움이 되는 영업 경험·노하우·멘탈 관리 공유를 권장합니다.</li>
             <li>캡처 시 회사·고객 정보가 노출되지 않도록 꼭 확인해주세요.</li>
           </ul>
         </section>
 
         {/* 카테고리 + 게시글 목록 */}
         <section
-          className="rounded-3xl px-6 py-6 shadow border"
           style={{
+            borderRadius: 24,
+            padding: '20px 22px 22px',
             backgroundColor: '#ffffff',
-            borderColor: '#e9d5ff',
+            border: '1px solid #e9d5ff',
+            boxShadow: '0 14px 30px rgba(148,163,184,0.25)',
           }}
         >
-          {/* 카테고리 탭 – 가이드와 간격을 위해 섹션 전체 위로 32px 띄워져 있음 */}
+          {/* 카테고리 탭 */}
           <div
-            className="flex flex-wrap gap-2"
-            style={{ marginBottom: 24 }}
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 10,
+              marginBottom: 22,
+            }}
           >
             {CATEGORIES.map((cat) => {
               const active = cat === activeCategory;
@@ -293,18 +309,19 @@ export default function CommunityPage() {
                   type="button"
                   onClick={() => setActiveCategory(cat)}
                   style={{
-                    padding: '6px 12px',
-                    borderRadius: '999px',
-                    fontSize: '13px',
+                    padding: '7px 14px',
+                    borderRadius: 999,
+                    fontSize: 13,
                     border: active ? 'none' : '1px solid #e9d5ff',
                     background: active
                       ? 'linear-gradient(90deg,#fb7185,#e879f9,#a855f7)'
                       : '#f9fafb',
                     color: active ? '#ffffff' : '#374151',
                     boxShadow: active
-                      ? '0 0 12px rgba(244,114,182,0.5)'
+                      ? '0 0 14px rgba(244,114,182,0.55)'
                       : 'none',
                     cursor: 'pointer',
+                    fontWeight: active ? 700 : 500,
                   }}
                 >
                   {cat}
@@ -318,8 +335,8 @@ export default function CommunityPage() {
             <div
               style={{
                 textAlign: 'center',
-                padding: '40px 0',
-                fontSize: '14px',
+                padding: '44px 0',
+                fontSize: 14,
                 color: '#6b7280',
               }}
             >
@@ -329,28 +346,25 @@ export default function CommunityPage() {
             <div
               style={{
                 textAlign: 'center',
-                padding: '40px 0',
-                fontSize: '14px',
+                padding: '44px 0',
+                fontSize: 14,
                 color: '#6b7280',
               }}
             >
               아직 등록된 글이 없습니다. 대표님의 첫 글을 남겨보세요 🙂
             </div>
           ) : (
-            <div
-              className="space-y-7"
-              style={{ marginTop: 4 }}
-            >
+            <div style={{ display: 'flex', flexDirection: 'column', rowGap: 18 }}>
               {filteredPosts.map((post) => (
                 <article
                   key={post.id}
                   onClick={() => router.push(`/community/${post.id}`)}
                   style={{
                     backgroundColor: '#f9fafb',
-                    borderRadius: '18px',
+                    borderRadius: 18,
                     border: '1px solid #e9d5ff',
-                    padding: '20px 22px',
-                    boxShadow: '0 8px 18px rgba(148,163,184,0.35)',
+                    padding: '18px 20px 16px',
+                    boxShadow: '0 10px 22px rgba(148,163,184,0.35)',
                     cursor: 'pointer',
                   }}
                 >
@@ -358,18 +372,19 @@ export default function CommunityPage() {
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',
-                      fontSize: '12px',
+                      alignItems: 'center',
+                      fontSize: 12,
                       color: '#6b7280',
-                      marginBottom: '8px',
+                      marginBottom: 8,
                     }}
                   >
                     <span
                       style={{
-                        padding: '4px 10px',
-                        borderRadius: '999px',
+                        padding: '4px 11px',
+                        borderRadius: 999,
                         backgroundColor: '#ffe4f4',
                         color: '#be185d',
-                        fontWeight: 500,
+                        fontWeight: 600,
                       }}
                     >
                       {post.category}
@@ -385,8 +400,8 @@ export default function CommunityPage() {
 
                   <h3
                     style={{
-                      fontSize: '17px',
-                      fontWeight: 600,
+                      fontSize: 17,
+                      fontWeight: 700,
                       color: '#111827',
                     }}
                   >
@@ -395,10 +410,10 @@ export default function CommunityPage() {
 
                   <p
                     style={{
-                      marginTop: '8px',
-                      fontSize: '14px',
+                      marginTop: 8,
+                      fontSize: 14,
                       color: '#374151',
-                      lineHeight: 1.6,
+                      lineHeight: 1.7,
                     }}
                   >
                     {post.content}
@@ -406,24 +421,25 @@ export default function CommunityPage() {
 
                   <div
                     style={{
-                      marginTop: '14px',
+                      marginTop: 14,
                       display: 'flex',
                       justifyContent: 'space-between',
-                      fontSize: '12px',
+                      alignItems: 'center',
+                      fontSize: 12,
                       color: '#6b7280',
                     }}
                   >
                     <span>익명 영업인 · 공개</span>
                     <div
-                      style={{ display: 'flex', gap: '8px' }}
+                      style={{ display: 'flex', gap: 8 }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <button
                         type="button"
                         onClick={() => router.push(`/community/${post.id}`)}
                         style={{
-                          padding: '4px 12px',
-                          borderRadius: '999px',
+                          padding: '5px 13px',
+                          borderRadius: 999,
                           border: '1px solid #e5e7eb',
                           backgroundColor: '#ffffff',
                           color: '#374151',
@@ -438,8 +454,8 @@ export default function CommunityPage() {
                           router.push(`/community/share/${post.id}`)
                         }
                         style={{
-                          padding: '4px 12px',
-                          borderRadius: '999px',
+                          padding: '5px 13px',
+                          borderRadius: 999,
                           border: '1px solid #e5e7eb',
                           backgroundColor: '#ffffff',
                           color: '#374151',

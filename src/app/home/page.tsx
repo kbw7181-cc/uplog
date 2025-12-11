@@ -6,11 +6,18 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabaseClient';
 
+// 마스코트 감성 슬라이드 문구
+const EMO_QUOTES: string[] = [
+  '반가워요, 저는 업쮸예요. 오늘도 대표님의 하루를 같이 기록할게요 ✨',
+  '관리의 차이가 성장률의 차이입니다.',
+  '중요한 건 빈 날을 줄여가는 것이에요.',
+  '거절은 숫자일 뿐, 대표님의 실력은 계속 쌓이고 있어요.',
+  '오늘 1건의 계약도 내일 10건의 씨앗이 됩니다.',
+];
+
 type GrowthDay = {
-  date: string;         // YYYY-MM-DD
-  rate: number;         // 0~1 (기록 여부)
-  prospectCount: number; // (지금은 그래프에서 안 쓰지만 타입은 유지)
-  contractCount: number; // 계약 고객 수
+  date: string; // YYYY-MM-DD
+  contractCount: number; // 하루 계약 건수
 };
 
 type Friend = {
@@ -28,7 +35,7 @@ type Friend = {
   mainGoal: string;
   cheerCount: number;
   avatarUrl?: string | null;
-  mood?: string | null; // 기분 코드(tired/smile...) 또는 이모지
+  mood?: string | null;
 };
 
 type WeatherSlot = {
@@ -42,6 +49,7 @@ type ScheduleRow = {
   title: string;
   schedule_date: string; // YYYY-MM-DD
   schedule_time?: string | null;
+  category?: string | null; // ▼ 카테고리 추가
 };
 
 type DaySummary = {
@@ -67,75 +75,6 @@ type DailyTask = {
   done: boolean;
   task_date: string;
 };
-
-const EMO_SLIDES = [
-  {
-    title1: '나를 U P 시키고 싶다면,',
-    title2: '“관리가 성장률의 차이”라는 말 하나만 믿어보세요.',
-    body: [
-      '흩어져 있던 몇 년의 세일즈 노하우를,',
-      '가망고객부터 계약까지 한 곳에서 관리하면,',
-      '노력의 기록이 곧 성장률의 그래프가 됩니다.',
-      'UPLOG와 함께라면, “언젠가”가 아니라 “곧” 세일즈킹이라고 불릴 수 있어요.',
-    ],
-    oneLine:
-      '관리의 차이가 성장률의 차이입니다. 함께 기록하면, 함께 세일즈킹이 됩니다.',
-  },
-  {
-    title1: '지치지 않도록,',
-    title2: '거절 사이의 숨을 챙겨 줄게요.',
-    body: [
-      '나의 목표, 감정, 피드백을 한 곳에서 관리하면서',
-      '어제보다 단 한 통 더, 올라가는 나를 기록해요.',
-    ],
-    oneLine: '거절은 숫자일 뿐, 마음은 숫자가 아닙니다.',
-  },
-  {
-    title1: '거절이 쌓일수록,',
-    title2: '계약에 더 가까워지고 있어요.',
-    body: [
-      '열 번의 거절 뒤에 한 번의 “좋아요”가 기다립니다.',
-      '숫자는 많아도, 마음은 단단해집니다.',
-    ],
-    oneLine: '거절은 내 실력을 단단하게 만드는 연습문제입니다.',
-  },
-  {
-    title1: '오늘의 한 통이,',
-    title2: '다음 달의 보너스를 만듭니다.',
-    body: [
-      '조금 부족해도 괜찮아요. 대신 멈지만 않으면 돼요.',
-      '한 통, 한 걸음씩 쌓이는 게 결국 성과가 됩니다.',
-    ],
-    oneLine: '완벽함보다, 계속하는 사람이 이깁니다.',
-  },
-  {
-    title1: '마음이 흔들릴수록,',
-    title2: '기록이 당신을 잡아 줄 거예요.',
-    body: [
-      '오늘의 기분, 오늘의 목표, 오늘의 잘한 점을 적어보세요.',
-      '기록은 언젠가 대표님의 자서전 첫 페이지가 됩니다.',
-    ],
-    oneLine: '흔들려도, 포기하지 않는 게 진짜 멘탈입니다.',
-  },
-  {
-    title1: '고객이 나를 잊기 전에,',
-    title2: '내가 먼저 안부를 전해보세요.',
-    body: [
-      '짧은 한 줄 문자, 따뜻한 안부 한마디가',
-      '대표님만의 영업 색깔을 만들어 줍니다.',
-    ],
-    oneLine: '작은 관심이, 오래 가는 관계를 만듭니다.',
-  },
-  {
-    title1: '오늘이 가기 전에,',
-    title2: '나를 한 번 더 칭찬해 주세요.',
-    body: [
-      '잘 안 된 날에도 버틴 나를,',
-      '전화를 걸었다는 사실만으로도 충분히 잘했어요.',
-    ],
-    oneLine: '중요한 건 빈 날을 줄여가는 것입니다.',
-  },
-];
 
 function formatDate(date: Date): string {
   const y = date.getFullYear();
@@ -165,37 +104,66 @@ function weatherEmoji(desc: string) {
   return '🌤';
 }
 
-function getCareerLabel(code: string | null | undefined): string | null {
-  if (!code) return null;
-  switch (code) {
-    case '0-1':
-      return '0~1년';
-    case '2':
-      return '2년';
-    case '3':
-      return '3년';
-    case '4-5':
-      return '4~5년';
-    case '6-9':
-      return '6~9년';
-    case '10+':
-      return '10년 이상';
-    default:
-      return code;
-  }
-}
+// ========================
+// 카테고리 메타 정보 (달력 + 리스트 공용)
+// ========================
+type ScheduleCategoryKind = 'work' | 'attendance' | 'etc';
 
-function getScheduleDotClassAndLabel(title: string): {
-  className: string;
-  label: string;
-} {
-  const t = title || '';
-  if (t.includes('상담')) return { className: 'calendar-dot-consult', label: '상담' };
-  if (t.includes('방문')) return { className: 'calendar-dot-visit', label: '방문' };
-  if (t.includes('해피콜')) return { className: 'calendar-dot-happy', label: '해피콜' };
-  if (t.includes('배송') || t.includes('택배'))
-    return { className: 'calendar-dot-delivery', label: '배송' };
-  return { className: 'calendar-dot-etc', label: '기타' };
+type ScheduleCategoryMeta = {
+  label: string;          // 화면에 보이는 라벨 (상담/방문/교육/행사/근태/기타 등)
+  badgeClass: string;     // 리스트(아래 스케줄)에서 뱃지 색상
+  kind: ScheduleCategoryKind; // 달력 요약용 그룹 (업무내용/근태/기타)
+};
+
+function getScheduleCategoryMeta(
+  category: string | null | undefined
+): ScheduleCategoryMeta {
+  const c = (category ?? '').toLowerCase();
+
+  // 업무 계열
+  if (c === 'consult' || c === '상담') {
+    return { label: '상담', badgeClass: 'schedule-cat-work', kind: 'work' };
+  }
+  if (c === 'visit' || c === '방문') {
+    return { label: '방문', badgeClass: 'schedule-cat-work', kind: 'work' };
+  }
+  if (c === 'happy' || c === '해피콜') {
+    return { label: '해피콜', badgeClass: 'schedule-cat-work', kind: 'work' };
+  }
+  if (c === 'gift' || c === 'present' || c === '선물' || c === '사은품') {
+    return { label: '사은품', badgeClass: 'schedule-cat-work', kind: 'work' };
+  }
+  if (c === 'delivery' || c === '택배' || c === '배송') {
+    return { label: '배송', badgeClass: 'schedule-cat-work', kind: 'work' };
+  }
+  if (c === 'meeting' || c === '회의') {
+    return { label: '회의', badgeClass: 'schedule-cat-work', kind: 'work' };
+  }
+  if (c === 'edu' || c === 'education' || c === '교육') {
+    return { label: '교육', badgeClass: 'schedule-cat-edu', kind: 'work' };
+  }
+  if (c === 'event' || c === '행사' || c === '행사/이벤트') {
+    return {
+      label: '행사/이벤트',
+      badgeClass: 'schedule-cat-event',
+      kind: 'work',
+    };
+  }
+
+  // 근태 계열
+  if (
+    c === 'absent' ||
+    c === 'late' ||
+    c === 'early' ||
+    c === 'out' ||
+    c === 'close' ||
+    c === '근태'
+  ) {
+    return { label: '근태', badgeClass: 'schedule-cat-attend', kind: 'attendance' };
+  }
+
+  // 그 외
+  return { label: '기타', badgeClass: 'schedule-cat-etc', kind: 'etc' };
 }
 
 function getMoodEmoji(code: string | null | undefined): string {
@@ -216,6 +184,26 @@ function getMoodEmoji(code: string | null | undefined): string {
       return '😎';
     default:
       return '🙂';
+  }
+}
+
+function getCareerLabel(code: string | null | undefined): string | null {
+  if (!code) return null;
+  switch (code) {
+    case '0-1':
+      return '0~1년';
+    case '2':
+      return '2년';
+    case '3':
+      return '3년';
+    case '4-5':
+      return '4~5년';
+    case '6-9':
+      return '6~9년';
+    case '10+':
+      return '10년 이상';
+    default:
+      return code;
   }
 }
 
@@ -259,11 +247,19 @@ export default function HomePage() {
 
   const todayStr = useMemo(() => formatDate(new Date()), []);
 
-  // 감성 배너: 기본은 0번(대표님 버전)으로 고정
-  const [quoteIndex, setQuoteIndex] = useState<number>(0);
-
-  // 친구 프로필 모달
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+
+  // 마스코트 감성 슬라이드 인덱스
+  const [emotionIndex, setEmotionIndex] = useState(0);
+
+  useEffect(() => {
+    if (EMO_QUOTES.length === 0) return;
+    const timer = setInterval(
+      () => setEmotionIndex((prev) => (prev + 1) % EMO_QUOTES.length),
+      5000
+    );
+    return () => clearInterval(timer);
+  }, []);
 
   const friends: Friend[] = [
     {
@@ -318,8 +314,6 @@ export default function HomePage() {
       mood: 'down',
     },
   ];
-
-  const currentSlide = EMO_SLIDES[quoteIndex];
 
   const newScheduleCountToday = useMemo(
     () => schedules.filter((s) => s.schedule_date === todayStr).length,
@@ -410,16 +404,13 @@ export default function HomePage() {
       `${monthStart.getFullYear()}년 ${monthStart.getMonth() + 1}월`
     );
 
-    // 성장/기분/가망/계약 집계용 맵
-    const loggedSet = new Set<string>();
     const moodMap: Record<string, string> = {};
-    const prospectByDate: Record<string, number> = {};
     const contractByDate: Record<string, number> = {};
 
-    // schedules
+    // ▼ category 컬럼 같이 조회
     const { data: scheduleRows, error: scheduleError } = await supabase
       .from('schedules')
-      .select('id, title, schedule_date, schedule_time')
+      .select('id, title, schedule_date, schedule_time, category')
       .eq('user_id', uid)
       .gte('schedule_date', from)
       .lte('schedule_date', to)
@@ -443,7 +434,6 @@ export default function HomePage() {
     );
     setDaySummaries(summaries);
 
-    // up_logs: 오늘/주/월 목표 + 기분 + 기록 있는 날
     const { data: upRows, error: upError } = await supabase
       .from('up_logs')
       .select('id, day_goal, week_goal, month_goal, log_date, mood')
@@ -467,7 +457,6 @@ export default function HomePage() {
           typeof raw === 'string'
             ? raw.slice(0, 10)
             : formatDate(new Date(raw));
-        loggedSet.add(str);
         if (row.mood) {
           moodMap[str] = row.mood as string;
         }
@@ -477,7 +466,6 @@ export default function HomePage() {
       if (upError) console.error('up_logs error', upError);
     }
 
-    // customers: 계약(계약1/2/3 등)만 날짜별 집계
     try {
       const { data: customerRows, error: customerError } = await supabase
         .from('customers')
@@ -499,12 +487,8 @@ export default function HomePage() {
 
           if (!status) return;
 
-          // "계약1, 계약2, 계약3..." 만 카운트
           if (status.includes('계약')) {
             contractByDate[dateStr] = (contractByDate[dateStr] ?? 0) + 1;
-          } else if (status.includes('가망')) {
-            // 가망은 지금 그래프엔 안 쓰지만, 타입 유지 위해 집계만
-            prospectByDate[dateStr] = (prospectByDate[dateStr] ?? 0) + 1;
           }
         });
       } else if (customerError) {
@@ -514,7 +498,6 @@ export default function HomePage() {
       console.error('customers fatal error', err);
     }
 
-    // 성장 그래프 데이터 생성 (기록 + 계약)
     const daysInThisMonth = monthEnd.getDate();
     const growth: GrowthDay[] = [];
     for (let d = 1; d <= daysInThisMonth; d++) {
@@ -526,15 +509,12 @@ export default function HomePage() {
       const dateStr = formatDate(cur);
       growth.push({
         date: dateStr,
-        rate: loggedSet.has(dateStr) ? 1 : 0,
-        prospectCount: prospectByDate[dateStr] || 0,
         contractCount: contractByDate[dateStr] || 0,
       });
     }
     setGrowthDays(growth);
     setMoodByDate(moodMap);
 
-    // rebuttals
     const { data: rebutRows, error: rebutError } = await supabase
       .from('rebuttals')
       .select('id, category, content')
@@ -549,7 +529,6 @@ export default function HomePage() {
       if (rebutError) console.error('rebuttals error', rebutError);
     }
 
-    // 오늘 할 일
     const today = formatDate(new Date());
     const { data: taskRows, error: taskError } = await supabase
       .from('daily_tasks')
@@ -572,7 +551,7 @@ export default function HomePage() {
       if (taskError) console.error('daily_tasks error', taskError);
     }
 
-    // 날씨 (mock)
+    // 날씨: 목업
     const now = new Date();
     const mockWeather: WeatherSlot[] = [];
     for (let i = 0; i < 6; i++) {
@@ -627,10 +606,15 @@ export default function HomePage() {
     return days;
   }, [currentMonth]);
 
-  const selectedDateSchedules = useMemo(
-    () => schedules.filter((s) => s.schedule_date === selectedDate),
-    [schedules, selectedDate]
-  );
+  const selectedDateSchedules = useMemo(() => {
+    const list = schedules.filter((s) => s.schedule_date === selectedDate);
+    // 시간 기준 정렬 (나의 U P 관리와 동일하게 위→아래)
+    return [...list].sort((a, b) => {
+      const ta = a.schedule_time || '';
+      const tb = b.schedule_time || '';
+      return ta.localeCompare(tb);
+    });
+  }, [schedules, selectedDate]);
 
   const selectedDateLabel = useMemo(() => {
     const d = new Date(selectedDate);
@@ -701,131 +685,120 @@ export default function HomePage() {
   return (
     <div className="home-root">
       <div className="home-inner">
-        {/* 헤더 */}
+        {/* ★ 헤더: 위줄 = 로고 + 프로필 나란히 / 아래줄 = 마스코트 + 말풍선 */}
         <header className="home-header">
-          <div className="home-header-left">
-            <div className="home-logo-row">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.png" alt="UPLOG 로고" className="home-logo" />
-              <div className="home-logo-text-wrap">
-                <div className="home-logo-text">UPLOG</div>
-                <div className="home-logo-sub">오늘도 나를 UP시키다</div>
+          {/* 상단: 로고/환영 + 프로필 박스 */}
+          <div className="home-header-top">
+            <div className="home-header-left">
+              <div className="home-logo-row">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/logo.png" alt="UPLOG 로고" className="home-logo" />
+                <div className="home-logo-text-wrap">
+                  <div className="home-logo-text">UPLOG</div>
+                  <div className="home-logo-sub">오늘도 나를 UP시키다</div>
+                </div>
+              </div>
+
+              <div className="home-welcome">
+                <span className="welcome-name">{nickname}</span>
+                <span> 님, 환영합니다~</span>
+              </div>
+
+              <div className="home-date">
+                {new Date().toLocaleDateString('ko-KR', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                  weekday: 'long',
+                })}
               </div>
             </div>
-            <div className="home-welcome">
-              <span className="welcome-name">{nickname}</span>
-              <span> 님, 환영합니다~</span>
-            </div>
-            <div className="home-date">
-              {new Date().toLocaleDateString('ko-KR', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-                weekday: 'long',
-              })}
+
+            {/* 로고 옆 프로필 가로 박스 */}
+            <div className="home-header-profile">
+              <div className="profile-box">
+                <div className="profile-main">
+                  <div className="profile-avatar">
+                    {profileImage ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={profileImage} alt="프로필" />
+                    ) : (
+                      avatarInitial
+                    )}
+                  </div>
+                  <div>
+                    <div className="profile-name">{nickname}</div>
+                    {email && <div className="profile-email">{email}</div>}
+                  </div>
+                </div>
+
+                <div className="profile-meta">
+                  <span className="profile-pill">
+                    {industry ?? '업종 미설정'}
+                  </span>
+                  <span className="profile-pill">{careerCombined}</span>
+                  <span className="profile-pill">{orgCombined}</span>
+                </div>
+
+                <div className="profile-stats">
+                  <span className="profile-stat-pill">
+                    새 채팅 <strong>0건</strong>
+                  </span>
+                  <span className="profile-stat-pill">
+                    새 피드백 <strong>{newRebuttalCount}건</strong>
+                  </span>
+                  <span className="profile-stat-pill">
+                    오늘 등록 스케줄 <strong>{newScheduleCountToday}건</strong>
+                  </span>
+                </div>
+
+                <div className="profile-links">
+                  <Link href="/profile">프로필 설정</Link>
+                  <Link href="/support">문의하기</Link>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="home-header-right">
-            <div className="profile-box">
-              <div className="profile-main">
-                <div className="profile-avatar">
-                  {profileImage ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={profileImage} alt="프로필" />
-                  ) : (
-                    avatarInitial
-                  )}
-                </div>
-                <div>
-                  <div className="profile-name">{nickname}</div>
-                  {email && <div className="profile-email">{email}</div>}
-                </div>
+          {/* 하단: 마스코트 mp4 + 말풍선 (오늘의 UP 한마디) */}
+          <div className="home-header-bottom">
+            <div className="mascot-wrap">
+              <div className="mascot-bubble">
+                <div className="mascot-bubble-tag">오늘의 U P 한마디</div>
+                <p className="mascot-bubble-main">
+                  {EMO_QUOTES[emotionIndex] ?? ''}
+                </p>
               </div>
-
-              <div className="profile-meta">
-                <span className="profile-pill">
-                  {industry ?? '업종 미설정'}
-                </span>
-                <span className="profile-pill">{careerCombined}</span>
-                <span className="profile-pill">{orgCombined}</span>
-              </div>
-
-              <div className="profile-stats">
-                <span className="profile-stat-pill">
-                  새 채팅 <strong>0건</strong>
-                </span>
-                <span className="profile-stat-pill">
-                  새 피드백 <strong>{newRebuttalCount}건</strong>
-                </span>
-                <span className="profile-stat-pill">
-                  오늘 등록 스케줄 <strong>{newScheduleCountToday}건</strong>
-                </span>
-              </div>
-
-              <div className="profile-links">
-                <Link href="/profile">프로필 설정</Link>
-                <Link href="/support">문의하기</Link>
+              <div className="mascot-video-frame">
+                <video
+                  className="mascot-video"
+                  src="/assets/videos/upzzu-mascot.mp4"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                />
               </div>
             </div>
           </div>
         </header>
 
-        {/* 오늘의 U P 감성 슬라이드 */}
-        <section className="emo-banner">
-          <div className="emo-pill">오늘의 U P 감성</div>
-          <h2 className="emo-title">
-            {currentSlide.title1}
-            <br />
-            <span>{currentSlide.title2}</span>
-          </h2>
-          <div className="emo-body">
-            {currentSlide.body.map((line) => (
-              <p key={line}>{line}</p>
-            ))}
-          </div>
-          <div className="emo-footer">
-            오늘의 한 마디 · “{currentSlide.oneLine}”
-          </div>
-          <div className="emo-dots">
-            {EMO_SLIDES.map((_, idx) => (
-              <button
-                key={idx}
-                type="button"
-                className={
-                  'emo-dot' + (idx === quoteIndex ? ' emo-dot-active' : '')
-                }
-                onClick={() => setQuoteIndex(idx)}
-              />
-            ))}
-          </div>
-        </section>
-
-        {/* 퀵 메뉴 */}
+        {/* 메뉴 버튼 */}
         <section className="home-quick-nav">
           <Link href="/my-up" className="quick-card">
-            <div className="quick-title">나의 U P 관리</div>
-            <div className="quick-desc">목표 · 마음 · 실적 · 스케줄</div>
+            나의 U P 관리
           </Link>
-
           <Link href="/customers" className="quick-card">
-            <div className="quick-title">고객관리</div>
-            <div className="quick-desc">상담 · 방문 · 해피콜 기록</div>
+            고객관리
           </Link>
-
           <Link href="/rebuttal" className="quick-card">
-            <div className="quick-title">반론 아카이브</div>
-            <div className="quick-desc">거절 멘트와 나의 답변 정리</div>
+            반론 아카이브
           </Link>
-
           <Link href="/community" className="quick-card">
-            <div className="quick-title">커뮤니티</div>
-            <div className="quick-desc">영업인끼리 노하우와 멘탈 공유</div>
+            커뮤니티
           </Link>
-
           <Link href="/sms-helper" className="quick-card">
-            <div className="quick-title">문자 도우미</div>
-            <div className="quick-desc">캘리 · 문장 조합으로 메시지 발송</div>
+            문자 도우미
           </Link>
         </section>
 
@@ -858,7 +831,7 @@ export default function HomePage() {
         <main className="home-main">
           {/* 상단 요약 */}
           <section className="home-top-summary">
-            {/* 일 · 주 · 월 목표 */}
+            {/* 목표 요약 */}
             <div className="summary-card goals-card">
               <h3 className="summary-title">일 · 주 · 월 목표 요약</h3>
 
@@ -936,67 +909,49 @@ export default function HomePage() {
               )}
             </div>
 
-     {/* 성장 그래프 */}
-<div className="summary-card growth-card">
-  <div className="growth-header">
-    <h3 className="summary-title">성장 그래프</h3>
-    <span className="growth-month">{currentMonthLabel}</span>
-  </div>
+            {/* 실적 달성 그래프 */}
+            <div className="summary-card growth-card">
+              <div className="growth-header">
+                <h3 className="summary-title">실적 달성 그래프</h3>
+                <span className="growth-month">{currentMonthLabel}</span>
+              </div>
 
-  <p className="growth-caption">
-    체크 입력이 많을수록 핑크 막대가 높아지고,
-    계약 입력이 많을수록 골드 막대가 높아집니다.
-  </p>
+              <p className="growth-caption">
+                하루 계약 건수를 기준으로 한 그래프입니다.
+                <br />
+                한 날에 계약 <strong>10건</strong>을 최대값으로 계산해요.
+              </p>
 
-  <div className="growth-graph-wrap">
-    <div className="growth-graph">
+              <div className="growth-graph-wrap">
+                <div className="growth-graph">
+                  {growthDays.map((g) => {
+                    const day = Number(g.date.split('-')[2]);
+                    const clamped = Math.min(g.contractCount, 10);
+                    const height = 12 + (clamped / 10) * 110;
 
-      {growthDays.map((g) => {
-        const day = Number(g.date.split('-')[2]);
-
-        const checkCount = g.rate;            // 체크 입력개수
-        const contractCount = g.contractCount; // 계약 입력개수
-
-        // 최소 높이 보이도록 설정
-        const checkHeight = Math.max(checkCount * 12, 8);
-        const contractHeight = Math.max(contractCount * 14, 8);
-
-        return (
-          <div key={g.date} className="growth-col">
-
-            {/* 계약 막대 */}
-            <div
-              className="bar contract-bar"
-              style={{ height: `${contractHeight}px` }}
-            />
-
-            {/* 체크 막대 */}
-            <div
-              className="bar check-bar"
-              style={{ height: `${checkHeight}px` }}
-            />
-
-            {/* 날짜 */}
-            <div className="growth-day-label">{day}</div>
-          </div>
-        );
-      })}
-
-    </div>
-  </div>
-</div>
-
-
-
+                    return (
+                      <div key={g.date} className="growth-col">
+                        <div
+                          className="bar contract-bar"
+                          style={{ height: `${height}px` }}
+                        />
+                        <div className="growth-day-label">{day}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </section>
 
           {/* 달력 + 친구 카드 */}
           <section className="home-section calendar-section">
             <div className="section-header">
               <div>
-                <div className="section-title">스케줄 달력</div>
+                <div className="section-title">CALENDAR &amp; PERFORMANCE</div>
                 <div className="section-sub">
-                  나의 U P 관리 · 고객관리에서 등록한 스케줄을 한눈에 볼 수 있어요.
+                  달력에서 기록과 스케줄 카테고리를 색상으로 보고, 선택한 날짜의
+                  일정을 아래에서 입력·관리할 수 있어요.
                 </div>
               </div>
               <div className="month-nav">
@@ -1038,6 +993,42 @@ export default function HomePage() {
 
                 const moodCode = moodByDate[dStr];
 
+                const daySummary = daySummaries.find(
+                  (ds) => ds.date === dStr
+                );
+
+                // 오늘(해당 날짜)의 카테고리 분포 → 업무내용/근태/기타 중 하나로 요약
+                let mainKind: ScheduleCategoryKind | null = null;
+                if (schedulesForDay.length > 0) {
+                  let hasWork = false;
+                  let hasAttendance = false;
+                  let hasEtc = false;
+                  schedulesForDay.forEach((s) => {
+                    const meta = getScheduleCategoryMeta(s.category);
+                    if (meta.kind === 'work') hasWork = true;
+                    else if (meta.kind === 'attendance')
+                      hasAttendance = true;
+                    else hasEtc = true;
+                  });
+
+                  if (hasAttendance) mainKind = 'attendance';
+                  else if (hasWork) mainKind = 'work';
+                  else if (hasEtc) mainKind = 'etc';
+                }
+
+                let mainLabel = '';
+                let mainClass = '';
+                if (mainKind === 'attendance') {
+                  mainLabel = '근태';
+                  mainClass = 'calendar-pill-attend';
+                } else if (mainKind === 'work') {
+                  mainLabel = '업무내용';
+                  mainClass = 'calendar-pill-work';
+                } else if (mainKind === 'etc') {
+                  mainLabel = '기타';
+                  mainClass = 'calendar-pill-etc';
+                }
+
                 return (
                   <button
                     key={`${dStr}-${index}`}
@@ -1062,33 +1053,14 @@ export default function HomePage() {
                     </div>
 
                     <div className="calendar-day-dots">
-                      {schedulesForDay.slice(0, 2).map((s) => {
-                        const info = getScheduleDotClassAndLabel(s.title);
-                        const shortTitle =
-                          s.title.length > 9
-                            ? s.title.slice(0, 9) + '…'
-                            : s.title;
-
-                        return (
-                          <div
-                            key={s.id}
-                            className={
-                              'calendar-day-dot ' + info.className
-                            }
-                          >
-                            <span className="calendar-dot-label">
-                              {info.label}
-                            </span>
-                            <span className="calendar-dot-title">
-                              {shortTitle}
-                            </span>
-                          </div>
-                        );
-                      })}
-
-                      {schedulesForDay.length > 2 && (
-                        <div className="calendar-day-dot calendar-dot-more">
-                          +{schedulesForDay.length - 2}개
+                      {mainKind && (
+                        <div className={`calendar-pill ${mainClass}`}>
+                          {mainLabel}
+                        </div>
+                      )}
+                      {daySummary && daySummary.count > 0 && (
+                        <div className="calendar-pill calendar-pill-count">
+                          일정/기록 {daySummary.count}개
                         </div>
                       )}
                     </div>
@@ -1104,12 +1076,13 @@ export default function HomePage() {
               </span>
             </div>
 
-            {/* 선택한 날짜 일정 */}
             <div className="right-card calendar-selected-card">
               <div className="right-card-header">
                 <div>
-                  <div className="section-title">선택한 날짜의 일정</div>
-                  <div className="section-sub">{selectedDateLabel}</div>
+                  <div className="section-title">선택한 날짜의 스케줄</div>
+                  <div className="section-sub">
+                    {selectedDateLabel} · {selectedDateSchedules.length}개 일정
+                  </div>
                 </div>
               </div>
 
@@ -1122,21 +1095,32 @@ export default function HomePage() {
                 </div>
               ) : (
                 <ul className="schedule-list">
-                  {selectedDateSchedules.map((s) => (
-                    <li key={s.id} className="schedule-item">
-                      <div className="schedule-time">
-                        {s.schedule_time
-                          ? s.schedule_time.slice(0, 5)
-                          : '시간 미정'}
-                      </div>
-                      <div className="schedule-title">{s.title}</div>
-                    </li>
-                  ))}
+                  {selectedDateSchedules.map((s) => {
+                    const meta = getScheduleCategoryMeta(s.category);
+                    const timeText = s.schedule_time
+                      ? s.schedule_time.slice(0, 5)
+                      : '--:--';
+
+                    return (
+                      <li key={s.id} className="schedule-item">
+                        <div className="schedule-time">{timeText}</div>
+                        <div className="schedule-content">
+                          <span
+                            className={
+                              'schedule-category ' + meta.badgeClass
+                            }
+                          >
+                            {meta.label}
+                          </span>
+                          <span className="schedule-title">{s.title}</span>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
 
-            {/* 친구 목록 카드 */}
             <div className="right-card friend-card">
               <div className="friend-card-header">
                 <div>
@@ -1177,7 +1161,6 @@ export default function HomePage() {
                             (friend.online ? 'friend-dot-on' : 'friend-dot-off')
                           }
                         />
-
                         <div className="friend-avatar-small">
                           {friend.avatarUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -1186,7 +1169,6 @@ export default function HomePage() {
                             friend.name[0]
                           )}
                         </div>
-
                         <span className="friend-name-wrap">
                           <span className="friend-name">{friend.name}</span>
                           {friend.role && (
@@ -1347,8 +1329,6 @@ const styles = `
   margin: 0 auto;
 }
 
-/* 공통 */
-
 .section-title {
   font-size: 18px;
   font-weight: 800;
@@ -1367,13 +1347,13 @@ const styles = `
   font-size: 20px;
 }
 
-/* 헤더 */
+/* 헤더 전체 */
 
 .home-header {
   display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 20px 24px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 24px 16px;
   border-radius: 26px;
   background: linear-gradient(135deg, #ff89bd, #a45bff);
   box-shadow: 0 18px 34px rgba(0,0,0,0.25);
@@ -1381,11 +1361,33 @@ const styles = `
   color: #fffdfd;
 }
 
+/* 상단: 로고/환영 + 프로필 나란히 */
+
+.home-header-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
 .home-header-left {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
+
+.home-header-profile {
+  display: flex;
+  align-items: stretch;
+}
+
+/* 하단: 마스코트 라인 */
+
+.home-header-bottom {
+  margin-top: 4px;
+}
+
+/* 로고 */
 
 .home-logo-row {
   display: flex;
@@ -1422,33 +1424,32 @@ const styles = `
   color: rgba(255,255,255,0.9);
 }
 
+/* 닉네임/환영 문구 */
+
 .home-welcome {
-  margin-top: 6px;
+  margin-top: 10px;
   font-size: 20px;
   font-weight: 800;
-  background: linear-gradient(135deg, #ffffff, #ffe4ff);
-  -webkit-background-clip: text;
-  color: transparent;
-  text-shadow: 0 0 16px rgba(255,255,255,0.4);
+  color: #fffdfd;
 }
 
 .welcome-name {
-  color: inherit;
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.96);
+  color: #ec4899;
+  margin-right: 6px;
+  box-shadow: 0 0 14px rgba(248, 205, 255, 0.9);
 }
 
 .home-date {
   font-size: 15px;
-  margin-top: 2px;
+  margin-top: 4px;
   color: #fffdfd;
 }
 
-/* 헤더 오른쪽 */
-
-.home-header-right {
-  min-width: 360px;
-  display: flex;
-  justify-content: flex-end;
-}
+/* 프로필 박스 */
 
 .profile-box {
   background: #ffffff;
@@ -1460,12 +1461,20 @@ const styles = `
   gap: 8px;
   border: 1px solid #e3dafb;
   color: #211437;
+
+  /* ★ 높이 고정: 말풍선이 뭐라고 해도 너는 안 움직인다 */
+  height: 230px;
+  min-height: 230px;
+  max-height: 230px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .profile-main {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .profile-avatar {
@@ -1504,10 +1513,11 @@ const styles = `
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  font-size: 12px;
 }
 
 .profile-pill {
-  font-size: 13px;
+  font-size: 12px;
   padding: 4px 9px;
   border-radius: 999px;
   background: #f3efff;
@@ -1518,10 +1528,11 @@ const styles = `
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  font-size: 12px;
 }
 
 .profile-stat-pill {
-  font-size: 13px;
+  font-size: 12px;
   padding: 4px 11px;
   border-radius: 999px;
   background: #f7f2ff;
@@ -1537,7 +1548,8 @@ const styles = `
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  font-size: 14px;
+  font-size: 13px;
+  margin-top: auto;
 }
 
 .profile-links a {
@@ -1545,109 +1557,110 @@ const styles = `
   text-decoration: none;
 }
 
-/* 오늘의 U P 감성 */
+/* 마스코트 + 말풍선 (아래줄 가로) */
 
-.emo-banner {
-  margin-bottom: 12px;
-  padding: 18px 22px 20px;
-  border-radius: 22px;
-  background: linear-gradient(135deg, #8e7dff, #ff8fd2);
-  box-shadow: 0 16px 32px rgba(107, 71, 183, 0.28);
-  position: relative;
-  overflow: hidden;
-  color: #fffdfd;
-}
-
-.emo-pill {
-  display: inline-flex;
-  padding: 5px 18px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.9);
-  font-size: 13px;
-  margin-bottom: 10px;
-  background: rgba(0,0,0,0.12);
-}
-
-.emo-title {
-  font-size: 26px;
-  line-height: 1.5;
-  margin-bottom: 10px;
-}
-
-.emo-title span {
-  color: #ffe98f;
-}
-
-.emo-body p {
-  font-size: 15px;
-  margin: 1px 0;
-}
-
-.emo-footer {
-  margin-top: 10px;
-  font-size: 15px;
-  color: #fff4ff;
-}
-
-.emo-dots {
-  margin-top: 8px;
+.mascot-wrap {
+  width: 100%;
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 16px;
+  margin-top: 4px;
 }
 
-.emo-dot {
-  width: 8px;
-  height: 8px;
+.mascot-bubble {
+  flex: 1;
+  border-radius: 16px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.97);
+  color: #2b163a;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+  border: 1px solid rgba(223, 202, 255, 0.9);
+  position: relative;
+  min-height: 68px;
+}
+
+.mascot-bubble::after {
+  content: '';
+  position: absolute;
+  right: -8px;
+  bottom: 18px;
+  width: 12px;
+  height: 12px;
+  background: rgba(255,255,255,0.97);
+  border-radius: 4px;
+  transform: rotate(45deg);
+  border-right: 1px solid rgba(223,202,255,0.9);
+  border-bottom: 1px solid rgba(223,202,255,0.9);
+}
+
+.mascot-bubble-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
   border-radius: 999px;
-  border: none;
-  background: rgba(255,255,255,0.55);
-  cursor: pointer;
+  background: rgba(250, 244, 255, 0.95);
+  color: #f973b8;
+  margin-bottom: 4px;
 }
 
-.emo-dot-active {
-  width: 18px;
-  background: #ffffff;
+.mascot-bubble-main {
+  font-size: 14px;
+  font-weight: 600;
+  color: #4b2966;
 }
 
-/* 퀵 메뉴 */
+.mascot-video-frame {
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 4px solid rgba(255,255,255,0.95);
+  box-shadow:
+    0 14px 26px rgba(0,0,0,0.3),
+    0 0 0 1px rgba(148, 93, 255, 0.9);
+  background: radial-gradient(circle at top left, #ffe5fb 0, #a855f7 60%);
+  flex-shrink: 0;
+}
+
+.mascot-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 라운드 사각형 메뉴 버튼 */
 
 .home-quick-nav {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 12px;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: nowrap;
 }
 
 .quick-card {
-  border-radius: 16px;
-  padding: 10px 12px;
-  background: radial-gradient(circle at top left, #ffffff 0, #f8ecff 55%, #f0f7ff 100%);
-  box-shadow: 0 12px 22px rgba(0,0,0,0.16);
-  text-decoration: none;
+  flex: 1;
+  height: 44px;
+  border-radius: 999px;
+  padding: 0 14px;
+  background: linear-gradient(135deg, #f973b8, #a855f7);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.18);
+  border: 1px solid rgba(255, 255, 255, 0.7);
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, border 0.14s ease;
-  border: 1px solid rgba(166, 143, 255, 0.4);
-  color: #241336;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffffff;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
 }
 
 .quick-card:hover {
   transform: translateY(-1px);
-  background: radial-gradient(circle at top left, #ffffff 0, #ffe8f8 40%, #edf3ff 100%);
-  box-shadow: 0 16px 26px rgba(0,0,0,0.2);
-  border-color: rgba(125, 97, 255, 0.8);
-}
-
-.quick-title {
-  font-size: 17px;
-  font-weight: 800;
-  color: #402064;
-}
-
-.quick-desc {
-  font-size: 14px;
-  color: #7c6ac2;
+  background: linear-gradient(135deg, #fb7185, #7c3aed);
+  box-shadow: 0 14px 24px rgba(0,0,0,0.24);
 }
 
 /* 날씨 */
@@ -1859,7 +1872,7 @@ const styles = `
   text-decoration: line-through;
 }
 
-/* 성장 그래프 */
+/* 실적 그래프 */
 
 .growth-header {
   display: flex;
@@ -1878,11 +1891,6 @@ const styles = `
   color: #7c6acd;
 }
 
-.growth-caption span {
-  color: #f153aa;
-  font-weight: 600;
-}
-
 .growth-graph-wrap {
   margin-top: 8px;
   padding: 10px 8px;
@@ -1891,95 +1899,40 @@ const styles = `
   border: 1px solid rgba(214, 196, 255, 0.8);
 }
 
-/* 여기서부터 핵심: 막대 폭/간격 줄여서 창 안에 꽉 맞게 */
-
 .growth-graph {
   display: flex;
   align-items: flex-end;
-  gap: 3px;              /* 간격 줄이기 */
+  gap: 3px;
   height: 150px;
   width: 100%;
 }
 
 .growth-col {
-  flex: 1 1 0;           /* 남는 폭 자동 분배 */
-  min-width: 0;          /* 더 이상 안 벌어지게 */
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-/* 막대 공통 스타일 (폭 축소) */
 .bar {
-  width: 8px;            /* 막대 폭 줄이기 (기존 16px 정도였음) */
+  width: 10px;
   border-radius: 999px;
   margin-bottom: 4px;
 }
 
-/* 체크(핑크) */
-.check-bar {
-  background: linear-gradient(180deg, #ffdef3 0%, #ff9fd6 45%, #f472b6 100%);
-  box-shadow:
-    0 6px 12px rgba(244, 114, 182, 0.45),
-    0 0 8px rgba(244, 114, 182, 0.7);
-}
-
-/* 계약(골드) */
 .contract-bar {
-  background: linear-gradient(180deg, #fef9c3 0%, #facc15 40%, #fb923c 100%);
+  background: linear-gradient(180deg, #fef3c7 0%, #facc15 40%, #fb923c 100%);
   box-shadow:
     0 6px 12px rgba(234, 179, 8, 0.55),
     0 0 8px rgba(251, 146, 60, 0.85);
 }
 
-/* 날짜 글씨는 살짝만 줄이기 */
 .growth-day-label {
   margin-top: 4px;
   font-size: 11px;
   color: #8775c8;
 }
-
-/* 범례 그대로 사용 */
-.growth-legend {
-  margin-top: 6px;
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: #7e6fd6;
-}
-
-.legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.legend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-}
-
-.legend-dot-log {
-  background: linear-gradient(135deg, #ff9ed8, #ff73b5);
-  box-shadow: 0 0 10px rgba(255, 140, 220, 0.7);
-}
-
-.legend-dot-contract1 {
-  background: linear-gradient(135deg, #fde68a, #facc15);
-}
-
-.legend-dot-contract2 {
-  background: linear-gradient(135deg, #fdba74, #fb923c);
-}
-
-.legend-dot-contract3 {
-  background: linear-gradient(135deg, #f97316, #ec4899);
-}
-
-
-
 
 /* 공통 카드 */
 
@@ -2057,8 +2010,8 @@ const styles = `
   border-radius: 14px;
   border: none;
   background: #faf7ff;
-  padding: 5px 4px;
-  min-height: 64px;
+  padding: 7px 5px;
+  min-height: 80px;
   font-size: 12px;
   display: flex;
   flex-direction: column;
@@ -2097,59 +2050,45 @@ const styles = `
 }
 
 .calendar-day-dots {
-  margin-top: 4px;
+  margin-top: 6px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
-.calendar-day-dot {
+/* 달력용 요약 뱃지 */
+
+.calendar-pill {
   font-size: 11px;
-  padding: 3px 5px;
+  padding: 4px 8px;
   border-radius: 999px;
-  color: #fff;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
   max-width: 100%;
 }
 
-.calendar-dot-label {
-  font-weight: 600;
+.calendar-pill-work {
+  background: linear-gradient(135deg, #f472b6, #e879f9);
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(236, 72, 153, 0.45);
 }
 
-.calendar-dot-title {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.calendar-pill-attend {
+  background: linear-gradient(135deg, #fb7185, #f97316);
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(248, 113, 113, 0.5);
 }
 
-/* 카테고리 색상 */
-
-.calendar-dot-consult {
-  background: linear-gradient(135deg, #ff8bb3, #ff5a95);
-}
-
-.calendar-dot-visit {
-  background: linear-gradient(135deg, #7dd3fc, #2563eb);
-}
-
-.calendar-dot-happy {
-  background: linear-gradient(135deg, #facc15, #fb923c);
-}
-
-.calendar-dot-delivery {
-  background: linear-gradient(135deg, #a3e635, #22c55e);
-}
-
-.calendar-dot-etc {
-  background: linear-gradient(135deg, #e5e7eb, #9ca3af);
+.calendar-pill-etc {
+  background: #e5e7eb;
   color: #111827;
 }
 
-.calendar-dot-more {
-  background: #f3efff;
-  color: #5b43b1;
+.calendar-pill-count {
+  background: #fee2ff;
+  color: #a21caf;
+  border: 1px solid rgba(244, 114, 182, 0.6);
 }
 
 .calendar-footer {
@@ -2159,25 +2098,25 @@ const styles = `
   color: #7e6fd6;
 }
 
-/* 선택 날짜 카드 */
-
 .calendar-selected-card {
   grid-column: 1 / -1;
   margin-top: 8px;
 }
 
+/* 선택한 날짜 스케줄 리스트 */
+
 .schedule-list {
   list-style: none;
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   padding: 0;
 }
 
 .schedule-item {
   display: grid;
-  grid-template-columns: 80px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 10px;
   font-size: 14px;
-  padding: 4px 0;
+  padding: 6px 0;
   border-bottom: 1px dashed #e0d4ff;
 }
 
@@ -2188,10 +2127,60 @@ const styles = `
 .schedule-time {
   color: #f153aa;
   font-weight: 600;
+  font-size: 14px;
+}
+
+.schedule-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.schedule-category {
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+/* 카테고리별 색상 */
+
+.schedule-cat-work {
+  background: #fef2ff;
+  color: #db2777;
+  border-color: rgba(244, 114, 182, 0.4);
+}
+
+.schedule-cat-edu {
+  background: #fef9c3;
+  color: #ca8a04;
+  border-color: rgba(250, 204, 21, 0.5);
+}
+
+.schedule-cat-event {
+  background: #fee2e2;
+  color: #dc2626;
+  border-color: rgba(248, 113, 113, 0.6);
+}
+
+.schedule-cat-attend {
+  background: #e0f2fe;
+  color: #1d4ed8;
+  border-color: rgba(59, 130, 246, 0.6);
+}
+
+.schedule-cat-etc {
+  background: #f3f4ff;
+  color: #4b5563;
+  border-color: rgba(148, 163, 184, 0.6);
 }
 
 .schedule-title {
   color: #241336;
+  font-size: 14px;
 }
 
 /* 친구 카드 */
@@ -2290,8 +2279,6 @@ const styles = `
   box-shadow: 0 0 10px rgba(185, 129, 255, 0.8);
 }
 
-/* 온라인/오프라인 점 + 이름 · 역할 */
-
 .friend-dot {
   width: 10px;
   height: 10px;
@@ -2317,9 +2304,9 @@ const styles = `
 }
 
 .friend-name {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
-  color: #1f1333;
+  color: #111827;
 }
 
 .friend-role-pill {
@@ -2336,8 +2323,8 @@ const styles = `
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: 12px;
-  color: #7a69c4;
+  font-size: 13px;
+  color: #4b5563;
 }
 
 /* 친구 프로필 모달 */
@@ -2557,11 +2544,19 @@ a:hover {
   }
 
   .home-header {
-    flex-direction: column;
+    padding: 16px 14px 12px;
+  }
+
+  .home-header-top {
+    grid-template-columns: 1fr;
+  }
+
+  .home-header-profile {
+    margin-top: 6px;
   }
 
   .home-quick-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-wrap: wrap;
   }
 
   .home-top-summary {
@@ -2582,12 +2577,12 @@ a:hover {
     max-width: 100%;
   }
 
-  .home-header {
-    padding: 14px 12px;
+  .home-quick-nav {
+    flex-wrap: wrap;
   }
 
-  .home-quick-nav {
-    grid-template-columns: 1fr 1fr;
+  .quick-card {
+    flex: 1 1 calc(50% - 4px);
   }
 
   .weather-slot {

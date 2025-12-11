@@ -27,7 +27,7 @@ type DailyTask = {
   done: boolean;
 };
 
-// 스케줄 카테고리 (달력 색상용)
+// 스케줄 카테고리 (DB에 저장되는 상세 카테고리)
 type ScheduleCategory =
   | 'counsel' // 상담
   | 'visit' // 방문
@@ -39,15 +39,18 @@ type ScheduleCategory =
   | 'event' // 행사/이벤트
   | 'late' // 지각
   | 'early' // 조퇴
-  | 'out' // 외출
+  | 'out' // 외출(외근 포함)
   | 'absent' // 결근
   | 'closing' // 마감
   | 'etc'; // 기타;
 
+// 달력에 보여줄 "통합 카테고리"
+type UnifiedScheduleCategory = 'attendance' | 'work' | 'meeting' | 'etc';
+
 type GrowthDay = {
   date: string; // YYYY-MM-DD
   count: number; // 그 날짜에 기록/스케줄 개수
-  mainCategory?: ScheduleCategory | null; // 그날 대표 카테고리
+  mainCategory?: UnifiedScheduleCategory | null; // 그날 대표 통합 카테고리
   mood?: string | null; // 그날 기분 코드
 };
 
@@ -66,11 +69,13 @@ type MoodOption = {
 };
 
 // ===== 상수 =====
+// 행복한 날 추가됨
 const moodOptions: MoodOption[] = [
   { code: 'hard', emoji: '🥵', label: '힘든 날' },
   { code: 'little-down', emoji: '😮‍💨', label: '살짝 다운' },
   { code: 'normal', emoji: '🙂', label: '보통' },
-  { code: 'good', emoji: '😊', label: '나쁘지 않음' },
+  { code: 'good', emoji: '😊', label: '나쁘지 않은 날' },
+  { code: 'happy', emoji: '🤩', label: '행복한 날' },
   { code: 'fire', emoji: '🔥', label: '불타는 날' },
 ];
 
@@ -85,7 +90,7 @@ const SCHEDULE_CATEGORY_META: { id: ScheduleCategory; label: string }[] = [
   { id: 'event', label: '행사/이벤트' },
   { id: 'late', label: '지각' },
   { id: 'early', label: '조퇴' },
-  { id: 'out', label: '외출' },
+  { id: 'out', label: '외출/외근' },
   { id: 'absent', label: '결근' },
   { id: 'closing', label: '마감' },
   { id: 'etc', label: '기타' },
@@ -93,6 +98,39 @@ const SCHEDULE_CATEGORY_META: { id: ScheduleCategory; label: string }[] = [
 
 const getScheduleCategoryMeta = (id: string | null | undefined) =>
   SCHEDULE_CATEGORY_META.find((c) => c.id === id);
+
+// 상세 카테고리 → 통합 카테고리(근태/업무/회의·교육/기타) 매핑
+const mapScheduleCategoryToUnified = (
+  cat: ScheduleCategory
+): UnifiedScheduleCategory => {
+  switch (cat) {
+    // 근태: 지각 / 조퇴 / 외출(외근) / 결근
+    case 'late':
+    case 'early':
+    case 'out':
+    case 'absent':
+      return 'attendance';
+
+    // 업무내용: 상담 / 방문 / 사은품 / 해피콜 / 배송 / 행사 / 마감 등
+    case 'counsel':
+    case 'visit':
+    case 'gift':
+    case 'happycall':
+    case 'shipping':
+    case 'event':
+    case 'closing':
+      return 'work';
+
+    // 회의·교육
+    case 'meeting':
+    case 'edu':
+      return 'meeting';
+
+    // 나머지는 기타
+    default:
+      return 'etc';
+  }
+};
 
 // 날짜 포맷
 function formatDate(date: Date): string {
@@ -163,8 +201,22 @@ export default function MyUpPage() {
       }
 
       setUserId(user.id);
-      if (user.email) {
-        setNickname(user.email.split('@')[0]);
+
+      // ✅ 프로필에서 닉네임(name) 가져오기
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('name')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error('profile load error', profileError);
+      }
+
+      if (profile && profile.name) {
+        setNickname(profile.name);
+      } else {
+        setNickname('영업인');
       }
 
       await Promise.all([
@@ -239,6 +291,7 @@ export default function MyUpPage() {
 
     const map: Record<string, Meta> = {};
 
+    // up_logs 집계
     (logRows ?? []).forEach((row: any) => {
       const raw = row.log_date;
       const str =
@@ -252,6 +305,7 @@ export default function MyUpPage() {
       }
     });
 
+    // schedules 집계
     (scheduleRows ?? []).forEach((row: any) => {
       const raw = row.schedule_date;
       const str =
@@ -275,12 +329,29 @@ export default function MyUpPage() {
       const str = formatDate(cur);
       const meta = map[str];
 
-      let mainCategory: ScheduleCategory | null = null;
+      let mainCategory: UnifiedScheduleCategory | null = null;
+
       if (meta && Object.keys(meta.catCounts).length > 0) {
-        const [topCat] = Object.entries(meta.catCounts).sort(
+        const groupCounts: Record<UnifiedScheduleCategory, number> = {
+          attendance: 0,
+          work: 0,
+          meeting: 0,
+          etc: 0,
+        };
+
+        Object.entries(meta.catCounts).forEach(([cat, cnt]) => {
+          const unified = mapScheduleCategoryToUnified(
+            (cat as ScheduleCategory) || 'etc'
+          );
+          groupCounts[unified] += cnt as number;
+        });
+
+        const sorted = Object.entries(groupCounts).sort(
           (a, b) => b[1] - a[1]
-        )[0];
-        mainCategory = (topCat as ScheduleCategory) ?? null;
+        );
+        if (sorted[0][1] > 0) {
+          mainCategory = sorted[0][0] as UnifiedScheduleCategory;
+        }
       }
 
       days.push({
@@ -491,13 +562,14 @@ export default function MyUpPage() {
       .select('id, user_id, task_date, content, done')
       .single();
 
-    setSavingTasks(false);
-
     if (error) {
       console.error('add task error', error);
       alert('할 일을 추가하는 중 오류가 발생했어요.');
+      setSavingTasks(false);
       return;
     }
+
+    setSavingTasks(false);
 
     setTasks((prev) => [
       ...prev,
@@ -615,6 +687,21 @@ export default function MyUpPage() {
     return days;
   }, [currentMonth]);
 
+  // 월 통계: 기록한 날 / 총 기록·일정 개수
+  const recordedDaysInMonth = useMemo(
+    () => growthDays.filter((g) => g.count > 0).length,
+    [growthDays]
+  );
+
+  const totalRecordsInMonth = useMemo(
+    () => growthDays.reduce((acc, g) => acc + g.count, 0),
+    [growthDays]
+  );
+
+  const completedTasks = tasks.filter((t) => t.done).length;
+
+  const upzzuLine = `이번 달에 기록한 날 ${recordedDaysInMonth}일, 일정·기록 ${totalRecordsInMonth}개가 쌓였어요. 오늘 남긴 한 줄이 다음 달 계약 그래프를 바꿔요.`;
+
   if (loading || !logRow) {
     return (
       <div className="myup-root">
@@ -629,82 +716,73 @@ export default function MyUpPage() {
   const selectedGrowthMeta =
     growthDays.find((g) => g.date === selectedDate) ?? null;
   const selectedGrowth = selectedGrowthMeta?.count ?? 0;
-  const completedTasks = tasks.filter((t) => t.done).length;
 
   return (
     <div className="myup-root">
       <div className="myup-inner">
-        {/* 상단 히어로 */}
-        <section className="myup-hero">
-          <div className="myup-hero-left">
-            <div className="myup-tag">UPLOG · MYUP</div>
-            <h1 className="myup-title">나의 U P 관리</h1>
-            <p className="myup-sub">
-              오늘의 컨디션, 목표, 실적과 마음을 한 번에 정리하는
-              <br />
-              {nickname}님만의 기록장이에요.
-            </p>
-            <p className="myup-date-line">
-              선택한 날짜 · <strong>{prettyKoreanDate(selectedDate)}</strong>
-            </p>
-          </div>
-
-          <div className="myup-summary-card">
-            <div className="myup-summary-title">오늘 요약</div>
-            <div className="myup-summary-date">{selectedDate}</div>
-            <div className="myup-summary-row">
-              <span>기분 이모지</span>
-              <strong>
-                {moodOptions.find((m) => m.code === logRow.mood)?.emoji ??
-                  '미선택'}
-              </strong>
+        {/* ===== 헤더 (메인과 동일 구조) ===== */}
+        <header className="myup-header">
+          <div className="myup-header-inner">
+            <div className="myup-header-text">
+              <div className="myup-header-tag">UPLOG · MYUP</div>
+              <h1 className="myup-header-title">나의 U P 관리</h1>
+              <p className="myup-header-sub">
+                오늘의 컨디션, 목표, 실적과 마음을 한 번에 정리하는
+                <br />
+                {nickname}님만의 기록장이에요.
+              </p>
+              <p className="myup-header-date">
+                선택한 날짜 · {prettyKoreanDate(selectedDate)}
+              </p>
             </div>
-            <div className="myup-summary-row">
-              <span>오늘 할 일 달성</span>
-              <strong>
+
+            {/* 🔥 메인과 동일한 마스코트 라인 */}
+            <div className="home-header-bottom">
+              <div className="mascot-wrap">
+                <div className="mascot-bubble">
+                  <span className="mascot-bubble-tag">오늘의 U P 한마디</span>
+                  <span className="mascot-bubble-main">{upzzuLine}</span>
+                </div>
+                <div className="mascot-video-frame">
+                  <video
+                    className="mascot-video"
+                    src="/assets/videos/upzzu-mascot.mp4"
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* ===== 이번 달 요약 카드 ===== */}
+        <section className="myup-month-card">
+          <div className="myup-month-left">
+            <div className="myup-month-title">이번 달 요약</div>
+            <div className="myup-month-date">{formatDate(new Date())}</div>
+          </div>
+          <div className="myup-month-meta">
+            <div className="myup-month-row">
+              <div className="myup-month-label">이번 달 기록한 날</div>
+              <div className="myup-month-value">{recordedDaysInMonth}일</div>
+            </div>
+            <div className="myup-month-row">
+              <div className="myup-month-label">이번 달 일정·기록 개수</div>
+              <div className="myup-month-value">{totalRecordsInMonth}개</div>
+            </div>
+            <div className="myup-month-row">
+              <div className="myup-month-label">오늘 할 일 달성</div>
+              <div className="myup-month-value">
                 {completedTasks}/{tasks.length}개
-              </strong>
-            </div>
-            <div className="myup-summary-row">
-              <span>기록 여부</span>
-              <strong>{selectedGrowth > 0 ? '기록 있음' : '기록 없음'}</strong>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* 실적 요약 · AI 한 마디 */}
-        <section className="myup-ai-section">
-          <h2 className="section-title">실적 요약 · AI 한 마디</h2>
-          <p className="ai-caption">
-            고객 수와 계약 건수는 나중에 연동될 예정이에요. 지금은 “멘탈 기록
-            연습”에 집중해 볼까요?
-          </p>
-          <div className="ai-grid">
-            <div className="ai-block">
-              <div className="ai-label">오늘의 조언</div>
-              <p className="ai-text">
-                오늘 하루의 컨디션과 목표를 가볍게 적어두면, 나중에 대표님의
-                성장 기록이 됩니다.
-              </p>
-            </div>
-            <div className="ai-block">
-              <div className="ai-label">영업 루틴 자동 추천</div>
-              <p className="ai-text">
-                오전엔 가망 고객 콜, 오후엔 기존 고객 케어, 저녁엔 오늘 잘한 점
-                1줄 남기기. 작은 루틴이 큰 변화를 만듭니다.
-              </p>
-            </div>
-            <div className="ai-block">
-              <div className="ai-label">오늘의 응원 메시지</div>
-              <p className="ai-text">
-                오늘도 여기까지 온 나를 칭찬해 주세요. 대표님이 쌓는 하루하루가
-                결국 원하는 곳으로 데려다 줄 거예요.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* 오늘 할 일 리스트 */}
+        {/* ===== 오늘 할 일 + 기분 이모지 ===== */}
         <section className="myup-todo-section">
           <div className="todo-header">
             <h2 className="section-title">오늘 할 일 리스트</h2>
@@ -712,6 +790,26 @@ export default function MyUpPage() {
               <span>{prettyKoreanDate(selectedDate)}</span>
               <span className="todo-dot">•</span>
               <span>선택한 날짜 기준으로 매일 새로 관리돼요.</span>
+            </div>
+          </div>
+
+          {/* 기분 이모지 – 오늘 할 일 위로 이동 */}
+          <div className="detail-row todo-mood-row">
+            <div className="detail-label">오늘의 기분 이모지</div>
+            <div className="mood-chips">
+              {moodOptions.map((m) => (
+                <button
+                  key={m.code}
+                  type="button"
+                  className={
+                    'mood-chip ' + (logRow.mood === m.code ? 'mood-chip-active' : '')
+                  }
+                  onClick={() => handleChangeMood(m.code)}
+                >
+                  <span className="mood-emoji">{m.emoji}</span>
+                  <span className="mood-label">{m.label}</span>
+                </button>
+              ))}
             </div>
           </div>
 
@@ -766,7 +864,7 @@ export default function MyUpPage() {
           </div>
         </section>
 
-        {/* CALENDAR & PERFORMANCE + 스케줄 입력 */}
+        {/* ===== CALENDAR & PERFORMANCE + 스케줄 입력 ===== */}
         <section className="myup-calendar-section">
           <div className="calendar-header-row">
             <div>
@@ -820,9 +918,7 @@ export default function MyUpPage() {
                 ? moodOptions.find((m) => m.code === meta.mood)?.emoji
                 : null;
 
-              const catMeta = meta?.mainCategory
-                ? getScheduleCategoryMeta(meta.mainCategory)
-                : null;
+              const unified = meta?.mainCategory ?? null;
 
               const isOtherMonth = !isCurrentMonth;
 
@@ -848,18 +944,29 @@ export default function MyUpPage() {
                       <div className="calendar-day-mood">{moodEmoji}</div>
                     )}
                   </div>
-                  {catMeta && (
+
+                  {/* 통합 카테고리 뱃지: 근태 / 업무내용 / 회의·교육 / 기타 */}
+                  {unified && (
                     <div
                       className={
-                        'calendar-day-cat-pill calendar-day-cat-' +
-                        meta!.mainCategory
+                        'calendar-day-cat-pill calendar-unified-' + unified
                       }
                     >
-                      {catMeta.label}
+                      {unified === 'attendance'
+                        ? '근태'
+                        : unified === 'work'
+                        ? '업무내용'
+                        : unified === 'meeting'
+                        ? '회의·교육'
+                        : '기타'}
                     </div>
                   )}
-                  {!catMeta && hasRecord && (
-                    <div className="calendar-day-dot">기록 {growth}개</div>
+
+                  {/* 스케줄/기록 개수 */}
+                  {hasRecord && (
+                    <div className="calendar-day-dot">
+                      일정/기록 {growth}개
+                    </div>
                   )}
                 </button>
               );
@@ -894,7 +1001,9 @@ export default function MyUpPage() {
                 className="schedule-category-select"
                 value={scheduleCategoryInput}
                 onChange={(e) =>
-                  setScheduleCategoryInput(e.target.value as ScheduleCategory)
+                  setScheduleCategoryInput(
+                    e.target.value as ScheduleCategory
+                  )
                 }
               >
                 {SCHEDULE_CATEGORY_META.map((c) => (
@@ -956,7 +1065,7 @@ export default function MyUpPage() {
           </div>
         </section>
 
-        {/* 선택한 날짜의 상세 기록 */}
+        {/* ===== 선택한 날짜의 상세 기록 ===== */}
         <section className="myup-detail-section">
           <h2 className="section-title">선택한 날짜의 기록</h2>
           <p className="detail-caption">
@@ -966,27 +1075,6 @@ export default function MyUpPage() {
 
           <div className="detail-card">
             <div className="detail-inner">
-              {/* 기분 이모지 */}
-              <div className="detail-row">
-                <div className="detail-label">오늘의 기분 이모지</div>
-                <div className="mood-chips">
-                  {moodOptions.map((m) => (
-                    <button
-                      key={m.code}
-                      type="button"
-                      className={
-                        'mood-chip ' +
-                        (logRow.mood === m.code ? 'mood-chip-active' : '')
-                      }
-                      onClick={() => handleChangeMood(m.code)}
-                    >
-                      <span className="mood-emoji">{m.emoji}</span>
-                      <span className="mood-label">{m.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* 목표들 */}
               <div className="detail-grid three">
                 <div className="detail-field">
@@ -1114,133 +1202,200 @@ const styles = `
   font-size: 18px;
 }
 
-/* 상단 히어로 */
-.myup-hero {
-  display: flex;
-  justify-content: space-between;
-  align-items: stretch;
-  gap: 20px;
-  padding: 24px 24px;
-  border-radius: 32px;
-  background: radial-gradient(circle at top left, #ffb3dd 0, #a45bff 45%, #5f2b9f 100%);
+/* ===== 헤더 (메인과 통일) ===== */
+
+.myup-header {
+  border-radius: 40px;
+  background: radial-gradient(circle at top left, #ff8ac8 0, #a855f7 40%, #5b21ff 100%);
+  box-shadow: 0 28px 60px rgba(0,0,0,0.45);
   color: #fff;
-  box-shadow: 0 26px 50px rgba(0,0,0,0.28);
-  margin-bottom: 24px;
+  padding: 48px 52px 56px;
+  margin-bottom: 28px;
 }
 
-.myup-hero-left {
+.myup-header-inner {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  flex: 1;
+  gap: 28px;
 }
 
-.myup-tag {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  opacity: 0.9;
+.myup-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.myup-title {
-  font-size: 30px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-}
-
-.myup-sub {
-  margin-top: 4px;
+.myup-header-tag {
   font-size: 14px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+}
+
+.myup-header-title {
+  font-size: 34px;
+  font-weight: 900;
+}
+
+.myup-header-sub {
+  margin-top: 8px;
+  font-size: 16px;
+  line-height: 1.6;
   opacity: 0.96;
 }
 
-.myup-date-line {
-  margin-top: 12px;
-  font-size: 14px;
-  color: #fefcff;
+.myup-header-date {
+  margin-top: 10px;
+  font-size: 15px;
+  font-weight: 800;
 }
 
-.myup-summary-card {
-  width: 240px;
-  padding: 14px 16px;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #2a1440;
-  box-shadow: 0 22px 40px rgba(0,0,0,0.32);
-  backdrop-filter: blur(14px);
-  align-self: center;
-  margin-right: 12px;
+/* ===== 말풍선 + 마스코트 (메인과 동일) ===== */
+
+/* 하단: 마스코트 라인 */
+.home-header-bottom {
+  margin-top: 18px;
+  display: flex;
+  justify-content: center;
 }
 
-.myup-summary-title {
+.mascot-wrap {
+  width: 100%;
+  max-width: 540px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 말풍선 */
+.mascot-bubble {
+  width: 100%;
+  border-radius: 999px;
+  padding: 10px 24px;
+  background: rgba(255,255,255,0.97);
+  color: #2b163a;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+  border: 1px solid rgba(223, 202, 255, 0.9);
+  position: relative;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.mascot-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -9px;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  background: rgba(255,255,255,0.97);
+  border-radius: 4px;
+  transform: translateX(-50%) rotate(45deg);
+  border-bottom: 1px solid rgba(223,202,255,0.9);
+  border-right: 1px solid rgba(223,202,255,0.9);
+}
+
+.mascot-bubble-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(250, 244, 255, 0.95);
+  color: #f973b8;
+}
+
+/* 🔥 여러 줄 보이도록 수정 */
+.mascot-bubble-main {
   font-size: 14px;
+  font-weight: 600;
+  color: #4b2966;
+  text-align: center;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* 마스코트: 더 작게 + 완전 원형 */
+.mascot-video-frame {
+  width: 110px;
+  height: 110px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 4px solid rgba(255,255,255,0.95);
+  box-shadow:
+    0 18px 32px rgba(0,0,0,0.35),
+    0 0 0 1px rgba(148, 93, 255, 0.95);
+  background: radial-gradient(circle at top left, #ffe5fb 0, #a855f7 60%);
+  flex-shrink: 0;
+}
+
+.mascot-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ===== 이번 달 요약 카드 ===== */
+
+.myup-month-card {
+  margin-top: 14px;
+  margin-bottom: 24px;
+  padding: 18px 22px;
+  border-radius: 26px;
+  background: #ffffff;
+  border: 1px solid #e5ddff;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.12);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.myup-month-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.myup-month-title {
+  font-size: 16px;
   font-weight: 800;
   color: #6b41ff;
 }
 
-.myup-summary-date {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #a24cff;
-}
-
-.myup-summary-row {
-  margin-top: 6px;
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-}
-
-.myup-summary-row strong {
-  font-weight: 800;
-}
-
-/* AI 섹션 */
-.myup-ai-section {
-  margin-top: 18px;
-  padding: 20px 22px;
-  border-radius: 26px;
-  background: #ffffff;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.12);
-  border: 1px solid #e5ddff;
-  margin-bottom: 22px;
-}
-
-.ai-caption {
-  margin-top: 6px;
+.myup-month-date {
   font-size: 13px;
   color: #7a69c4;
 }
 
-.ai-grid {
-  margin-top: 12px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0,1fr));
-  gap: 14px;
+.myup-month-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.ai-block {
-  padding: 12px 14px;
-  border-radius: 18px;
-  background: #faf7ff;
-  border: 1px solid rgba(190, 173, 250, 0.7);
+.myup-month-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 40px;
+  font-size: 14px;
 }
 
-.ai-label {
-  font-size: 13px;
-  font-weight: 700;
+.myup-month-label {
+  color: #433155;
+}
+
+.myup-month-value {
+  font-weight: 800;
   color: #6b41ff;
-  margin-bottom: 4px;
-}
-
-.ai-text {
-  font-size: 13px;
-  color: #3c294f;
-  line-height: 1.5;
 }
 
 /* 오늘 할 일 섹션 */
+
 .myup-todo-section {
   margin-bottom: 24px;
 }
@@ -1249,11 +1404,11 @@ const styles = `
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .todo-sub {
-  font-size: 13px;
+  font-size: 14px;
   color: #7e6fd6;
   display: flex;
   align-items: center;
@@ -1261,19 +1416,24 @@ const styles = `
 }
 
 .todo-dot {
-  font-size: 6px;
+  font-size: 8px;
+}
+
+/* 기분 이모지 행 (오늘 할 일 위) */
+.todo-mood-row {
+  margin-bottom: 10px;
 }
 
 .todo-card {
   border-radius: 24px;
-  padding: 16px 18px 14px;
+  padding: 18px 20px 16px;
   background: #ffffff;
   border: 1px solid #e5ddff;
   box-shadow: 0 16px 30px rgba(0,0,0,0.12);
 }
 
 .todo-empty {
-  font-size: 13px;
+  font-size: 14px;
   color: #7a69c4;
   line-height: 1.6;
 }
@@ -1281,7 +1441,7 @@ const styles = `
 .todo-list {
   list-style: none;
   margin: 0;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   padding: 0;
 }
 
@@ -1289,7 +1449,7 @@ const styles = `
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 4px 0;
+  padding: 6px 0;
 }
 
 .todo-check-btn {
@@ -1316,8 +1476,8 @@ const styles = `
   flex: 1;
   border-radius: 999px;
   border: 1px solid #d6c7ff;
-  padding: 7px 12px;
-  font-size: 14px;
+  padding: 8px 13px;
+  font-size: 15px;
   background: #faf7ff;
   color: #241336;
 }
@@ -1335,8 +1495,8 @@ const styles = `
 .todo-add-btn {
   border-radius: 999px;
   border: none;
-  padding: 8px 16px;
-  font-size: 13px;
+  padding: 9px 16px;
+  font-size: 14px;
   font-weight: 600;
   background: linear-gradient(135deg, #ff8fba, #a36dff);
   color: #fff;
@@ -1345,6 +1505,7 @@ const styles = `
 }
 
 /* 캘린더 & 스케줄 */
+
 .myup-calendar-section {
   margin-bottom: 26px;
 }
@@ -1353,62 +1514,62 @@ const styles = `
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .calendar-caption {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 14px;
   color: #7a69c4;
 }
 
 .month-nav {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .nav-btn {
   border-radius: 999px;
   border: none;
-  padding: 4px 8px;
-  font-size: 11px;
+  padding: 6px 10px;
+  font-size: 12px;
   background: #f0e8ff;
   color: #5a3cb2;
   cursor: pointer;
 }
 
 .month-label {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: #372153;
 }
 
 .calendar-grid {
-  border-radius: 22px;
-  padding: 10px;
+  border-radius: 26px;
+  padding: 18px;
   background: #ffffff;
   border: 1px solid #e5ddff;
   box-shadow: 0 18px 32px rgba(0,0,0,0.12);
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px;
+  gap: 8px;
 }
 
 .calendar-weekday {
   text-align: center;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   color: #7f6bd5;
 }
 
 .calendar-day {
-  border-radius: 14px;
+  border-radius: 16px;
   border: none;
   background: #faf7ff;
-  padding: 6px 5px;
-  min-height: 60px;
-  font-size: 12px;
+  padding: 9px 8px;
+  min-height: 110px;
+  font-size: 13px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1421,11 +1582,11 @@ const styles = `
 }
 
 .calendar-day-today {
-  box-shadow: 0 0 0 1px #f153aa;
+  box-shadow: 0 0 0 2px #f153aa;
 }
 
 .calendar-day-selected {
-  box-shadow: 0 0 0 2px #a45bff;
+  box-shadow: 0 0 0 3px #a45bff;
   background: linear-gradient(135deg, #f5e6ff, #ffe1f1);
 }
 
@@ -1436,66 +1597,74 @@ const styles = `
 }
 
 .calendar-day-number {
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 800;
 }
 
 .calendar-day-mood {
-  font-size: 14px;
+  font-size: 18px;
 }
 
 .calendar-day-dot {
-  margin-top: 4px;
-  font-size: 10px;
-  padding: 3px 6px;
+  margin-top: 6px;
+  font-size: 11px;
+  padding: 4px 8px;
   border-radius: 999px;
   background: #f153aa;
   color: #fff;
+  font-weight: 700;
 }
 
-/* 날짜별 카테고리 뱃지 */
+/* 날짜별 카테고리 뱃지 (공통 스타일) */
 .calendar-day-cat-pill {
-  margin-top: 4px;
-  font-size: 10px;
-  padding: 3px 6px;
+  margin-top: 6px;
+  font-size: 11px;
+  padding: 4px 8px;
   border-radius: 999px;
   font-weight: 600;
 }
 
-.calendar-day-cat-counsel { background: #fee2e2; color: #b91c1c; }
-.calendar-day-cat-visit { background: #dbeafe; color: #1d4ed8; }
-.calendar-day-cat-happycall { background: #fef3c7; color: #92400e; }
-.calendar-day-cat-gift { background: #f5e1ff; color: #7e22ce; }
-.calendar-day-cat-shipping { background: #dcfce7; color: #15803d; }
-.calendar-day-cat-meeting { background: #e0f2fe; color: #0369a1; }
-.calendar-day-cat-edu { background: #fef9c3; color: #854d0e; }
-.calendar-day-cat-event { background: #ffe4e6; color: #be123c; }
-.calendar-day-cat-late { background: #fee2e2; color: #b91c1c; }
-.calendar-day-cat-early { background: #e0f2fe; color: #0369a1; }
-.calendar-day-cat-out { background: #f1f5f9; color: #0f172a; }
-.calendar-day-cat-absent { background: #fee2e2; color: #7f1d1d; }
-.calendar-day-cat-closing { background: #ede9fe; color: #4c1d95; }
-.calendar-day-cat-etc { background: #f1f5f9; color: #475569; }
+/* 통합 카테고리 색상: 근태 / 업무내용 / 회의·교육 / 기타 */
+.calendar-unified-attendance {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.calendar-unified-work {
+  background: #fce7f3;
+  color: #9d174d;
+}
+
+.calendar-unified-meeting {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.calendar-unified-etc {
+  background: #e2e8f0;
+  color: #475569;
+}
 
 /* 스케줄 카드 */
 .schedule-card {
-  margin-top: 12px;
+  margin-top: 14px;
   border-radius: 24px;
   background: #ffffff;
   border: 1px solid #e5ddff;
   box-shadow: 0 16px 30px rgba(0,0,0,0.12);
-  padding: 14px 16px;
+  padding: 16px 18px;
 }
 
 .schedule-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .schedule-sub {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 14px;
   color: #7e6fd6;
 }
 
@@ -1504,7 +1673,7 @@ const styles = `
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .schedule-time-wrap {
@@ -1514,15 +1683,15 @@ const styles = `
 }
 
 .schedule-time-label {
-  font-size: 12px;
+  font-size: 13px;
   color: #4b335f;
 }
 
 .schedule-time-input {
   border-radius: 999px;
   border: 1px solid #c2b1ff;
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: 5px 8px;
+  font-size: 13px;
   background: #f9f6ff;
   color: #241336;
 }
@@ -1530,8 +1699,8 @@ const styles = `
 .schedule-category-select {
   border-radius: 999px;
   border: 1px solid #c2b1ff;
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 7px 10px;
+  font-size: 13px;
   background: #faf7ff;
   color: #241336;
 }
@@ -1540,8 +1709,8 @@ const styles = `
   flex: 1;
   border-radius: 999px;
   border: 1px solid #c2b1ff;
-  padding: 7px 10px;
-  font-size: 13px;
+  padding: 8px 12px;
+  font-size: 14px;
   background: #faf7ff;
   color: #241336;
 }
@@ -1553,8 +1722,8 @@ const styles = `
 .schedule-save-btn {
   border-radius: 999px;
   border: none;
-  padding: 7px 14px;
-  font-size: 13px;
+  padding: 8px 14px;
+  font-size: 14px;
   font-weight: 700;
   background: linear-gradient(135deg, #ff8fba, #a36dff);
   color: #fff;
@@ -1563,13 +1732,13 @@ const styles = `
 }
 
 .schedule-empty {
-  font-size: 12px;
+  font-size: 13px;
   color: #7a69c4;
 }
 
 .schedule-list {
   list-style: none;
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   padding: 0;
 }
 
@@ -1577,8 +1746,8 @@ const styles = `
   display: grid;
   grid-template-columns: 70px minmax(0,1fr);
   gap: 6px;
-  font-size: 12px;
-  padding: 4px 0;
+  font-size: 13px;
+  padding: 6px 0;
   border-bottom: 1px dashed #e0d4ff;
 }
 
@@ -1621,6 +1790,7 @@ const styles = `
 .schedule-cat-etc { background: #f1f5f9; color: #475569; }
 
 /* 상세 기록 섹션 */
+
 .myup-detail-section {
   margin-top: 26px;
   margin-bottom: 40px;
@@ -1634,7 +1804,7 @@ const styles = `
   color: #7a69c4;
 }
 
-/* 상세 카드: 위 섹션들과 같은 폭으로 100% */
+/* 상세 카드 */
 .detail-card {
   margin-top: 12px;
   width: 100%;
@@ -1674,6 +1844,7 @@ const styles = `
   margin-bottom: 7px;
 }
 
+/* 기분 이모지 버튼 */
 .mood-chips {
   display: flex;
   flex-wrap: wrap;
@@ -1781,19 +1952,17 @@ const styles = `
   .myup-root {
     padding: 16px;
   }
-  .myup-hero {
+  .myup-header {
+    padding: 32px 24px 36px;
+  }
+  .myup-month-card {
     flex-direction: column;
+    align-items: flex-start;
   }
-  .myup-summary-card {
-    width: 100%;
-    margin-right: 0;
+  .calendar-grid {
+    padding: 12px;
   }
-  .ai-grid {
-    grid-template-columns: 1fr;
-  }
-  .detail-grid.three {
-    grid-template-columns: 1fr;
-  }
+  .detail-grid.three,
   .detail-grid.two {
     grid-template-columns: 1fr;
   }

@@ -507,3 +507,85 @@ a {
 a:hover {
   text-decoration: none;
 }
+/* =========================
+   UP쭈 공통 스타일
+   ========================= */
+.upzzu-base {
+  display: inline-block;
+  will-change: transform, filter;
+  transform-origin: center bottom;
+}
+
+/* 홈: 통통 바운스 + 살짝 스케일 */
+@keyframes upzzu-home-bounce {
+  0%   { transform: translateY(0) scale(1); }
+  30%  { transform: translateY(-8px) scale(1.03); }
+  60%  { transform: translateY(2px) scale(0.98); }
+  100% { transform: translateY(0) scale(1); }
+}
+.upzzu-home {
+  animation: upzzu-home-bounce 1.4s ease-in-out infinite;
+}
+
+/* 나의 UP 관리: 천천히 숨쉬기(호흡) 느낌 */
+@keyframes upzzu-myup-breathe {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+.upzzu-myup {
+  animation: upzzu-myup-breathe 2.4s ease-in-out infinite;
+}
+
+/* 고객관리: 살짝 위로 떠 있는 느낌 + 좌우 스윙 */
+@keyframes upzzu-customers-float {
+  0%   { transform: translateY(0) rotate(0deg); }
+  50%  { transform: translateY(-6px) rotate(-2deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+.upzzu-customers {
+  animation: upzzu-customers-float 2s ease-in-out infinite;
+}
+
+/* 반론 아카이브: 가볍게 끄덕끄덕(생각하는 느낌) */
+@keyframes upzzu-rebuttal-nod {
+  0%   { transform: rotate(0deg); }
+  30%  { transform: rotate(-4deg); }
+  60%  { transform: rotate(3deg); }
+  100% { transform: rotate(0deg); }
+}
+.upzzu-rebuttal {
+  animation: upzzu-rebuttal-nod 1.8s ease-in-out infinite;
+}
+
+/* 문자 도우미: 살짝 튀어나왔다 들어가는 팝 모션 */
+@keyframes upzzu-sms-pop {
+  0%   { transform: scale(1) translateY(0); }
+  30%  { transform: scale(1.06) translateY(-4px); }
+  100% { transform: scale(1) translateY(0); }
+}
+.upzzu-sms {
+  animation: upzzu-sms-pop 1.6s ease-out infinite;
+}
+
+/* 커뮤니티: 살짝 흔들흔들 + 반짝 효과 느낌 */
+@keyframes upzzu-community-wiggle {
+  0%   { transform: rotate(0deg) scale(1); }
+  25%  { transform: rotate(-4deg) scale(1.02); }
+  50%  { transform: rotate(3deg) scale(1.02); }
+  75%  { transform: rotate(-2deg) scale(1.01); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+.upzzu-community {
+  animation: upzzu-community-wiggle 2.2s ease-in-out infinite;
+}
+
+/* 채팅/문의: 살짝 위아래 + 소프트 글로우 */
+@keyframes upzzu-chat-pulse {
+  0%   { transform: translateY(0) scale(1); filter: drop-shadow(0 0 0 rgba(234,179,8,0.0)); }
+  50%  { transform: translateY(-5px) scale(1.03); filter: drop-shadow(0 0 10px rgba(234,179,8,0.55)); }
+  100% { transform: translateY(0) scale(1); filter: drop-shadow(0 0 0 rgba(234,179,8,0.0)); }
+}
+.upzzu-chat {
+  animation: upzzu-chat-pulse 2s ease-in-out infinite;
+}

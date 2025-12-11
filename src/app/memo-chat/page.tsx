@@ -89,6 +89,7 @@ export default function MemoChatListPage() {
   const [nickname, setNickname] = useState<string>('영업인');
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [rooms, setRooms] = useState<ChatRoom[]>(BASE_ROOMS);
+  const [hasShare, setHasShare] = useState(false); // 🔥 반론 공유 준비 여부
 
   useEffect(() => {
     const load = async () => {
@@ -119,10 +120,16 @@ export default function MemoChatListPage() {
       }
 
       if (typeof window !== 'undefined') {
+        // ✅ 반론 공유 텍스트가 준비돼 있는지 체크 (친구 고르라는 안내용)
+        const shared = window.sessionStorage.getItem('uplog-share-to-chat');
+        if (shared && shared.trim()) {
+          setHasShare(true);
+        }
+
         const updated = BASE_ROOMS.map((base) => {
           try {
             const raw = window.localStorage.getItem(
-              STORAGE_PREFIX + base.id
+              STORAGE_PREFIX + base.id,
             );
             if (!raw) return { ...base };
 
@@ -130,10 +137,13 @@ export default function MemoChatListPage() {
             if (!parsed || parsed.length === 0) return { ...base };
 
             const last = parsed[parsed.length - 1];
-            const timeLabel = new Date(last.createdAt).toLocaleTimeString(
-              'ko-KR',
-              { hour: '2-digit', minute: '2-digit', hour12: false }
-            );
+            const timeLabel = new Date(
+              last.createdAt,
+            ).toLocaleTimeString('ko-KR', {
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            });
 
             return {
               ...base,
@@ -154,6 +164,8 @@ export default function MemoChatListPage() {
   }, []);
 
   const handleOpenRoom = (roomId: string) => {
+    // ⚠️ 여기서는 공유 텍스트를 건드리지 않고
+    // 방으로만 이동 → 방 컴포넌트가 sessionStorage에서 꺼내서 붙임
     router.push(`/memo-chat/${roomId}`);
   };
 
@@ -197,6 +209,16 @@ export default function MemoChatListPage() {
             </div>
           </div>
         </section>
+
+        {/* 🔔 반론 스크립트 공유 안내 */}
+        {hasShare && (
+          <section className="share-hint">
+            <span className="share-badge">반론 스크립트 준비됨</span>
+            <span className="share-text">
+              방금 만든 반론 스크립트를 공유할 친구를 선택해 주세요.
+            </span>
+          </section>
+        )}
 
         {/* 채팅방 리스트 */}
         <main className="main">
@@ -376,6 +398,35 @@ const styles = `
   display: flex;
   flex-wrap: wrap;
   gap: 8px 18px;
+  font-size: 12px;
+}
+
+/* 반론 공유 안내 */
+
+.share-hint {
+  margin-top: 6px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #fef2ff;
+  border: 1px dashed #f9a8d4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #9d174d;
+}
+
+.share-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #be185d;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.share-text {
   font-size: 12px;
 }
 
