@@ -1,7 +1,7 @@
 // src/app/sms-helper/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 
 type HelperCategory =
@@ -14,14 +14,54 @@ type HelperCategory =
   | 'problem'
   | 'comfort';
 
-const CATEGORY_META: { id: HelperCategory; label: string }[] = [
-  { id: 'first', label: '첫 통화 전·첫 통화 후' },
-  { id: 'thanks', label: '감사·축하 인사' },
-  { id: 'health', label: '건강 안부·응원' },
-  { id: 'season', label: '계절·날씨 인사' },
-  { id: 'shipping', label: '택배 발송·배송 안내' },
-  { id: 'problem', label: '파손·지연·반품/교환' },
-  { id: 'comfort', label: '위로·응원·기타' },
+const CATEGORY_META: {
+  id: HelperCategory;
+  label: string;
+  color: string; // 카테고리 포인트 색
+  chipBg: string;
+}[] = [
+  {
+    id: 'first',
+    label: '첫 통화 전·첫 통화 후',
+    color: '#ec4899',
+    chipBg: 'linear-gradient(90deg,#fb7185,#e879f9,#a855f7)',
+  },
+  {
+    id: 'thanks',
+    label: '감사·축하 인사',
+    color: '#a855f7',
+    chipBg: 'linear-gradient(90deg,#a855f7,#6366f1)',
+  },
+  {
+    id: 'health',
+    label: '건강 안부·응원',
+    color: '#22c55e',
+    chipBg: 'linear-gradient(90deg,#22c55e,#34d399)',
+  },
+  {
+    id: 'season',
+    label: '계절·날씨 인사',
+    color: '#38bdf8',
+    chipBg: 'linear-gradient(90deg,#38bdf8,#6366f1)',
+  },
+  {
+    id: 'shipping',
+    label: '택배 발송·배송 안내',
+    color: '#f59e0b',
+    chipBg: 'linear-gradient(90deg,#f59e0b,#fb7185)',
+  },
+  {
+    id: 'problem',
+    label: '파손·지연·반품/교환',
+    color: '#ef4444',
+    chipBg: 'linear-gradient(90deg,#ef4444,#f97316)',
+  },
+  {
+    id: 'comfort',
+    label: '위로·응원·기타',
+    color: '#8b5cf6',
+    chipBg: 'linear-gradient(90deg,#8b5cf6,#ec4899)',
+  },
 ];
 
 type SampleTemplate = {
@@ -43,7 +83,6 @@ type MyTemplate = {
 //  예시 문자들 (카테고리별 풍부하게)
 // ================================
 const SAMPLE_TEMPLATES: SampleTemplate[] = [
-  // 첫 통화 전·후
   {
     id: 'first-1',
     category: 'first',
@@ -73,7 +112,6 @@ const SAMPLE_TEMPLATES: SampleTemplate[] = [
       '조금 전 통화 시간 내어 주셔서 감사합니다, ○○님.\n말씀해 주신 내용들 기준으로 정리해서\n도움 되실 수 있는 방향으로 다시 한 번 안내 문자를 드리겠습니다.',
   },
 
-  // 감사·축하
   {
     id: 'thanks-1',
     category: 'thanks',
@@ -103,7 +141,6 @@ const SAMPLE_TEMPLATES: SampleTemplate[] = [
       '다시 한 번 저희를 선택해 주셔서 진심으로 감사합니다, ○○님.\n처음 인연 맺었을 때보다 더 든든하게 느껴지실 수 있도록,\n앞으로의 관리와 소통도 꼼꼼히 챙기겠습니다.',
   },
 
-  // 건강 안부·응원
   {
     id: 'health-1',
     category: 'health',
@@ -133,7 +170,6 @@ const SAMPLE_TEMPLATES: SampleTemplate[] = [
       '안녕하세요, ○○님.\n○○님은 물론, 가족분들 모두 건강히 잘 지내고 계신지요.\n요즘 날씨가 오락가락해서 감기 걸리기 쉬운 때라 걱정되어 문자 드렸습니다.\n항상 건강 가장 먼저 챙기시길 바랄게요.',
   },
 
-  // 계절·날씨
   {
     id: 'season-1',
     category: 'season',
@@ -163,7 +199,6 @@ const SAMPLE_TEMPLATES: SampleTemplate[] = [
       '한 해 동안 함께해 주셔서 진심으로 감사드립니다, ○○님.\n다가오는 새해에는 더 건강하시고, 바라시는 일들 한 걸음씩 이뤄 가시는 한 해가 되시길 기원합니다.\n새해에도 잘 부탁드립니다.',
   },
 
-  // 택배 발송·배송 안내
   {
     id: 'shipping-1',
     category: 'shipping',
@@ -193,7 +228,6 @@ const SAMPLE_TEMPLATES: SampleTemplate[] = [
       '안녕하세요, ○○님.\n말씀 주신 내용 확인 후, 상품을 다시 발송해 드리기로 하여 안내드립니다.\n이번에는 불편 없으시도록 출고부터 배송까지 한 번 더 꼼꼼히 확인하겠습니다.',
   },
 
-  // 파손·지연·반품/교환
   {
     id: 'problem-1',
     category: 'problem',
@@ -223,7 +257,6 @@ const SAMPLE_TEMPLATES: SampleTemplate[] = [
       '○○님, 보내드려야 할 사은품이 누락된 점에 대해 진심으로 사과드립니다.\n확인 즉시 누락된 사은품은 따로 발송해 드리도록 하겠습니다.\n불편을 드려 정말 죄송하고, 앞으로 동일한 일이 반복되지 않도록 내부적으로도 잘 점검하겠습니다.',
   },
 
-  // 위로·응원·기타
   {
     id: 'comfort-1',
     category: 'comfort',
@@ -254,11 +287,48 @@ const SAMPLE_TEMPLATES: SampleTemplate[] = [
   },
 ];
 
+// ================================
+//  간단 자동 교정(외부 API 없이 안전한 수준)
+//  - 공백/줄바꿈 정리
+//  - 자주 틀리는 표현 치환
+// ================================
+function smartFixText(input: string) {
+  let t = input ?? '';
+
+  // 특수 공백/탭 정리
+  t = t.replace(/\u00A0/g, ' ');
+  t = t.replace(/\t/g, ' ');
+
+  // 줄 끝 공백 제거 + 연속 공백 줄이기(문장 내부)
+  t = t
+    .split('\n')
+    .map((line) => line.replace(/[ ]{2,}/g, ' ').replace(/\s+$/g, ''))
+    .join('\n');
+
+  // 빈 줄 3개 이상 -> 2개로 제한
+  t = t.replace(/\n{3,}/g, '\n\n');
+
+  // 자주 틀리는 표현(원하면 더 늘려드림)
+  const replaces: Array<[RegExp, string]> = [
+    [/되요/g, '돼요'],
+    [/할께요/g, '할게요'],
+    [/될께요/g, '될게요'],
+    [/안되/g, '안 되'],
+    [/안돼/g, '안 돼'],
+    [/괜찮으실까요\?/g, '괜찮으실까요?'],
+  ];
+  replaces.forEach(([r, s]) => {
+    t = t.replace(r, s);
+  });
+
+  return t.trim();
+}
+
 export default function SmsHelperPage() {
   const [formCategory, setFormCategory] = useState<HelperCategory>('first');
   const [formTitle, setFormTitle] = useState('첫 통화 후 감사 인사 (기본형)');
   const [formContent, setFormContent] = useState(
-    '예시 문구를 선택해서 담아두고, 대표님 말투로 수정해 보세요.'
+    '예시 문구를 선택해서 담아두고, 자동 교정 후 대표님 말투로 다듬어 보세요.'
   );
 
   const [activeCategory, setActiveCategory] = useState<HelperCategory>('first');
@@ -271,7 +341,14 @@ export default function SmsHelperPage() {
   const currentCategoryLabel =
     CATEGORY_META.find((c) => c.id === formCategory)?.label ?? '';
 
-  // 내 문자함 불러오기
+  const activeMeta = useMemo(() => {
+    return CATEGORY_META.find((c) => c.id === activeCategory) ?? CATEGORY_META[0];
+  }, [activeCategory]);
+
+  const formMeta = useMemo(() => {
+    return CATEGORY_META.find((c) => c.id === formCategory) ?? CATEGORY_META[0];
+  }, [formCategory]);
+
   async function loadMyTemplates() {
     setLoadingMy(true);
     try {
@@ -333,6 +410,12 @@ export default function SmsHelperPage() {
     await copyText(formContent);
   }
 
+  function handleSmartFix() {
+    const fixed = smartFixText(formContent);
+    setFormContent(fixed);
+    alert('자동 교정(공백/기본 오타)을 적용했습니다.');
+  }
+
   async function handleSaveMyTemplate() {
     if (!formTitle.trim() || !formContent.trim()) {
       alert('문자 제목과 내용을 입력해 주세요.');
@@ -363,14 +446,13 @@ export default function SmsHelperPage() {
         alert('저장 중 오류가 발생했습니다.');
       } else {
         alert('내 문자함에 저장되었습니다.');
-        await loadMyTemplates(); // 저장 후 새로고침
+        await loadMyTemplates();
       }
     } finally {
       setSaving(false);
     }
   }
 
-  // 내 문자함 삭제
   async function handleDeleteTemplate(id: string) {
     const ok = window.confirm('이 문구를 내 문자함에서 삭제하시겠습니까?');
     if (!ok) return;
@@ -395,7 +477,6 @@ export default function SmsHelperPage() {
         console.error('SMS_TEMPLATE_DELETE_ERROR', error);
         alert('삭제 중 오류가 발생했습니다.');
       } else {
-        // 화면에서도 바로 제거
         setMyTemplates((prev) => prev.filter((t) => t.id !== id));
       }
     } catch (e) {
@@ -412,223 +493,244 @@ export default function SmsHelperPage() {
     <div
       style={{
         minHeight: '100vh',
-        backgroundColor: '#ffffff',
-        color: '#111827',
-        padding: '32px 16px',
+        padding: '28px 16px 48px',
         boxSizing: 'border-box',
+        background:
+          'linear-gradient(180deg,#ffe4f3 0%,#f1e4ff 45%,#e0f2ff 100%)',
+        color: '#111827',
       }}
     >
+      <style>{`
+        @keyframes upGlow {
+          0% { box-shadow: 0 0 0 rgba(244,114,182,0); }
+          50% { box-shadow: 0 0 26px rgba(244,114,182,0.55), 0 0 36px rgba(168,85,247,0.42); }
+          100% { box-shadow: 0 0 0 rgba(244,114,182,0); }
+        }
+        @keyframes floatSoft {
+          0% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+          100% { transform: translateY(0px); }
+        }
+      `}</style>
+
       <div
         style={{
-          maxWidth: 900,
+          maxWidth: 980,
           margin: '0 auto',
           display: 'flex',
           flexDirection: 'column',
-          gap: 28,
+          gap: 22,
         }}
       >
-        {/* 상단 배너 */}
+        {/* ✅ 헤더: 핑크퍼플 통일 + 말풍선 가이드 + 마스코트 */}
         <section
           style={{
-            borderRadius: 24,
-            padding: '24px 28px',
+            borderRadius: 28,
+            padding: '22px 22px 18px',
             background:
-              'linear-gradient(90deg,#ffe4f5 0%,#e0f2fe 40%,#f5f3ff 100%)',
-            border: '1px solid rgba(199,210,254,0.9)',
-            boxShadow: '0 12px 28px rgba(148,163,184,0.28)',
+              'linear-gradient(120deg,#ff9ecf 0%,#a855f7 45%,#6366f1 100%)',
+            boxShadow: '0 22px 40px rgba(0,0,0,0.28)',
+            color: '#ffffff',
+            position: 'relative',
+            overflow: 'hidden',
+            minHeight: 190,
           }}
         >
-          <p
-            style={{
-              fontSize: 13,
-              letterSpacing: '0.35em',
-              textTransform: 'uppercase',
-              margin: 0,
-              color: '#ec4899',
-              fontWeight: 700,
-            }}
-          >
+          <div style={{ opacity: 0.9, letterSpacing: '0.32em', fontSize: 12, fontWeight: 800 }}>
             UPLOG · MESSAGE HELPER
-          </p>
-          <h1
-            style={{
-              margin: '12px 0 6px',
-              fontSize: 30,
-              fontWeight: 800,
-              color: '#111827',
-            }}
-          >
-            문자 도우미
-          </h1>
+          </div>
 
-          {/* 헤더 밑 가이드 배너 */}
-          <div
-            style={{
-              margin: '10px 0 14px',
-            }}
-          >
-            <div
+          <h1 style={{ margin: '10px 0 0', fontSize: 34, fontWeight: 950, letterSpacing: 0.4 }}>
+            <span
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 10,
-                padding: '8px 14px',
-                borderRadius: 999,
-                backgroundColor: 'rgba(255,255,255,0.85)',
-                boxShadow: '0 6px 16px rgba(148,163,184,0.35)',
               }}
             >
               <span
                 style={{
-                  fontSize: 13,
-                  fontWeight: 800,
-                  padding: '3px 10px',
+                  padding: '2px 10px',
                   borderRadius: 999,
-                  background:
-                    'linear-gradient(90deg,#ec4899,#a855f7)',
-                  color: '#ffffff',
+                  background: 'rgba(255,255,255,0.18)',
+                  border: '1px solid rgba(255,255,255,0.24)',
+                  fontWeight: 950,
                 }}
               >
-                가이드
+                UP
               </span>
-              <span
-                style={{
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color: '#4b5563',
-                }}
-              >
-                상황별 예시 → 입력창으로 담기 → 대표님 말투로 수정 →
-                내 문자함에 저장 순서로 쓰시면 됩니다.
-              </span>
-            </div>
-          </div>
+              문자도우미
+            </span>
+          </h1>
 
-          <p
+          {/* 말풍선 + 마스코트 */}
+          <div
             style={{
-              margin: 0,
-              fontSize: 16,
-              lineHeight: 1.8,
-              color: '#111827',
+              marginTop: 14,
+              display: 'grid',
+              gridTemplateColumns: '1fr 170px',
+              gap: 16,
+              alignItems: 'end',
             }}
           >
-            첫 통화 전 인사 · 상담 후 감사 · 택배 발송/배송 안내 · 파손/반품/지연
-            안내 · 위로/응원 문자까지,&nbsp;
-            <span style={{ fontWeight: 700, color: '#db2777' }}>
-              자주 쓰는 문구를 카테고리별로 모아서
-            </span>
-            &nbsp;대표님 말투로 고쳐 복붙할 수 있도록 도와주는 공간입니다.
-          </p>
+            {/* 말풍선 */}
+            <div
+              style={{
+                background: 'rgba(255,255,255,0.92)',
+                color: '#111827',
+                borderRadius: 18,
+                padding: '14px 16px',
+                boxShadow: '0 14px 26px rgba(0,0,0,0.22)',
+                position: 'relative',
+                maxWidth: 620,
+              }}
+            >
+              <div style={{ fontSize: 15, fontWeight: 950, marginBottom: 6 }}>
+                업쮸의 자동 교정 안내 ✨
+              </div>
+
+              <div style={{ fontSize: 14, lineHeight: 1.75, color: '#374151' }}>
+                <div>
+                  •{' '}
+                  <span style={{ fontWeight: 900, color: '#db2777' }}>
+                    자동 오타/공백 교정
+                  </span>
+                  을 눌러서 기본 오타(예: 되요→돼요)와 공백을 먼저 정리해요.
+                </div>
+                <div>
+                  • 그 다음{' '}
+                  <span style={{ fontWeight: 900, color: '#7c3aed' }}>
+                    대표님 말투로
+                  </span>{' '}
+                  다듬고 저장하면 복붙이 더 깔끔해져요.
+                </div>
+                <div style={{ marginTop: 6, fontSize: 13, color: '#6b7280' }}>
+                  (완전한 띄어쓰기 교정은 외부 맞춤법 API 연결 시 더 강력해집니다.)
+                </div>
+              </div>
+
+              {/* 꼬리: 오른쪽(마스코트 방향) */}
+              <div
+                style={{
+                  position: 'absolute',
+                  right: -8,
+                  top: '62%',
+                  transform: 'translateY(-50%) rotate(45deg)',
+                  width: 16,
+                  height: 16,
+                  background: 'rgba(255,255,255,0.92)',
+                  borderRight: '1px solid rgba(255,255,255,0.70)',
+                  borderBottom: '1px solid rgba(255,255,255,0.70)',
+                  borderRadius: 4,
+                  boxShadow: '8px 10px 18px rgba(0,0,0,0.08)',
+                  pointerEvents: 'none',
+                }}
+              />
+            </div>
+
+            {/* 마스코트 */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <img
+                src="/assets/upzzu2.png"
+                alt="upzzu"
+                style={{
+                  width: 150,
+                  height: 150,
+                  objectFit: 'contain',
+                  animation: 'floatSoft 2.8s ease-in-out infinite',
+                  filter: 'drop-shadow(0 18px 22px rgba(0,0,0,0.25))',
+                }}
+              />
+            </div>
+          </div>
         </section>
 
-        {/* 문자 가이드 / 만들기 */}
+        {/* ✅ 문자 만들기 */}
         <section
           style={{
             borderRadius: 24,
-            padding: '24px 26px',
+            padding: '22px 22px',
             backgroundColor: '#ffffff',
-            border: '1px solid #e5e7eb',
-            boxShadow: '0 10px 22px rgba(15,23,42,0.06)',
+            border: '1px solid #e9d5ff',
+            boxShadow: '0 14px 30px rgba(148,163,184,0.25)',
           }}
         >
-          <h2
-            style={{
-              fontSize: 22,
-              fontWeight: 800,
-              margin: 0,
-              color: '#111827',
-            }}
-          >
-            문자 가이드
-          </h2>
-          <p
-            style={{
-              marginTop: 10,
-              marginBottom: 20,
-              fontSize: 15,
-              lineHeight: 1.8,
-              color: '#374151',
-            }}
-          >
-            ① 아래{' '}
-            <span
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 950, color: '#111827' }}>
+              문자 만들기
+            </h2>
+
+            <button
+              type="button"
+              onClick={handleSmartFix}
               style={{
-                fontWeight: 700,
-                color: '#db2777',
+                height: 42,
+                padding: '0 16px',
+                borderRadius: 999,
+                border: 'none',
+                background: 'linear-gradient(90deg,#fb7185,#e879f9,#a855f7)',
+                color: '#ffffff',
+                fontSize: 13,
+                fontWeight: 950,
+                cursor: 'pointer',
+                animation: 'upGlow 2.8s ease-in-out infinite',
+                whiteSpace: 'nowrap',
               }}
             >
-              상황별 예시
-            </span>
-            에서 마음에 드는 문장을{' '}
-            <span
-              style={{
-                fontWeight: 700,
-                color: '#db2777',
-              }}
-            >
-              “입력창으로 담기”
-            </span>
-            로 불러오고,&nbsp;
-            <span style={{ fontWeight: 700 }}>대표님 말투</span>로 수정한 뒤<br />
-            ② 자주 쓰는 문장은{' '}
-            <span
-              style={{
-                fontWeight: 700,
-                color: '#db2777',
-              }}
-            >
-              “내 문자함에 저장”
-            </span>
-            으로 모아두시면 됩니다.
-          </p>
+              ✨ 자동 오타/공백 교정
+            </button>
+          </div>
+
+          <div style={{ height: 14 }} />
 
           {/* 카테고리 */}
           <div style={{ marginBottom: 14 }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 14,
-                fontWeight: 700,
-                color: '#374151',
-                marginBottom: 6,
-              }}
-            >
+            <label style={{ display: 'block', fontSize: 14, fontWeight: 950, color: '#374151', marginBottom: 6 }}>
               카테고리
             </label>
-            <select
-              value={formCategory}
-              onChange={(e) =>
-                setFormCategory(e.target.value as HelperCategory)
-              }
-              style={{
-                width: '100%',
-                borderRadius: 10,
-                border: '1px solid #d1d5db',
-                padding: '11px 13px',
-                fontSize: 15,
-                color: '#111827',
-                backgroundColor: '#ffffff',
-              }}
-            >
-              {CATEGORY_META.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
+
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 999,
+                  background: formMeta.chipBg,
+                  color: '#fff',
+                  fontWeight: 950,
+                  fontSize: 13,
+                  boxShadow: '0 0 14px rgba(244,114,182,0.45)',
+                }}
+              >
+                {currentCategoryLabel}
+              </span>
+
+              <select
+                value={formCategory}
+                onChange={(e) => setFormCategory(e.target.value as HelperCategory)}
+                style={{
+                  flex: 1,
+                  minWidth: 260,
+                  borderRadius: 12,
+                  border: '1px solid #d1d5db',
+                  padding: '12px 14px',
+                  fontSize: 16,
+                  fontWeight: 800,
+                  color: '#111827',
+                  backgroundColor: '#ffffff',
+                }}
+              >
+                {CATEGORY_META.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* 제목 */}
           <div style={{ marginBottom: 14 }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 14,
-                fontWeight: 700,
-                color: '#374151',
-                marginBottom: 6,
-              }}
-            >
+            <label style={{ display: 'block', fontSize: 14, fontWeight: 950, color: '#374151', marginBottom: 6 }}>
               문자 제목(이름)
             </label>
             <input
@@ -637,81 +739,73 @@ export default function SmsHelperPage() {
               placeholder="예: 첫 통화 후 감사 인사 (기본형)"
               style={{
                 width: '100%',
-                borderRadius: 10,
+                borderRadius: 12,
                 border: '1px solid #d1d5db',
-                padding: '11px 13px',
-                fontSize: 15,
+                padding: '12px 14px',
+                fontSize: 16,
+                fontWeight: 800,
                 color: '#111827',
+                backgroundColor: '#ffffff',
+                boxSizing: 'border-box',
               }}
             />
           </div>
 
           {/* 내용 */}
           <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 14,
-                fontWeight: 700,
-                color: '#374151',
-                marginBottom: 6,
-              }}
-            >
+            <label style={{ display: 'block', fontSize: 14, fontWeight: 950, color: '#374151', marginBottom: 6 }}>
               문자 내용
             </label>
             <textarea
               value={formContent}
               onChange={(e) => setFormContent(e.target.value)}
               rows={7}
-              placeholder="예시 문구를 선택해서 담아두고, 대표님 말투로 수정해 보세요."
+              placeholder="예시 문구를 선택해서 담아두고, 자동 교정 후 대표님 말투로 다듬어 보세요."
               style={{
                 width: '100%',
-                borderRadius: 10,
+                borderRadius: 12,
                 border: '1px solid #d1d5db',
-                padding: '11px 13px',
-                fontSize: 15,
+                padding: '12px 14px',
+                fontSize: 16,
+                fontWeight: 700,
                 color: '#111827',
-                lineHeight: 1.8,
+                lineHeight: 1.9,
                 resize: 'vertical',
+                backgroundColor: '#ffffff',
+                boxSizing: 'border-box',
               }}
             />
           </div>
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: 10,
-              marginTop: 18,
-            }}
-          >
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
             <button
               type="button"
               onClick={handleCopyCurrent}
               style={{
-                padding: '9px 15px',
+                padding: '10px 16px',
                 borderRadius: 999,
                 border: '1px solid #e5e7eb',
                 backgroundColor: '#ffffff',
                 fontSize: 14,
-                fontWeight: 500,
-                color: '#4b5563',
+                fontWeight: 900,
+                color: '#374151',
                 cursor: 'pointer',
               }}
             >
-              이 내용 복사하기
+              복사하기
             </button>
+
             <button
               type="button"
               onClick={handleSaveMyTemplate}
               disabled={saving}
               style={{
-                padding: '9px 20px',
+                padding: '10px 20px',
                 borderRadius: 999,
                 border: 'none',
                 background: 'linear-gradient(90deg,#ec4899,#a855f7)',
                 fontSize: 14,
-                fontWeight: 700,
+                fontWeight: 950,
                 color: '#ffffff',
                 cursor: saving ? 'default' : 'pointer',
                 opacity: saving ? 0.7 : 1,
@@ -720,73 +814,31 @@ export default function SmsHelperPage() {
               {saving ? '저장 중…' : '내 문자함에 저장'}
             </button>
           </div>
-
-          <p
-            style={{
-              marginTop: 10,
-              fontSize: 13,
-              color: '#6b7280',
-            }}
-          >
-            현재 카테고리:{' '}
-            <span style={{ fontWeight: 700, color: '#4f46e5' }}>
-              {currentCategoryLabel}
-            </span>
-          </p>
         </section>
 
-        {/* 문자 보기 (상황별 예시) */}
+        {/* ✅ 문자 보기 */}
         <section
           style={{
             borderRadius: 24,
-            padding: '24px 26px',
+            padding: '22px 22px',
             backgroundColor: '#ffffff',
-            border: '1px solid #e5e7eb',
-            boxShadow: '0 10px 22px rgba(15,23,42,0.06)',
+            border: '1px solid #e9d5ff',
+            boxShadow: '0 14px 30px rgba(148,163,184,0.25)',
           }}
         >
-          <h2
-            style={{
-              fontSize: 22,
-              fontWeight: 800,
-              margin: 0,
-              color: '#111827',
-            }}
-          >
-            문자 보기{' '}
-            <span style={{ fontSize: 16, color: '#9ca3af' }}>(상황별 예시)</span>
-          </h2>
-          <p
-            style={{
-              marginTop: 10,
-              marginBottom: 16,
-              fontSize: 15,
-              lineHeight: 1.8,
-              color: '#374151',
-            }}
-          >
-            위에 있는 버튼에서{' '}
-            <span style={{ fontWeight: 700, color: '#db2777' }}>
-              상황별 카테고리
-            </span>
-            를 고르고, 밑의 카드들에서 예시 문장을 살펴볼 수 있습니다. 카드의{' '}
-            <span style={{ fontWeight: 700, color: '#db2777' }}>“복사”</span>는
-            바로 사용,{' '}
-            <span style={{ fontWeight: 700, color: '#db2777' }}>
-              “입력창으로 담기”
-            </span>
-            는 위 가이드 영역으로 올려서 수정용으로 쓰는 버튼입니다.
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 950, color: '#111827' }}>
+              문자 보기
+            </h2>
+            <div style={{ fontSize: 13, color: '#6b7280', fontWeight: 900 }}>
+              상황별 예시
+            </div>
+          </div>
 
-          {/* 카테고리 버튼들 */}
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 10,
-              marginBottom: 20,
-            }}
-          >
+          <div style={{ height: 16 }} />
+
+          {/* 카테고리 버튼들: 색상 포인트 */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 18 }}>
             {CATEGORY_META.map((c) => {
               const active = c.id === activeCategory;
               return (
@@ -795,18 +847,14 @@ export default function SmsHelperPage() {
                   type="button"
                   onClick={() => setActiveCategory(c.id)}
                   style={{
-                    padding: '8px 15px',
+                    padding: '9px 15px',
                     borderRadius: 999,
                     fontSize: 14,
-                    fontWeight: 600,
+                    fontWeight: 950,
                     border: active ? 'none' : '1px solid #e5e7eb',
-                    background: active
-                      ? 'linear-gradient(90deg,#fb7185,#e879f9,#a855f7)'
-                      : '#ffffff',
+                    background: active ? c.chipBg : '#ffffff',
                     color: active ? '#ffffff' : '#374151',
-                    boxShadow: active
-                      ? '0 0 14px rgba(244,114,182,0.65)'
-                      : 'none',
+                    boxShadow: active ? '0 0 16px rgba(168,85,247,0.35)' : 'none',
                     cursor: 'pointer',
                   }}
                 >
@@ -816,261 +864,191 @@ export default function SmsHelperPage() {
             })}
           </div>
 
-          {/* 예시 카드 리스트 */}
+          {/* 예시 카드 */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {filteredSamples.map((tpl) => (
-              <article
-                key={tpl.id}
-                style={{
-                  borderRadius: 18,
-                  padding: '16px 19px',
-                  backgroundColor: '#f9fafb',
-                  border: '1px solid #e5e7eb',
-                  boxShadow: '0 7px 16px rgba(148,163,184,0.32)',
-                }}
-              >
-                <div
+            {filteredSamples.map((tpl) => {
+              const meta = CATEGORY_META.find((c) => c.id === tpl.category) ?? CATEGORY_META[0];
+              return (
+                <article
+                  key={tpl.id}
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: 8,
+                    borderRadius: 18,
+                    padding: '16px 18px',
+                    background: 'linear-gradient(135deg,#fdf2ff 0%,#eff6ff 60%,#ffffff 100%)',
+                    border: '1px solid #e5e7eb',
+                    boxShadow: '0 7px 16px rgba(148,163,184,0.30)',
+                    position: 'relative',
+                    overflow: 'hidden',
                   }}
                 >
-                  <h3
+                  {/* 좌측 포인트 바 */}
+                  <div
                     style={{
-                      fontSize: 16,
-                      fontWeight: 700,
-                      margin: 0,
-                      color: '#111827',
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 7,
+                      background: meta.chipBg,
                     }}
-                  >
-                    {tpl.title}
-                  </h3>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: '#6b7280',
-                      fontWeight: 500,
-                    }}
-                  >
-                    예시 문자
-                  </span>
-                </div>
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: 15,
-                    lineHeight: 1.9,
-                    color: '#111827',
-                    whiteSpace: 'pre-line',
-                  }}
-                >
-                  {tpl.content}
-                </p>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    gap: 8,
-                    marginTop: 12,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => copyText(tpl.content)}
-                    style={{
-                      padding: '7px 13px',
-                      borderRadius: 999,
-                      border: '1px solid #e5e7eb',
-                      backgroundColor: '#ffffff',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: '#374151',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    복사
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fillFromTemplate(tpl)}
-                    style={{
-                      padding: '7px 13px',
-                      borderRadius: 999,
-                      border: 'none',
-                      backgroundColor: '#fce7f3',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: '#be185d',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    입력창으로 담기
-                  </button>
-                </div>
-              </article>
-            ))}
+                  />
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <span
+                        style={{
+                          padding: '5px 11px',
+                          borderRadius: 999,
+                          background: meta.chipBg,
+                          color: '#fff',
+                          fontWeight: 950,
+                          fontSize: 12,
+                          boxShadow: '0 0 14px rgba(244,114,182,0.35)',
+                        }}
+                      >
+                        {meta.label}
+                      </span>
+                      <h3 style={{ fontSize: 16, fontWeight: 950, margin: 0, color: '#111827' }}>
+                        {tpl.title}
+                      </h3>
+                    </div>
+
+                    <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 900 }}>예시</span>
+                  </div>
+
+                  <p style={{ margin: 0, fontSize: 16, fontWeight: 700, lineHeight: 1.9, color: '#111827', whiteSpace: 'pre-line' }}>
+                    {tpl.content}
+                  </p>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => copyText(tpl.content)}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: 999,
+                        border: '1px solid #e5e7eb',
+                        backgroundColor: '#ffffff',
+                        fontSize: 13,
+                        fontWeight: 950,
+                        color: '#374151',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      복사
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fillFromTemplate(tpl)}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: 999,
+                        border: 'none',
+                        background: meta.chipBg,
+                        fontSize: 13,
+                        fontWeight: 950,
+                        color: '#ffffff',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      입력창으로 담기
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
 
-        {/* 내 문자함 */}
+        {/* ✅ 내 문자함 */}
         <section
           style={{
             borderRadius: 24,
-            padding: '24px 26px',
+            padding: '22px 22px',
             backgroundColor: '#ffffff',
-            border: '1px solid #e5e7eb',
-            boxShadow: '0 10px 22px rgba(15,23,42,0.06)',
+            border: '1px solid #e9d5ff',
+            boxShadow: '0 14px 30px rgba(148,163,184,0.25)',
           }}
         >
-          <h2
-            style={{
-              fontSize: 22,
-              fontWeight: 800,
-              margin: 0,
-              color: '#111827',
-            }}
-          >
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 950, color: '#111827' }}>
             내 문자함
           </h2>
-          <p
-            style={{
-              marginTop: 10,
-              marginBottom: 16,
-              fontSize: 15,
-              lineHeight: 1.8,
-              color: '#374151',
-            }}
-          >
-            위에서{' '}
-            <span style={{ fontWeight: 700, color: '#db2777' }}>
-              “내 문자함에 저장”
-            </span>
-            한 문장들이 여기 모입니다. 카드에서 바로{' '}
-            <span style={{ fontWeight: 700 }}>복사</span>하거나,{' '}
-            <span style={{ fontWeight: 700 }}>입력창으로 불러오기</span>를 눌러
-            조금씩 수정해서 다시 저장할 수 있습니다.
-          </p>
+
+          <div style={{ height: 16 }} />
 
           {loadingMy ? (
-            <div
-              style={{
-                padding: '26px 0',
-                fontSize: 15,
-                color: '#6b7280',
-              }}
-            >
-              내 문자함을 불러오는 중입니다…
-            </div>
+            <div style={{ padding: '18px 0', fontSize: 15, color: '#6b7280' }}>불러오는 중입니다…</div>
           ) : myTemplates.length === 0 ? (
-            <div
-              style={{
-                padding: '26px 0',
-                fontSize: 15,
-                color: '#6b7280',
-              }}
-            >
-              아직 저장된 문자가 없습니다. 위의 문자 가이드에서 문구를 만든 뒤{' '}
-              <span style={{ fontWeight: 700 }}>“내 문자함에 저장”</span>을 눌러
-              보세요.
-            </div>
+            <div style={{ padding: '18px 0', fontSize: 15, color: '#6b7280' }}>아직 저장된 문자가 없습니다.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {myTemplates.map((tpl) => {
-                const catLabel =
-                  CATEGORY_META.find((c) => c.id === tpl.category)?.label ?? '';
+                const meta = CATEGORY_META.find((c) => c.id === tpl.category) ?? CATEGORY_META[0];
+
                 return (
                   <article
                     key={tpl.id}
                     style={{
                       borderRadius: 18,
-                      padding: '15px 17px',
-                      background: 'linear-gradient(135deg,#fdf2ff,#eff6ff)',
+                      padding: '15px 16px',
+                      background: 'linear-gradient(135deg,#fdf2ff 0%,#eff6ff 60%,#ffffff 100%)',
                       border: '1px solid #e5e7eb',
-                      boxShadow: '0 7px 16px rgba(148,163,184,0.32)',
+                      boxShadow: '0 7px 16px rgba(148,163,184,0.28)',
+                      position: 'relative',
+                      overflow: 'hidden',
                     }}
                   >
                     <div
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: 8,
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: 7,
+                        background: meta.chipBg,
                       }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                        }}
-                      >
+                    />
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                         <span
                           style={{
-                            fontSize: 12,
-                            padding: '4px 10px',
+                            padding: '5px 11px',
                             borderRadius: 999,
-                            backgroundColor: '#eef2ff',
-                            color: '#4f46e5',
-                            fontWeight: 600,
+                            background: meta.chipBg,
+                            color: '#fff',
+                            fontWeight: 950,
+                            fontSize: 12,
+                            boxShadow: '0 0 14px rgba(168,85,247,0.25)',
                           }}
                         >
-                          {catLabel}
+                          {meta.label}
                         </span>
-                        <h3
-                          style={{
-                            fontSize: 15,
-                            fontWeight: 700,
-                            margin: 0,
-                            color: '#111827',
-                          }}
-                        >
+                        <h3 style={{ fontSize: 15, fontWeight: 950, margin: 0, color: '#111827' }}>
                           {tpl.title}
                         </h3>
                       </div>
-                      <span
-                        style={{
-                          fontSize: 12,
-                          color: '#9ca3af',
-                        }}
-                      >
+
+                      <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 900 }}>
                         {new Date(tpl.created_at).toLocaleDateString('ko-KR')}
                       </span>
                     </div>
 
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: 15,
-                        lineHeight: 1.9,
-                        color: '#111827',
-                        whiteSpace: 'pre-line',
-                      }}
-                    >
+                    <p style={{ margin: 0, fontSize: 16, fontWeight: 700, lineHeight: 1.9, color: '#111827', whiteSpace: 'pre-line' }}>
                       {tpl.content}
                     </p>
 
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginTop: 12,
-                        gap: 8,
-                        flexWrap: 'wrap',
-                      }}
-                    >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, gap: 8, flexWrap: 'wrap' }}>
                       <button
                         type="button"
                         onClick={() => handleDeleteTemplate(tpl.id)}
                         style={{
-                          padding: '6px 11px',
+                          padding: '8px 12px',
                           borderRadius: 999,
                           border: '1px solid #fecaca',
                           backgroundColor: '#fef2f2',
                           fontSize: 13,
-                          fontWeight: 500,
+                          fontWeight: 950,
                           color: '#b91c1c',
                           cursor: 'pointer',
                         }}
@@ -1078,22 +1056,17 @@ export default function SmsHelperPage() {
                         삭제
                       </button>
 
-                      <div
-                        style={{
-                          display: 'flex',
-                          gap: 8,
-                        }}
-                      >
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         <button
                           type="button"
                           onClick={() => copyText(tpl.content)}
                           style={{
-                            padding: '6px 12px',
+                            padding: '8px 14px',
                             borderRadius: 999,
                             border: '1px solid #e5e7eb',
                             backgroundColor: '#ffffff',
                             fontSize: 13,
-                            fontWeight: 500,
+                            fontWeight: 950,
                             color: '#374151',
                             cursor: 'pointer',
                           }}
@@ -1104,13 +1077,13 @@ export default function SmsHelperPage() {
                           type="button"
                           onClick={() => fillFromTemplate(tpl)}
                           style={{
-                            padding: '6px 12px',
+                            padding: '8px 14px',
                             borderRadius: 999,
                             border: 'none',
-                            backgroundColor: '#fef2ff',
+                            background: meta.chipBg,
                             fontSize: 13,
-                            fontWeight: 600,
-                            color: '#a21caf',
+                            fontWeight: 950,
+                            color: '#ffffff',
                             cursor: 'pointer',
                           }}
                         >

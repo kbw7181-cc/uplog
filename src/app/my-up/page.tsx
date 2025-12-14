@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
+import UpzzuHeaderCoach from '../components/UpzzuHeaderCoach';
 
 // ===== 타입 =====
 type UpLogRow = {
@@ -69,14 +70,15 @@ type MoodOption = {
 };
 
 // ===== 상수 =====
-// 행복한 날 추가됨
+// 기분 이모지 옵션 (힘든날 ~ 열정가득한날)
 const moodOptions: MoodOption[] = [
   { code: 'hard', emoji: '🥵', label: '힘든 날' },
-  { code: 'little-down', emoji: '😮‍💨', label: '살짝 다운' },
-  { code: 'normal', emoji: '🙂', label: '보통' },
-  { code: 'good', emoji: '😊', label: '나쁘지 않은 날' },
-  { code: 'happy', emoji: '🤩', label: '행복한 날' },
-  { code: 'fire', emoji: '🔥', label: '불타는 날' },
+  { code: 'sad', emoji: '😢', label: '슬픈 날' },
+  { code: 'happy', emoji: '😊', label: '기쁜 날' },
+  { code: 'cheer', emoji: '💪', label: '힘이 나는 날' },
+  { code: 'bright', emoji: '🤩', label: '행복한 날' },
+  { code: 'thanks', emoji: '🙏', label: '감사한 날' },
+  { code: 'passion', emoji: '🔥', label: '열정 가득한 날' },
 ];
 
 const SCHEDULE_CATEGORY_META: { id: ScheduleCategory; label: string }[] = [
@@ -247,16 +249,8 @@ export default function MyUpPage() {
 
   // ===== 데이터 로드 =====
   const loadMonthlyGrowth = async (uid: string, baseMonth: Date) => {
-    const monthStart = new Date(
-      baseMonth.getFullYear(),
-      baseMonth.getMonth(),
-      1
-    );
-    const monthEnd = new Date(
-      baseMonth.getFullYear(),
-      baseMonth.getMonth() + 1,
-      0
-    );
+    const monthStart = new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1);
+    const monthEnd = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 0);
 
     const from = formatDate(monthStart);
     const to = formatDate(monthEnd);
@@ -268,9 +262,7 @@ export default function MyUpPage() {
       .gte('log_date', from)
       .lte('log_date', to);
 
-    if (logError) {
-      console.error('up_logs monthly error', logError);
-    }
+    if (logError) console.error('up_logs monthly error', logError);
 
     const { data: scheduleRows, error: scheduleError } = await supabase
       .from('schedules')
@@ -279,40 +271,23 @@ export default function MyUpPage() {
       .gte('schedule_date', from)
       .lte('schedule_date', to);
 
-    if (scheduleError) {
-      console.error('schedules monthly error', scheduleError);
-    }
+    if (scheduleError) console.error('schedules monthly error', scheduleError);
 
-    type Meta = {
-      count: number;
-      mood: string | null;
-      catCounts: Record<string, number>;
-    };
-
+    type Meta = { count: number; mood: string | null; catCounts: Record<string, number> };
     const map: Record<string, Meta> = {};
 
-    // up_logs 집계
     (logRows ?? []).forEach((row: any) => {
       const raw = row.log_date;
-      const str =
-        typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
-      if (!map[str]) {
-        map[str] = { count: 0, mood: row.mood ?? null, catCounts: {} };
-      }
+      const str = typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
+      if (!map[str]) map[str] = { count: 0, mood: row.mood ?? null, catCounts: {} };
       map[str].count += 1;
-      if (!map[str].mood && row.mood) {
-        map[str].mood = row.mood;
-      }
+      if (!map[str].mood && row.mood) map[str].mood = row.mood;
     });
 
-    // schedules 집계
     (scheduleRows ?? []).forEach((row: any) => {
       const raw = row.schedule_date;
-      const str =
-        typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
-      if (!map[str]) {
-        map[str] = { count: 0, mood: null, catCounts: {} };
-      }
+      const str = typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
+      if (!map[str]) map[str] = { count: 0, mood: null, catCounts: {} };
       map[str].count += 1;
       const cat: string = row.category ?? 'etc';
       if (!map[str].catCounts[cat]) map[str].catCounts[cat] = 0;
@@ -321,11 +296,7 @@ export default function MyUpPage() {
 
     const days: GrowthDay[] = [];
     for (let d = 1; d <= monthEnd.getDate(); d++) {
-      const cur = new Date(
-        monthStart.getFullYear(),
-        monthStart.getMonth(),
-        d
-      );
+      const cur = new Date(monthStart.getFullYear(), monthStart.getMonth(), d);
       const str = formatDate(cur);
       const meta = map[str];
 
@@ -340,18 +311,12 @@ export default function MyUpPage() {
         };
 
         Object.entries(meta.catCounts).forEach(([cat, cnt]) => {
-          const unified = mapScheduleCategoryToUnified(
-            (cat as ScheduleCategory) || 'etc'
-          );
+          const unified = mapScheduleCategoryToUnified((cat as ScheduleCategory) || 'etc');
           groupCounts[unified] += cnt as number;
         });
 
-        const sorted = Object.entries(groupCounts).sort(
-          (a, b) => b[1] - a[1]
-        );
-        if (sorted[0][1] > 0) {
-          mainCategory = sorted[0][0] as UnifiedScheduleCategory;
-        }
+        const sorted = Object.entries(groupCounts).sort((a, b) => b[1] - a[1]);
+        if (sorted[0][1] > 0) mainCategory = sorted[0][0] as UnifiedScheduleCategory;
       }
 
       days.push({
@@ -365,7 +330,6 @@ export default function MyUpPage() {
   };
 
   const loadDayData = async (uid: string, dateStr: string) => {
-    // ===== U P 기록 =====
     const { data: upRow, error: upError } = await supabase
       .from('up_logs')
       .select(
@@ -380,11 +344,9 @@ export default function MyUpPage() {
     }
 
     if (upRow) {
-      // ▶ 해당 날짜에 이미 기록 있으면 그대로 사용
       setHasCurrentLog(true);
       setLogRow(upRow as UpLogRow);
     } else {
-      // ▶ 기록 없으면, 이전 날짜 중 가장 최근 기록에서 "목표 3개 + 기분"만 가져오기
       const { data: prevRows, error: prevError } = await supabase
         .from('up_logs')
         .select('mood, day_goal, week_goal, month_goal')
@@ -405,7 +367,6 @@ export default function MyUpPage() {
           month_goal: string | null;
         };
 
-        // 이전 값에서 "목표/기분"만 복사, 나머지 노트는 새로 작성
         setLogRow({
           user_id: uid,
           log_date: dateStr,
@@ -418,7 +379,6 @@ export default function MyUpPage() {
           regret_point: null,
         });
       } else {
-        // 이전 기록도 없으면 완전 새로 시작
         setLogRow({
           user_id: uid,
           log_date: dateStr,
@@ -435,7 +395,6 @@ export default function MyUpPage() {
       setHasCurrentLog(false);
     }
 
-    // ===== 오늘 할 일 리스트 =====
     const { data: taskRows, error: taskError } = await supabase
       .from('daily_tasks')
       .select('id, user_id, task_date, content, done')
@@ -458,7 +417,6 @@ export default function MyUpPage() {
       );
     }
 
-    // ===== 스케줄 =====
     const { data: scheduleRows, error: scheduleError } = await supabase
       .from('schedules')
       .select('id, title, schedule_date, schedule_time, category')
@@ -504,7 +462,6 @@ export default function MyUpPage() {
   const handleSaveLog = async () => {
     if (!logRow || !userId) return;
 
-    // id는 빼고, 해당 날짜용 payload만 구성
     const payload = {
       user_id: userId,
       log_date: selectedDate,
@@ -520,7 +477,6 @@ export default function MyUpPage() {
     let error = null;
 
     if (hasCurrentLog) {
-      // ▶ 이미 해당 날짜에 기록이 있으면 UPDATE
       const { error: updateError } = await supabase
         .from('up_logs')
         .update(payload)
@@ -528,10 +484,7 @@ export default function MyUpPage() {
         .eq('log_date', selectedDate);
       error = updateError;
     } else {
-      // ▶ 처음 기록하는 날짜면 INSERT
-      const { error: insertError } = await supabase
-        .from('up_logs')
-        .insert(payload);
+      const { error: insertError } = await supabase.from('up_logs').insert(payload);
       error = insertError;
     }
 
@@ -584,35 +537,21 @@ export default function MyUpPage() {
   };
 
   const handleTaskContentChange = (id: string | undefined, value: string) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, content: value } : t))
-    );
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, content: value } : t)));
   };
 
   const handleTaskBlur = async (task: DailyTask) => {
     if (!task.id) return;
-    const { error } = await supabase
-      .from('daily_tasks')
-      .update({ content: task.content })
-      .eq('id', task.id);
-    if (error) {
-      console.error('update task error', error);
-    }
+    const { error } = await supabase.from('daily_tasks').update({ content: task.content }).eq('id', task.id);
+    if (error) console.error('update task error', error);
   };
 
   const toggleTaskDone = async (task: DailyTask) => {
     if (!task.id) return;
     const nextDone = !task.done;
-    setTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t))
-    );
-    const { error } = await supabase
-      .from('daily_tasks')
-      .update({ done: nextDone })
-      .eq('id', task.id);
-    if (error) {
-      console.error('toggle task error', error);
-    }
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t)));
+    const { error } = await supabase.from('daily_tasks').update({ done: nextDone }).eq('id', task.id);
+    if (error) console.error('toggle task error', error);
   };
 
   const handleScheduleSave = async () => {
@@ -647,57 +586,33 @@ export default function MyUpPage() {
   };
 
   const daysInMonth = useMemo(() => {
-    const firstDay = new Date(
-      currentMonth.getFullYear(),
-      currentMonth.getMonth(),
-      1
-    );
-    const lastDay = new Date(
-      currentMonth.getFullYear(),
-      currentMonth.getMonth() + 1,
-      0
-    );
+    const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const lastDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
 
     const days: Date[] = [];
     const startWeekday = firstDay.getDay();
 
     for (let i = 0; i < startWeekday; i++) {
       days.push(
-        new Date(
-          firstDay.getFullYear(),
-          firstDay.getMonth(),
-          firstDay.getDate() - (startWeekday - i)
-        )
+        new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate() - (startWeekday - i))
       );
     }
 
     for (let d = 1; d <= lastDay.getDate(); d++) {
-      days.push(
-        new Date(currentMonth.getFullYear(), currentMonth.getMonth(), d)
-      );
+      days.push(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), d));
     }
 
     while (days.length % 7 !== 0) {
       const last = days[days.length - 1];
-      days.push(
-        new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1)
-      );
+      days.push(new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1));
     }
 
     return days;
   }, [currentMonth]);
 
-  // 월 통계: 기록한 날 / 총 기록·일정 개수
-  const recordedDaysInMonth = useMemo(
-    () => growthDays.filter((g) => g.count > 0).length,
-    [growthDays]
-  );
-
-  const totalRecordsInMonth = useMemo(
-    () => growthDays.reduce((acc, g) => acc + g.count, 0),
-    [growthDays]
-  );
-
+  // 월 통계
+  const recordedDaysInMonth = useMemo(() => growthDays.filter((g) => g.count > 0).length, [growthDays]);
+  const totalRecordsInMonth = useMemo(() => growthDays.reduce((acc, g) => acc + g.count, 0), [growthDays]);
   const completedTasks = tasks.filter((t) => t.done).length;
 
   const upzzuLine = `이번 달에 기록한 날 ${recordedDaysInMonth}일, 일정·기록 ${totalRecordsInMonth}개가 쌓였어요. 오늘 남긴 한 줄이 다음 달 계약 그래프를 바꿔요.`;
@@ -713,47 +628,29 @@ export default function MyUpPage() {
     );
   }
 
-  const selectedGrowthMeta =
-    growthDays.find((g) => g.date === selectedDate) ?? null;
+  const selectedGrowthMeta = growthDays.find((g) => g.date === selectedDate) ?? null;
   const selectedGrowth = selectedGrowthMeta?.count ?? 0;
 
   return (
     <div className="myup-root">
       <div className="myup-inner">
-        {/* ===== 헤더 (메인과 동일 구조) ===== */}
+        {/* ===== 헤더 ===== */}
         <header className="myup-header">
           <div className="myup-header-inner">
             <div className="myup-header-text">
               <div className="myup-header-tag">UPLOG · MYUP</div>
               <h1 className="myup-header-title">나의 U P 관리</h1>
-              <p className="myup-header-sub">
-                오늘의 컨디션, 목표, 실적과 마음을 한 번에 정리하는
-                <br />
-                {nickname}님만의 기록장이에요.
-              </p>
-              <p className="myup-header-date">
-                선택한 날짜 · {prettyKoreanDate(selectedDate)}
-              </p>
+              
             </div>
 
-            {/* 🔥 메인과 동일한 마스코트 라인 */}
-            <div className="home-header-bottom">
-              <div className="mascot-wrap">
-                <div className="mascot-bubble">
-                  <span className="mascot-bubble-tag">오늘의 U P 한마디</span>
-                  <span className="mascot-bubble-main">{upzzuLine}</span>
-                </div>
-                <div className="mascot-video-frame">
-                  <video
-                    className="mascot-video"
-                    src="/assets/videos/upzzu-mascot.mp4"
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                  />
-                </div>
-              </div>
+            {/* ✅ 업쮸 코치 (말풍선 + 점프) */}
+            <div className="myup-coach-line">
+              <UpzzuHeaderCoach
+                mascotSrc="/assets/upzzu6.png"
+                text={upzzuLine}
+                tag="오늘의 U P 한마디"
+                sizePx={150}
+              />
             </div>
           </div>
         </header>
@@ -762,7 +659,7 @@ export default function MyUpPage() {
         <section className="myup-month-card">
           <div className="myup-month-left">
             <div className="myup-month-title">이번 달 요약</div>
-            <div className="myup-month-date">{formatDate(new Date())}</div>
+
           </div>
           <div className="myup-month-meta">
             <div className="myup-month-row">
@@ -782,7 +679,7 @@ export default function MyUpPage() {
           </div>
         </section>
 
-        {/* ===== 오늘 할 일 + 기분 이모지 ===== */}
+        {/* ===== 오늘 할 일 + 기분 ===== */}
         <section className="myup-todo-section">
           <div className="todo-header">
             <h2 className="section-title">오늘 할 일 리스트</h2>
@@ -793,7 +690,6 @@ export default function MyUpPage() {
             </div>
           </div>
 
-          {/* 기분 이모지 – 오늘 할 일 위로 이동 */}
           <div className="detail-row todo-mood-row">
             <div className="detail-label">오늘의 기분 이모지</div>
             <div className="mood-chips">
@@ -801,9 +697,7 @@ export default function MyUpPage() {
                 <button
                   key={m.code}
                   type="button"
-                  className={
-                    'mood-chip ' + (logRow.mood === m.code ? 'mood-chip-active' : '')
-                  }
+                  className={'mood-chip ' + (logRow.mood === m.code ? 'mood-chip-active' : '')}
                   onClick={() => handleChangeMood(m.code)}
                 >
                   <span className="mood-emoji">{m.emoji}</span>
@@ -818,8 +712,7 @@ export default function MyUpPage() {
               <p className="todo-empty">
                 아직 등록된 할 일이 없어요.
                 <br />
-                아래 <strong>할 일 추가</strong> 버튼을 눌러서 오늘의 체크항목을
-                만들어 주세요.
+                아래 <strong>할 일 추가</strong> 버튼을 눌러서 오늘의 체크항목을 만들어 주세요.
               </p>
             )}
 
@@ -829,23 +722,16 @@ export default function MyUpPage() {
                   <li key={t.id} className="todo-item">
                     <button
                       type="button"
-                      className={
-                        'todo-check-btn ' +
-                        (t.done ? 'todo-check-btn-on' : '')
-                      }
+                      className={'todo-check-btn ' + (t.done ? 'todo-check-btn-on' : '')}
                       onClick={() => toggleTaskDone(t)}
                     >
                       {t.done ? '✓' : ''}
                     </button>
                     <input
-                      className={
-                        'todo-input ' + (t.done ? 'todo-input-done' : '')
-                      }
+                      className={'todo-input ' + (t.done ? 'todo-input-done' : '')}
                       value={t.content}
                       placeholder="오늘 꼭 지키고 싶은 일을 적어 보세요."
-                      onChange={(e) =>
-                        handleTaskContentChange(t.id as string, e.target.value)
-                      }
+                      onChange={(e) => handleTaskContentChange(t.id as string, e.target.value)}
                       onBlur={() => handleTaskBlur(t)}
                     />
                   </li>
@@ -853,12 +739,7 @@ export default function MyUpPage() {
               </ul>
             )}
 
-            <button
-              type="button"
-              className="todo-add-btn"
-              onClick={handleAddTask}
-              disabled={savingTasks}
-            >
+            <button type="button" className="todo-add-btn" onClick={handleAddTask} disabled={savingTasks}>
               + 할 일 추가
             </button>
           </div>
@@ -871,26 +752,17 @@ export default function MyUpPage() {
               <h2 className="section-title">CALENDAR & PERFORMANCE</h2>
               <p className="calendar-caption">
                 달력에서 기록과 스케줄 카테고리를 색상으로 보고,
-                <strong> 선택한 날짜의 일정</strong>을 아래에서 입력·관리할 수
-                있어요.
+                <strong> 선택한 날짜의 일정</strong>을 아래에서 입력·관리할 수 있어요.
               </p>
             </div>
             <div className="month-nav">
-              <button
-                type="button"
-                className="nav-btn"
-                onClick={() => moveMonth(-1)}
-              >
+              <button type="button" className="nav-btn" onClick={() => moveMonth(-1)}>
                 ◀
               </button>
               <div className="month-label">
                 {currentMonth.getFullYear()}년 {currentMonth.getMonth() + 1}월
               </div>
-              <button
-                type="button"
-                className="nav-btn"
-                onClick={() => moveMonth(1)}
-              >
+              <button type="button" className="nav-btn" onClick={() => moveMonth(1)}>
                 ▶
               </button>
             </div>
@@ -905,8 +777,7 @@ export default function MyUpPage() {
 
             {daysInMonth.map((d) => {
               const dStr = formatDate(d);
-              const isCurrentMonth =
-                d.getMonth() === currentMonth.getMonth();
+              const isCurrentMonth = d.getMonth() === currentMonth.getMonth();
               const isToday = dStr === todayStr;
               const isSelected = dStr === selectedDate;
 
@@ -914,17 +785,12 @@ export default function MyUpPage() {
               const growth = meta?.count ?? 0;
               const hasRecord = growth > 0;
 
-              const moodEmoji = meta?.mood
-                ? moodOptions.find((m) => m.code === meta.mood)?.emoji
-                : null;
-
+              const moodEmoji = meta?.mood ? moodOptions.find((m) => m.code === meta.mood)?.emoji : null;
               const unified = meta?.mainCategory ?? null;
-
-              const isOtherMonth = !isCurrentMonth;
 
               const classNames = [
                 'calendar-day',
-                isOtherMonth ? 'calendar-day-out' : '',
+                !isCurrentMonth ? 'calendar-day-out' : '',
                 isToday ? 'calendar-day-today' : '',
                 isSelected ? 'calendar-day-selected' : '',
               ]
@@ -932,26 +798,14 @@ export default function MyUpPage() {
                 .join(' ');
 
               return (
-                <button
-                  key={dStr}
-                  type="button"
-                  className={classNames}
-                  onClick={() => setSelectedDate(dStr)}
-                >
+                <button key={dStr} type="button" className={classNames} onClick={() => setSelectedDate(dStr)}>
                   <div className="calendar-day-number-row">
                     <div className="calendar-day-number">{d.getDate()}</div>
-                    {moodEmoji && (
-                      <div className="calendar-day-mood">{moodEmoji}</div>
-                    )}
+                    {moodEmoji && <div className="calendar-day-mood">{moodEmoji}</div>}
                   </div>
 
-                  {/* 통합 카테고리 뱃지: 근태 / 업무내용 / 회의·교육 / 기타 */}
                   {unified && (
-                    <div
-                      className={
-                        'calendar-day-cat-pill calendar-unified-' + unified
-                      }
-                    >
+                    <div className={'calendar-day-cat-pill calendar-unified-' + unified}>
                       {unified === 'attendance'
                         ? '근태'
                         : unified === 'work'
@@ -962,27 +816,19 @@ export default function MyUpPage() {
                     </div>
                   )}
 
-                  {/* 스케줄/기록 개수 */}
-                  {hasRecord && (
-                    <div className="calendar-day-dot">
-                      일정/기록 {growth}개
-                    </div>
-                  )}
+                  {hasRecord && <div className="calendar-day-dot">일정/기록 {growth}개</div>}
                 </button>
               );
             })}
           </div>
 
-          {/* 스케줄 입력 + 목록 */}
           <div className="schedule-card">
             <div className="schedule-header">
               <div>
                 <div className="section-title">선택한 날짜의 스케줄</div>
                 <div className="schedule-sub">
                   {prettyKoreanDate(selectedDate)} ·{' '}
-                  {schedules.length === 0
-                    ? '등록된 일정이 없습니다.'
-                    : `${schedules.length}개 일정`}
+                  {schedules.length === 0 ? '등록된 일정이 없습니다.' : `${schedules.length}개 일정`}
                 </div>
               </div>
             </div>
@@ -997,14 +843,11 @@ export default function MyUpPage() {
                   className="schedule-time-input"
                 />
               </div>
+
               <select
                 className="schedule-category-select"
                 value={scheduleCategoryInput}
-                onChange={(e) =>
-                  setScheduleCategoryInput(
-                    e.target.value as ScheduleCategory
-                  )
-                }
+                onChange={(e) => setScheduleCategoryInput(e.target.value as ScheduleCategory)}
               >
                 {SCHEDULE_CATEGORY_META.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -1012,6 +855,7 @@ export default function MyUpPage() {
                   </option>
                 ))}
               </select>
+
               <input
                 type="text"
                 placeholder="일정 내용 (예: 00고객 상담, 교육, 회의 등)"
@@ -1019,20 +863,15 @@ export default function MyUpPage() {
                 onChange={(e) => setScheduleTitleInput(e.target.value)}
                 className="schedule-title-input"
               />
-              <button
-                type="button"
-                className="schedule-save-btn"
-                onClick={handleScheduleSave}
-                disabled={savingSchedule}
-              >
+
+              <button type="button" className="schedule-save-btn" onClick={handleScheduleSave} disabled={savingSchedule}>
                 {savingSchedule ? '저장 중…' : '일정 등록'}
               </button>
             </div>
 
             {schedules.length === 0 ? (
               <p className="schedule-empty">
-                위에서 시간·카테고리·내용을 입력한 뒤{' '}
-                <strong>일정 등록</strong>을 눌러 주세요.
+                위에서 시간·카테고리·내용을 입력한 뒤 <strong>일정 등록</strong>을 눌러 주세요.
               </p>
             ) : (
               <ul className="schedule-list">
@@ -1040,21 +879,9 @@ export default function MyUpPage() {
                   const meta = getScheduleCategoryMeta(s.category);
                   return (
                     <li key={s.id} className="schedule-item">
-                      <div className="schedule-time">
-                        {s.schedule_time
-                          ? s.schedule_time.slice(0, 5)
-                          : '시간 미정'}
-                      </div>
+                      <div className="schedule-time">{s.schedule_time ? s.schedule_time.slice(0, 5) : '시간 미정'}</div>
                       <div className="schedule-title">
-                        {meta && (
-                          <span
-                            className={
-                              'schedule-cat-pill schedule-cat-' + meta.id
-                            }
-                          >
-                            {meta.label}
-                          </span>
-                        )}
+                        {meta && <span className={'schedule-cat-pill schedule-cat-' + meta.id}>{meta.label}</span>}
                         <span>{s.title}</span>
                       </div>
                     </li>
@@ -1069,13 +896,11 @@ export default function MyUpPage() {
         <section className="myup-detail-section">
           <h2 className="section-title">선택한 날짜의 기록</h2>
           <p className="detail-caption">
-            기분, 목표, 오늘 잘한 점과 아쉬운 점, 스케줄까지 남겨두면 한 달 뒤에
-            “성장 로그”가 됩니다.
+            기분, 목표, 오늘 잘한 점과 아쉬운 점, 스케줄까지 남겨두면 한 달 뒤에 “성장 로그”가 됩니다.
           </p>
 
           <div className="detail-card">
             <div className="detail-inner">
-              {/* 목표들 */}
               <div className="detail-grid three">
                 <div className="detail-field">
                   <div className="detail-label">오늘의 U P 목표</div>
@@ -1083,9 +908,7 @@ export default function MyUpPage() {
                     className="detail-input"
                     placeholder="오늘 꼭 달성하고 싶은 한 가지 목표를 적어 보세요."
                     value={logRow.day_goal ?? ''}
-                    onChange={(e) =>
-                      handleLogChange('day_goal', e.target.value)
-                    }
+                    onChange={(e) => handleLogChange('day_goal', e.target.value)}
                   />
                 </div>
                 <div className="detail-field">
@@ -1094,9 +917,7 @@ export default function MyUpPage() {
                     className="detail-input"
                     placeholder="이번 주에 꼭 이루고 싶은 목표를 적어 보세요."
                     value={logRow.week_goal ?? ''}
-                    onChange={(e) =>
-                      handleLogChange('week_goal', e.target.value)
-                    }
+                    onChange={(e) => handleLogChange('week_goal', e.target.value)}
                   />
                 </div>
                 <div className="detail-field">
@@ -1105,14 +926,11 @@ export default function MyUpPage() {
                     className="detail-input"
                     placeholder="이번 달의 최종 목표를 적어 보세요."
                     value={logRow.month_goal ?? ''}
-                    onChange={(e) =>
-                      handleLogChange('month_goal', e.target.value)
-                    }
+                    onChange={(e) => handleLogChange('month_goal', e.target.value)}
                   />
                 </div>
               </div>
 
-              {/* 노트 영역 */}
               <div className="detail-grid two">
                 <div className="detail-field">
                   <div className="detail-label">마인드 노트</div>
@@ -1121,9 +939,7 @@ export default function MyUpPage() {
                     placeholder="지치지 않고 한결같이 가기 위한 나만의 다짐을 적어 보세요."
                     rows={3}
                     value={logRow.mind_note ?? ''}
-                    onChange={(e) =>
-                      handleLogChange('mind_note', e.target.value)
-                    }
+                    onChange={(e) => handleLogChange('mind_note', e.target.value)}
                   />
                 </div>
                 <div className="detail-field">
@@ -1133,9 +949,7 @@ export default function MyUpPage() {
                     placeholder="작은 것이라도 좋으니 칭찬할 점을 적어 주세요."
                     rows={3}
                     value={logRow.good_point ?? ''}
-                    onChange={(e) =>
-                      handleLogChange('good_point', e.target.value)
-                    }
+                    onChange={(e) => handleLogChange('good_point', e.target.value)}
                   />
                 </div>
               </div>
@@ -1148,19 +962,13 @@ export default function MyUpPage() {
                     placeholder="내일은 이렇게 해보고 싶다는 점을 적어 주세요."
                     rows={3}
                     value={logRow.regret_point ?? ''}
-                    onChange={(e) =>
-                      handleLogChange('regret_point', e.target.value)
-                    }
+                    onChange={(e) => handleLogChange('regret_point', e.target.value)}
                   />
                 </div>
               </div>
 
               <div className="detail-save-row">
-                <button
-                  type="button"
-                  className="detail-save-btn"
-                  onClick={handleSaveLog}
-                >
+                <button type="button" className="detail-save-btn" onClick={handleSaveLog}>
                   오늘 기록 저장하기
                 </button>
               </div>
@@ -1202,7 +1010,7 @@ const styles = `
   font-size: 18px;
 }
 
-/* ===== 헤더 (메인과 통일) ===== */
+/* ===== 헤더 ===== */
 
 .myup-header {
   border-radius: 40px;
@@ -1216,7 +1024,7 @@ const styles = `
 .myup-header-inner {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 22px;
 }
 
 .myup-header-text {
@@ -1249,94 +1057,11 @@ const styles = `
   font-weight: 800;
 }
 
-/* ===== 말풍선 + 마스코트 (메인과 동일) ===== */
-
-/* 하단: 마스코트 라인 */
-.home-header-bottom {
-  margin-top: 18px;
-  display: flex;
-  justify-content: center;
-}
-
-.mascot-wrap {
-  width: 100%;
-  max-width: 540px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-/* 말풍선 */
-.mascot-bubble {
-  width: 100%;
-  border-radius: 999px;
-  padding: 10px 24px;
-  background: rgba(255,255,255,0.97);
-  color: #2b163a;
-  box-shadow: 0 8px 18px rgba(0,0,0,0.18);
-  border: 1px solid rgba(223, 202, 255, 0.9);
-  position: relative;
-  min-height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-
-.mascot-bubble::after {
-  content: '';
-  position: absolute;
-  bottom: -9px;
-  left: 50%;
-  width: 14px;
-  height: 14px;
-  background: rgba(255,255,255,0.97);
-  border-radius: 4px;
-  transform: translateX(-50%) rotate(45deg);
-  border-bottom: 1px solid rgba(223,202,255,0.9);
-  border-right: 1px solid rgba(223,202,255,0.9);
-}
-
-.mascot-bubble-tag {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: rgba(250, 244, 255, 0.95);
-  color: #f973b8;
-}
-
-/* 🔥 여러 줄 보이도록 수정 */
-.mascot-bubble-main {
-  font-size: 14px;
-  font-weight: 600;
-  color: #4b2966;
-  text-align: center;
-  white-space: normal;
+/* ✅ 업쮸 코치 라인: 상단 여유로 화살표 안 잘리게 */
+.myup-coach-line{
+  margin-top: 10px;
+  padding-top: 10px;   /* 화살표/점프 여유 */
   overflow: visible;
-  text-overflow: clip;
-}
-
-/* 마스코트: 더 작게 + 완전 원형 */
-.mascot-video-frame {
-  width: 110px;
-  height: 110px;
-  border-radius: 999px;
-  overflow: hidden;
-  border: 4px solid rgba(255,255,255,0.95);
-  box-shadow:
-    0 18px 32px rgba(0,0,0,0.35),
-    0 0 0 1px rgba(148, 93, 255, 0.95);
-  background: radial-gradient(circle at top left, #ffe5fb 0, #a855f7 60%);
-  flex-shrink: 0;
-}
-
-.mascot-video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 /* ===== 이번 달 요약 카드 ===== */
@@ -1362,15 +1087,22 @@ const styles = `
 }
 
 .myup-month-title {
-  font-size: 16px;
-  font-weight: 800;
-  color: #6b41ff;
+  font-size: 22px;              /* ✅ 크게 */
+  font-weight: 950;             /* ✅ 더 굵게 */
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff8ac8 0%, #a855f7 55%, #5b21ff 100%);
+  box-shadow: 0 14px 26px rgba(0,0,0,0.18);
+  letter-spacing: 0.02em;
 }
 
-.myup-month-date {
-  font-size: 13px;
-  color: #7a69c4;
-}
+/* 날짜 줄은 삭제했으니 스타일도 필요 없으면 지워도 됨 */
+.myup-month-date { display: none; }
+
 
 .myup-month-meta {
   display: flex;
@@ -1419,7 +1151,7 @@ const styles = `
   font-size: 8px;
 }
 
-/* 기분 이모지 행 (오늘 할 일 위) */
+/* 기분 이모지 행 */
 .todo-mood-row {
   margin-bottom: 10px;
 }
@@ -1577,13 +1309,9 @@ const styles = `
   color: #241336;
 }
 
-.calendar-day-out {
-  opacity: 0.35;
-}
+.calendar-day-out { opacity: 0.35; }
 
-.calendar-day-today {
-  box-shadow: 0 0 0 2px #f153aa;
-}
+.calendar-day-today { box-shadow: 0 0 0 2px #f153aa; }
 
 .calendar-day-selected {
   box-shadow: 0 0 0 3px #a45bff;
@@ -1596,14 +1324,8 @@ const styles = `
   width: 100%;
 }
 
-.calendar-day-number {
-  font-size: 16px;
-  font-weight: 800;
-}
-
-.calendar-day-mood {
-  font-size: 18px;
-}
+.calendar-day-number { font-size: 16px; font-weight: 800; }
+.calendar-day-mood { font-size: 18px; }
 
 .calendar-day-dot {
   margin-top: 6px;
@@ -1615,7 +1337,6 @@ const styles = `
   font-weight: 700;
 }
 
-/* 날짜별 카테고리 뱃지 (공통 스타일) */
 .calendar-day-cat-pill {
   margin-top: 6px;
   font-size: 11px;
@@ -1624,26 +1345,10 @@ const styles = `
   font-weight: 600;
 }
 
-/* 통합 카테고리 색상: 근태 / 업무내용 / 회의·교육 / 기타 */
-.calendar-unified-attendance {
-  background: #fee2e2;
-  color: #b91c1c;
-}
-
-.calendar-unified-work {
-  background: #fce7f3;
-  color: #9d174d;
-}
-
-.calendar-unified-meeting {
-  background: #e0f2fe;
-  color: #0369a1;
-}
-
-.calendar-unified-etc {
-  background: #e2e8f0;
-  color: #475569;
-}
+.calendar-unified-attendance { background: #fee2e2; color: #b91c1c; }
+.calendar-unified-work { background: #fce7f3; color: #9d174d; }
+.calendar-unified-meeting { background: #e0f2fe; color: #0369a1; }
+.calendar-unified-etc { background: #e2e8f0; color: #475569; }
 
 /* 스케줄 카드 */
 .schedule-card {
@@ -1662,11 +1367,7 @@ const styles = `
   margin-bottom: 10px;
 }
 
-.schedule-sub {
-  margin-top: 4px;
-  font-size: 14px;
-  color: #7e6fd6;
-}
+.schedule-sub { margin-top: 4px; font-size: 14px; color: #7e6fd6; }
 
 .schedule-input-row {
   display: flex;
@@ -1676,16 +1377,8 @@ const styles = `
   margin-bottom: 10px;
 }
 
-.schedule-time-wrap {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.schedule-time-label {
-  font-size: 13px;
-  color: #4b335f;
-}
+.schedule-time-wrap { display: flex; align-items: center; gap: 4px; }
+.schedule-time-label { font-size: 13px; color: #4b335f; }
 
 .schedule-time-input {
   border-radius: 999px;
@@ -1715,9 +1408,7 @@ const styles = `
   color: #241336;
 }
 
-.schedule-title-input::placeholder {
-  color: #a18ad2;
-}
+.schedule-title-input::placeholder { color: #a18ad2; }
 
 .schedule-save-btn {
   border-radius: 999px;
@@ -1731,16 +1422,9 @@ const styles = `
   box-shadow: 0 12px 22px rgba(0,0,0,0.25);
 }
 
-.schedule-empty {
-  font-size: 13px;
-  color: #7a69c4;
-}
+.schedule-empty { font-size: 13px; color: #7a69c4; }
 
-.schedule-list {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0;
-}
+.schedule-list { list-style: none; margin: 6px 0 0; padding: 0; }
 
 .schedule-item {
   display: grid;
@@ -1750,19 +1434,10 @@ const styles = `
   padding: 6px 0;
   border-bottom: 1px dashed #e0d4ff;
 }
+.schedule-item:last-child { border-bottom: none; }
 
-.schedule-item:last-child {
-  border-bottom: none;
-}
-
-.schedule-time {
-  color: #f153aa;
-  font-weight: 700;
-}
-
-.schedule-title {
-  color: #241336;
-}
+.schedule-time { color: #f153aa; font-weight: 700; }
+.schedule-title { color: #241336; }
 
 .schedule-cat-pill {
   display: inline-flex;
@@ -1790,12 +1465,7 @@ const styles = `
 .schedule-cat-etc { background: #f1f5f9; color: #475569; }
 
 /* 상세 기록 섹션 */
-
-.myup-detail-section {
-  margin-top: 26px;
-  margin-bottom: 40px;
-  width: 100%;
-}
+.myup-detail-section { margin-top: 26px; margin-bottom: 40px; width: 100%; }
 
 .detail-caption {
   margin-top: 6px;
@@ -1804,7 +1474,6 @@ const styles = `
   color: #7a69c4;
 }
 
-/* 상세 카드 */
 .detail-card {
   margin-top: 12px;
   width: 100%;
@@ -1816,26 +1485,11 @@ const styles = `
   box-sizing: border-box;
 }
 
-/* 안쪽 내용 */
-.detail-inner {
-  width: 100%;
-  max-width: 100%;
-  margin: 0;
-  padding: 4px 4px 10px;
-  box-sizing: border-box;
-}
+.detail-inner { width: 100%; max-width: 100%; margin: 0; padding: 4px 4px 10px; box-sizing: border-box; }
+.detail-row { margin-bottom: 18px; }
 
-/* 행 간격 */
-.detail-row {
-  margin-bottom: 18px;
-}
-
-/* 인풋/텍스트영역 공통 */
 .detail-row input,
-.detail-row textarea {
-  width: 100%;
-  box-sizing: border-box;
-}
+.detail-row textarea { width: 100%; box-sizing: border-box; }
 
 .detail-label {
   font-size: 15px;
@@ -1844,12 +1498,7 @@ const styles = `
   margin-bottom: 7px;
 }
 
-/* 기분 이모지 버튼 */
-.mood-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
+.mood-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .mood-chip {
   border-radius: 999px;
@@ -1871,32 +1520,13 @@ const styles = `
   box-shadow: 0 10px 20px rgba(0,0,0,0.25);
 }
 
-.mood-emoji {
-  font-size: 18px;
-}
+.mood-emoji { font-size: 18px; }
+.mood-label { font-size: 13px; }
 
-.mood-label {
-  font-size: 13px;
-}
-
-/* 그리드 */
-.detail-grid {
-  display: grid;
-  gap: 14px;
-  margin-bottom: 14px;
-}
-
-.detail-grid.three {
-  grid-template-columns: repeat(3, minmax(0,1fr));
-}
-
-.detail-grid.two {
-  grid-template-columns: repeat(2, minmax(0,1fr));
-}
-
-.detail-grid.one {
-  grid-template-columns: minmax(0,1fr);
-}
+.detail-grid { display: grid; gap: 14px; margin-bottom: 14px; }
+.detail-grid.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.detail-grid.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.detail-grid.one { grid-template-columns: minmax(0,1fr); }
 
 .detail-input {
   width: 100%;
@@ -1911,9 +1541,7 @@ const styles = `
 }
 
 .detail-input::placeholder,
-.detail-textarea::placeholder {
-  color: #aa97e0;
-}
+.detail-textarea::placeholder { color: #aa97e0; }
 
 .detail-textarea {
   width: 100%;
@@ -1929,11 +1557,7 @@ const styles = `
   box-sizing: border-box;
 }
 
-.detail-save-row {
-  margin-top: 12px;
-  display: flex;
-  justify-content: flex-end;
-}
+.detail-save-row { margin-top: 12px; display: flex; justify-content: flex-end; }
 
 .detail-save-btn {
   border-radius: 999px;
@@ -1949,22 +1573,11 @@ const styles = `
 
 /* 반응형 */
 @media (max-width: 960px) {
-  .myup-root {
-    padding: 16px;
-  }
-  .myup-header {
-    padding: 32px 24px 36px;
-  }
-  .myup-month-card {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .calendar-grid {
-    padding: 12px;
-  }
+  .myup-root { padding: 16px; }
+  .myup-header { padding: 32px 24px 36px; }
+  .myup-month-card { flex-direction: column; align-items: flex-start; }
+  .calendar-grid { padding: 12px; }
   .detail-grid.three,
-  .detail-grid.two {
-    grid-template-columns: 1fr;
-  }
+  .detail-grid.two { grid-template-columns: 1fr; }
 }
 `;

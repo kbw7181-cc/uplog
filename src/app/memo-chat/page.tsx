@@ -1,4 +1,3 @@
-// src/app/memo-chat/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -89,7 +88,7 @@ export default function MemoChatListPage() {
   const [nickname, setNickname] = useState<string>('영업인');
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [rooms, setRooms] = useState<ChatRoom[]>(BASE_ROOMS);
-  const [hasShare, setHasShare] = useState(false); // 🔥 반론 공유 준비 여부
+  const [hasShare, setHasShare] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -106,44 +105,30 @@ export default function MemoChatListPage() {
 
         const anyProfile = profile as any;
 
-        if (anyProfile?.nickname) {
-          setNickname(anyProfile.nickname);
-        } else if (anyProfile?.name) {
-          setNickname(anyProfile.name);
-        } else if (user.email) {
-          setNickname(user.email.split('@')[0]);
-        }
+        if (anyProfile?.nickname) setNickname(anyProfile.nickname);
+        else if (anyProfile?.name) setNickname(anyProfile.name);
+        else if (user.email) setNickname(user.email.split('@')[0]);
 
-        if (anyProfile?.avatar_url) {
-          setProfileImage(anyProfile.avatar_url);
-        }
+        if (anyProfile?.avatar_url) setProfileImage(anyProfile.avatar_url);
       }
 
       if (typeof window !== 'undefined') {
-        // ✅ 반론 공유 텍스트가 준비돼 있는지 체크 (친구 고르라는 안내용)
         const shared = window.sessionStorage.getItem('uplog-share-to-chat');
-        if (shared && shared.trim()) {
-          setHasShare(true);
-        }
+        if (shared && shared.trim()) setHasShare(true);
 
         const updated = BASE_ROOMS.map((base) => {
           try {
-            const raw = window.localStorage.getItem(
-              STORAGE_PREFIX + base.id,
-            );
+            const raw = window.localStorage.getItem(STORAGE_PREFIX + base.id);
             if (!raw) return { ...base };
 
             const parsed = JSON.parse(raw) as ChatMessage[];
             if (!parsed || parsed.length === 0) return { ...base };
 
             const last = parsed[parsed.length - 1];
-            const timeLabel = new Date(
-              last.createdAt,
-            ).toLocaleTimeString('ko-KR', {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            });
+            const timeLabel = new Date(last.createdAt).toLocaleTimeString(
+              'ko-KR',
+              { hour: '2-digit', minute: '2-digit', hour12: false }
+            );
 
             return {
               ...base,
@@ -164,8 +149,6 @@ export default function MemoChatListPage() {
   }, []);
 
   const handleOpenRoom = (roomId: string) => {
-    // ⚠️ 여기서는 공유 텍스트를 건드리지 않고
-    // 방으로만 이동 → 방 컴포넌트가 sessionStorage에서 꺼내서 붙임
     router.push(`/memo-chat/${roomId}`);
   };
 
@@ -175,42 +158,45 @@ export default function MemoChatListPage() {
   return (
     <div className="page-root">
       <div className="page-inner">
-        {/* 헤더 */}
-        <header className="header">
-          <button
-            type="button"
-            className="back-btn"
-            onClick={() => router.push('/home')}
-          >
-            ← 대시보드로
-          </button>
+        <header className="hero">
+          <div className="hero-top">
+            <button
+              type="button"
+              className="back-btn"
+              onClick={() => router.push('/home')}
+              aria-label="대시보드로 이동"
+            >
+              ← 대시보드
+            </button>
 
-          <div className="header-center">
-            <div className="header-pill">U P 채팅</div>
-            <h1 className="header-title">나의 U P 채팅 목록</h1>
-            <p className="header-sub">
-              나와의 U P 메모, 친구들과의 대화, 팀 채팅을 한눈에 볼 수 있어요.
-            </p>
+            <div className="hero-pill">U P 채팅</div>
+          </div>
+
+          <h1 className="hero-title">나의 U P 채팅 목록</h1>
+          <p className="hero-sub">
+            나와의 U P 메모, 친구들과의 대화, 팀 채팅을 한눈에 볼 수 있어요.
+          </p>
+
+          <div className="coach-wrap">
+            <div className="coach-bubble">
+              <div className="coach-tag">채팅 가이드</div>
+              <div className="coach-text">
+                <b>비방·욕설</b> 금지 · <b>개인정보</b> 공유 금지 ·{' '}
+                <b>부적절한 파일</b> 업로드 금지
+                <br />
+                반복 위반 시 이용이 제한될 수 있어요.
+              </div>
+            </div>
+
+            <img
+              className="coach-mascot"
+              src="/assets/upzzu3.png"
+              alt="업쮸"
+              draggable={false}
+            />
           </div>
         </header>
 
-        {/* 가로 가이드 바 */}
-        <section className="guide-bar">
-          <div className="guide-icon">!</div>
-          <div className="guide-text">
-            <div className="guide-title">채팅 이용 가이드</div>
-            <div className="guide-lines">
-              <span>비방 · 욕설 · 인신공격 금지</span>
-              <span>개인정보(주민번호, 계좌번호 등) 공유 금지</span>
-              <span>부적절한 사진·영상·파일 업로드 금지</span>
-              <span>
-                위 기준 반복 위반 시, 채팅·서비스 이용이 제한될 수 있어요.
-              </span>
-            </div>
-          </div>
-        </section>
-
-        {/* 🔔 반론 스크립트 공유 안내 */}
         {hasShare && (
           <section className="share-hint">
             <span className="share-badge">반론 스크립트 준비됨</span>
@@ -220,15 +206,14 @@ export default function MemoChatListPage() {
           </section>
         )}
 
-        {/* 채팅방 리스트 */}
         <main className="main">
           <section className="chat-list-card">
             <div className="chat-list-header">
               <div>
                 <div className="section-title">채팅방</div>
                 <div className="section-sub">
-                  자주 대화하는 친구/팀은 상단 즐겨찾기로 둘 수 있도록
-                  이후에 기능을 확장할 수 있어요.
+                  자주 대화하는 친구/팀은 상단 즐겨찾기로 둘 수 있도록 이후에
+                  기능을 확장할 수 있어요.
                 </div>
               </div>
             </div>
@@ -291,6 +276,7 @@ export default function MemoChatListPage() {
 
 const styles = `
 .page-root {
+  --coachSize: 120px; /* ✅ 기본 업쮸 크기(통일) */
   min-height: 100vh;
   padding: 24px;
   box-sizing: border-box;
@@ -299,112 +285,144 @@ const styles = `
   color: #1b1030;
 }
 
-.page-inner {
-  max-width: 1180px;
-  margin: 0 auto;
+.page-inner { max-width: 1180px; margin: 0 auto; }
+
+/* HERO */
+.hero{
+  border-radius: 28px;
+  padding: 18px 18px 16px;
+  background: radial-gradient(circle at top left, rgba(255,158,213,0.95) 0, rgba(168,85,247,0.92) 45%, rgba(99,102,241,0.90) 100%);
+  border: 1px solid rgba(255,255,255,0.35);
+  box-shadow: 0 18px 40px rgba(139,92,246,0.25);
 }
 
-/* 헤더 */
-
-.header {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 18px;
-  margin-bottom: 14px;
+.hero-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
 }
 
-.back-btn {
+.back-btn{
   border-radius: 999px;
-  border: none;
-  padding: 8px 14px;
+  border: 1px solid rgba(255,255,255,0.55);
+  padding: 8px 12px;
   font-size: 13px;
-  background: #ffffff;
-  box-shadow: 0 10px 20px rgba(0,0,0,0.12);
+  font-weight: 900;
+  background: rgba(255,255,255,0.78);
   color: #6b21a8;
   cursor: pointer;
+  box-shadow: 0 10px 18px rgba(0,0,0,0.10);
 }
 
-.header-center {
-  text-align: center;
-}
-
-.header-pill {
-  display: inline-flex;
-  padding: 4px 14px;
+.hero-pill{
+  display:inline-flex;
+  padding: 6px 14px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.7);
-  border: 1px solid rgba(196, 181, 253, 0.9);
+  background: rgba(255,255,255,0.22);
+  border: 1px solid rgba(255,255,255,0.35);
   font-size: 12px;
-  color: #7c3aed;
+  font-weight: 900;
+  color: rgba(255,255,255,0.95);
+}
+
+.hero-title{
+  margin: 12px 0 2px;
+  font-size: 26px;
+  font-weight: 950;
+  letter-spacing: 1.5px;
+  color: #fff;
+  text-shadow: 0 10px 22px rgba(0,0,0,0.18);
+}
+
+.hero-sub{
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(255,255,255,0.92);
+  line-height: 1.55;
+}
+
+/* 가이드 + 업쮸 */
+.coach-wrap{
+  margin-top: 12px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 14px;
+}
+
+.coach-bubble{
+  position: relative;
+  flex: 1;
+  max-width: 560px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(245,240,255,0.92));
+  box-shadow: 0 12px 26px rgba(0,0,0,0.10);
+  border: 1px solid rgba(255,255,255,0.75);
+}
+
+.coach-bubble:after{
+  content:'';
+  position:absolute;
+  right:-6px;
+  top:50%;
+  transform: translateY(-50%) rotate(45deg);
+  width: 14px;
+  height: 14px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(245,240,255,0.92));
+  border-right: 1px solid rgba(255,255,255,0.75);
+  border-bottom: 1px solid rgba(255,255,255,0.75);
+}
+
+.coach-tag{
+  display:inline-flex;
+  align-items:center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 950;
+  color:#fff;
+  background: linear-gradient(90deg, #ec4899, #a855f7);
+  box-shadow: 0 8px 18px rgba(236,72,153,0.35);
   margin-bottom: 6px;
 }
 
-.header-title {
-  font-size: 26px;
-  font-weight: 900;
-  letter-spacing: 2px;
-  background: linear-gradient(135deg, #7c3aed, #ec4899);
-  -webkit-background-clip: text;
-  color: transparent;
-  margin-bottom: 4px;
-}
-
-.header-sub {
+.coach-text{
   font-size: 13px;
-  color: #6b647e;
-  line-height: 1.6;
-}
-
-/* 가로 가이드 바 */
-
-.guide-bar {
-  margin-bottom: 16px;
-  border-radius: 18px;
-  padding: 10px 16px;
-  background: linear-gradient(90deg, #ec4899, #a855f7, #6366f1);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #fdf2ff;
-  box-shadow: 0 14px 30px rgba(139, 92, 246, 0.45);
-}
-
-.guide-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.9);
-  color: #db2777;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   font-weight: 900;
-  font-size: 18px;
+  color: #3b2163;
+  line-height: 1.55;
+}
+.coach-text b{ color: #ec4899; }
+
+/* ✅ 업쮸: 여기 “단 한 번만” 정의 (통일감 핵심) */
+.coach-mascot{
+  flex: 0 0 auto;
+  width: var(--coachSize);
+  height: var(--coachSize);
+  object-fit: contain;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  filter: drop-shadow(0 14px 20px rgba(0,0,0,0.18));
+  user-select:none;
+  pointer-events:none;
+  animation: upzzu-float 2.4s ease-in-out infinite;
 }
 
-.guide-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.guide-title {
-  font-size: 14px;
-  font-weight: 800;
-}
-
-.guide-lines {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
-  font-size: 12px;
+/* 둥둥 + 살짝 흔들 */
+@keyframes upzzu-float{
+  0%   { transform: translateY(0) rotate(0deg); }
+  35%  { transform: translateY(-6px) rotate(-1deg); }
+  70%  { transform: translateY(-2px) rotate(1deg); }
+  100% { transform: translateY(0) rotate(0deg); }
 }
 
 /* 반론 공유 안내 */
-
 .share-hint {
-  margin-top: 6px;
+  margin-top: 10px;
   margin-bottom: 10px;
   padding: 8px 12px;
   border-radius: 999px;
@@ -423,25 +441,18 @@ const styles = `
   background: #be185d;
   color: #fff;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 900;
 }
 
-.share-text {
-  font-size: 12px;
-}
+.share-text { font-size: 12px; font-weight: 800; }
 
-/* 메인 */
-
-.main {
-  margin-top: 4px;
-}
+/* 리스트 카드 */
+.main { margin-top: 8px; }
 
 .chat-list-card {
   border-radius: 22px;
   background: #ffffff;
-  box-shadow:
-    0 18px 36px rgba(0,0,0,0.18),
-    0 0 0 1px rgba(255,255,255,0.8);
+  box-shadow: 0 18px 36px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.8);
   border: 1px solid #dccfff;
   padding: 14px 16px 18px;
 }
@@ -453,25 +464,16 @@ const styles = `
   margin-bottom: 10px;
 }
 
-.section-title {
-  font-size: 16px;
-  font-weight: 800;
-  color: #6b41ff;
-}
+.section-title { font-size: 16px; font-weight: 900; color: #6b41ff; }
 
 .section-sub {
   font-size: 13px;
   margin-top: 4px;
   color: #8c7ad9;
+  font-weight: 800;
 }
 
-/* 채팅방 리스트 */
-
-.room-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
+.room-list { list-style: none; margin: 0; padding: 0; }
 
 .room-item {
   display: grid;
@@ -490,11 +492,7 @@ const styles = `
   box-shadow: 0 8px 20px rgba(0,0,0,0.08);
 }
 
-.room-avatar-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+.room-avatar-wrap { display: flex; align-items: center; justify-content: center; }
 
 .room-avatar {
   width: 42px;
@@ -505,45 +503,25 @@ const styles = `
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-weight: 800;
+  font-weight: 900;
   font-size: 18px;
   box-shadow: 0 0 0 2px #ffffff;
   overflow: hidden;
 }
 
-.room-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
+.room-avatar img { width: 100%; height: 100%; object-fit: cover; }
 
 .room-avatar-group {
   background: radial-gradient(circle at top left, #f97316 0, #f973b7 40%, #7c3aed 100%);
 }
 
-.room-main {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
+.room-main { display: flex; flex-direction: column; gap: 2px; }
 
-.room-top-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+.room-top-row { display: flex; justify-content: space-between; align-items: center; }
 
-.room-title-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+.room-title-row { display: flex; align-items: center; gap: 6px; }
 
-.room-title {
-  font-size: 15px;
-  font-weight: 800;
-  color: #241336;
-}
+.room-title { font-size: 15px; font-weight: 900; color: #241336; }
 
 .room-badge {
   font-size: 11px;
@@ -551,50 +529,36 @@ const styles = `
   border-radius: 999px;
   background: #fef3c7;
   color: #92400e;
+  font-weight: 900;
 }
 
-.room-time {
-  font-size: 11px;
-  color: #a49ad4;
-}
+.room-time { font-size: 11px; color: #a49ad4; font-weight: 900; }
 
-.room-middle-row {
-  font-size: 12px;
-  color: #7a69c4;
-}
+.room-middle-row { font-size: 12px; color: #7a69c4; font-weight: 800; }
 
-.room-bottom-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-}
+.room-bottom-row { display: flex; gap: 8px; margin-top: 4px; }
 
 .room-last {
   font-size: 13px;
   color: #4b3f6b;
+  font-weight: 800;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 /* 반응형 */
-
 @media (max-width: 960px) {
-  .page-root {
-    padding: 16px;
-  }
-  .header {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-  .header-center {
-    text-align: left;
-  }
-  .guide-bar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+  .page-root { padding: 16px; }
+  .page-root { --coachSize: 104px; } /* ✅ 태블릿 */
+  .coach-wrap{ justify-content: flex-start; }
+}
+
+@media (max-width: 520px) {
+  .page-root { --coachSize: 92px; }  /* ✅ 모바일에서도 “작아보이지 않게” */
+  .hero{ padding: 16px 14px 14px; }
+  .hero-title{ font-size: 22px; letter-spacing: 0.8px; }
+  .coach-wrap{ gap: 10px; }
+  .coach-text{ font-size: 12.5px; }
 }
 `;

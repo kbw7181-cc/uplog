@@ -37,6 +37,29 @@ export default function FriendsPage() {
   const [sending, setSending] = useState(false);
   const [sendMessage, setSendMessage] = useState<string | null>(null);
 
+  // ✅ 채팅 열기: ensureDirectChat 타입이 애매해도 빨간불 안 나게 안전 처리
+  const openChat = async (otherUserIdRaw: string) => {
+    try {
+      const myId = userId;
+      if (!myId) return;
+
+      const otherId = (otherUserIdRaw ?? '').trim();
+      if (!otherId) return;
+
+      // ⚠️ ensureDirectChat 리턴 타입이 void로 되어있어도 여기서 강제 string 처리
+      const chatId = (await ensureDirectChat(myId, otherId)) as unknown as string;
+
+      if (!chatId || typeof chatId !== 'string') {
+        throw new Error('채팅방 ID를 가져오지 못했어요. ensureDirectChat return을 확인해주세요.');
+      }
+
+      router.push(`/chats/${chatId}`);
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message ?? '채팅을 여는 중 오류가 발생했습니다.');
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -55,13 +78,11 @@ export default function FriendsPage() {
           router.push('/login');
           return;
         }
-
         if (cancelled) return;
 
         setUserId(user.id);
 
         const rawFriends = await fetchMyFriends(user.id);
-
         if (cancelled) return;
 
         if (!rawFriends || rawFriends.length === 0) {
@@ -82,10 +103,7 @@ export default function FriendsPage() {
 
         if (profileError) throw profileError;
 
-        const profileMap = new Map<
-          string,
-          { name: string | null; avatar_url: string | null }
-        >();
+        const profileMap = new Map<string, { name: string | null; avatar_url: string | null }>();
 
         (profileRows ?? []).forEach((p: any) => {
           profileMap.set(p.user_id, {
@@ -97,6 +115,7 @@ export default function FriendsPage() {
         const merged: FriendWithProfile[] = (rawFriends as any[]).map((f) => {
           const otherUserId =
             f.user_id === user.id ? (f.friend_id as string) : (f.user_id as string);
+
           return {
             id: f.id as string,
             status: f.status as Friend['status'],
@@ -123,15 +142,8 @@ export default function FriendsPage() {
     };
   }, [router]);
 
-  const accepted = useMemo(
-    () => friends.filter((f) => f.status === 'accepted'),
-    [friends],
-  );
-
-  const pending = useMemo(
-    () => friends.filter((f) => f.status === 'pending'),
-    [friends],
-  );
+  const accepted = useMemo(() => friends.filter((f) => f.status === 'accepted'), [friends]);
+  const pending = useMemo(() => friends.filter((f) => f.status === 'pending'), [friends]);
 
   async function handleSendRequest() {
     if (!userId) {
@@ -154,6 +166,8 @@ export default function FriendsPage() {
       await sendFriendRequest(userId, targetUserId.trim());
       setSendMessage('친구 요청을 보냈습니다. (status: pending)');
       setTargetUserId('');
+      // 바로 갱신이 필요하면 새로고침(간단 버전)
+      location.reload();
     } catch (e: any) {
       console.error(e);
       setSendMessage(e.message ?? '친구 요청 중 오류가 발생했습니다.');
@@ -215,9 +229,7 @@ export default function FriendsPage() {
                   <div className="flex items-center gap-3">
                     <AvatarBubble name={f.profile?.name} />
                     <div className="flex flex-col">
-                      <span className="font-medium">
-                        {f.profile?.name ?? '이름 미등록'}
-                      </span>
+                      <span className="font-medium">{f.profile?.name ?? '이름 미등록'}</span>
                       <span className="text-[11px] text-zinc-500">
                         친구 요청 상태: {f.status}
                       </span>
@@ -229,7 +241,7 @@ export default function FriendsPage() {
                         await acceptFriendRequest(f.id);
                         location.reload();
                       }}
-                      className="text-xs bg-indigo-600 px-2 py-1 rounded"
+                      className="rounded bg-indigo-600 px-2 py-1 text-xs"
                     >
                       수락
                     </button>
@@ -238,7 +250,7 @@ export default function FriendsPage() {
                         await declineFriendRequest(f.id);
                         location.reload();
                       }}
-                      className="text-xs bg-zinc-700 px-2 py-1 rounded"
+                      className="rounded bg-zinc-700 px-2 py-1 text-xs"
                     >
                       거절
                     </button>
@@ -260,19 +272,13 @@ export default function FriendsPage() {
                 <button
                   key={f.id}
                   type="button"
-                  onClick={async () => {
-                    if (!userId) return;
-                    const chatId = await ensureDirectChat(userId, f.otherUserId);
-                    router.push(`/chats/${chatId}`);
-                  }}
+                  onClick={() => openChat(f.otherUserId)}
                   className="flex w-full items-center justify-between gap-3 rounded-lg bg-black/30 px-3 py-2 text-left text-sm hover:bg-zinc-800/70"
                 >
                   <div className="flex items-center gap-3">
                     <AvatarBubble name={f.profile?.name} />
                     <div className="flex flex-col">
-                      <span className="font-medium">
-                        {f.profile?.name ?? '이름 미등록'}
-                      </span>
+                      <span className="font-medium">{f.profile?.name ?? '이름 미등록'}</span>
                       <span className="text-[11px] text-zinc-500">
                         통화/반론/채팅 기록은 여기서 이어집니다.
                       </span>
@@ -290,12 +296,13 @@ export default function FriendsPage() {
           <h2 className="text-sm font-semibold text-zinc-200">
             친구 요청 보내기 (user_id로 직접)
           </h2>
-          <p className="text-[11px] text-zinc-500 mb-2">
+          <p className="mb-2 text-[11px] text-zinc-500">
             임시 테스트용입니다. 나중에는 프로필 화면에서 버튼으로 연결할 거예요.
           </p>
+
           <div className="flex gap-2">
             <input
-              className="flex-1 rounded-md bg-black/40 px-3 py-2 text-sm text-white outline-none border border-zinc-700"
+              className="flex-1 rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-white outline-none"
               placeholder="상대방 user_id 입력"
               value={targetUserId}
               onChange={(e) => setTargetUserId(e.target.value)}
@@ -308,9 +315,8 @@ export default function FriendsPage() {
               {sending ? '보내는 중…' : '친구 요청'}
             </button>
           </div>
-          {sendMessage && (
-            <p className="mt-2 text-[11px] text-zinc-300">{sendMessage}</p>
-          )}
+
+          {sendMessage && <p className="mt-2 text-[11px] text-zinc-300">{sendMessage}</p>}
         </section>
 
         {/* 맨 아래 안내 */}
@@ -324,8 +330,7 @@ export default function FriendsPage() {
 }
 
 function AvatarBubble({ name }: { name: string | null | undefined }) {
-  const initial =
-    name && name.trim().charAt(0) ? name.trim().charAt(0) : '🙂';
+  const initial = name && name.trim().charAt(0) ? name.trim().charAt(0) : '🙂';
 
   return (
     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-indigo-500/80 to-pink-500/80 text-xs font-semibold">

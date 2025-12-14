@@ -1,7 +1,7 @@
 // src/app/rebuttal/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 
@@ -41,12 +41,33 @@ const TYPE_HINT: Record<RebuttalType, string> = {
     '고객이 숨기고 있는 진짜 이유가 무엇인지, 부드럽게 한 번 더 물어볼 수 있는 질문을 준비해 두면 좋아요.',
 };
 
+// ✅ 모든 페이지 공통 규칙: “기존 슬라이드/문구 삭제” + “고정 가이드 1개”
+const FIXED_GUIDE =
+  '거절 멘트를 그대로 적어두면, 시간이 지나도 감정 대신 문장과 상황이 선명하게 남아요.';
+
 type MyRebuttal = {
   id: string;
   created_at: string;
   category: string | null;
   content: string | null;
 };
+
+function formatKoreanDate(d: Date) {
+  return d.toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+}
+
+function toYYMMDD(dateStr: string) {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('ko-KR', {
+    year: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+  });
+}
 
 export default function RebuttalPage() {
   const router = useRouter();
@@ -59,10 +80,15 @@ export default function RebuttalPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [myList, setMyList] = useState<MyRebuttal[]>([]);
-  const [openId, setOpenId] = useState<string | null>(null); // ✅ 펼침/접기용
 
-  // 최근 저장된 반론 목록 불러오기
+  const [myList, setMyList] = useState<MyRebuttal[]>([]);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  // ✅ “대표님만의 자산 N개 저장”
+  const [assetCount, setAssetCount] = useState<number>(0);
+
+  const todayLabel = useMemo(() => formatKoreanDate(new Date()), []);
+
   const loadMyRebuttals = async () => {
     try {
       const {
@@ -72,26 +98,41 @@ export default function RebuttalPage() {
 
       if (userError || !user) {
         setMyList([]);
+        setAssetCount(0);
         return;
       }
 
+      // ✅ 1) 리스트(최근 7개)
       const { data, error } = await supabase
         .from('rebuttals')
         .select('id, created_at, category, content')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(7);
 
       if (error || !data) {
         console.error(error);
         setMyList([]);
-        return;
+      } else {
+        setMyList(data as MyRebuttal[]);
       }
 
-      setMyList(data as MyRebuttal[]);
+      // ✅ 2) 총 자산 개수(전체 count)
+      const { count, error: countError } = await supabase
+        .from('rebuttals')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+
+      if (countError) {
+        console.error(countError);
+        setAssetCount(0);
+      } else {
+        setAssetCount(count ?? 0);
+      }
     } catch (err) {
       console.error(err);
       setMyList([]);
+      setAssetCount(0);
     }
   };
 
@@ -99,7 +140,6 @@ export default function RebuttalPage() {
     loadMyRebuttals();
   }, []);
 
-  // AI 스타일 스크립트 생성
   const handleGetFeedback = () => {
     if (!rawText.trim()) {
       alert('오늘 받은 거절 멘트를 먼저 적어 주세요.');
@@ -113,7 +153,6 @@ export default function RebuttalPage() {
     const cleanSituation = situation.trim();
 
     const scriptLines: string[] = [];
-
     scriptLines.push('① 공감 한 마디');
     scriptLines.push(
       `“${cleanRaw}”라고 말씀해 주신 거 보니까, ${rebuttalType} 부분이 많이 신경 쓰이시는 것 같아요. 솔직하게 말씀해 주셔서 감사해요.`,
@@ -150,13 +189,10 @@ export default function RebuttalPage() {
       setAiScript(script);
       setAiTips(tip);
       setLoading(false);
-      setToast(
-        'AI 스타일 반론 스크립트를 만들어 놨어요. 대표님 말투에 맞게만 살짝 고쳐 쓰시면 돼요.',
-      );
-    }, 350);
+      setToast('AI 스크립트를 만들었어요. 대표님 말투로 살짝만 다듬어 쓰시면 돼요.');
+    }, 280);
   };
 
-  // Supabase에 자산으로 저장
   const handleSave = async () => {
     if (!rawText.trim() || !aiScript.trim()) {
       alert('거절 멘트와 AI 스크립트가 모두 있어야 저장할 수 있어요.');
@@ -210,7 +246,7 @@ export default function RebuttalPage() {
         setSituation('');
         setAiScript('');
         setAiTips('');
-        loadMyRebuttals();
+        await loadMyRebuttals(); // ✅ 저장 후 카운트/리스트 갱신
       }
     } catch (err) {
       console.error(err);
@@ -220,7 +256,6 @@ export default function RebuttalPage() {
     }
   };
 
-  /** 🔗 커뮤니티에 자동 공유 (community_posts INSERT) */
   const handleShareToCommunity = async (item: MyRebuttal) => {
     if (!item.content) {
       setToast('공유할 내용이 없습니다.');
@@ -240,54 +275,37 @@ export default function RebuttalPage() {
 
       const lines = item.content
         .split('\n')
-        .map((l) => l.trim())
+        .map(l => l.trim())
         .filter(Boolean);
 
-      const typeLine = lines.find((l) => l.startsWith('【거절 유형】')) || '';
-      const firstSentence =
-        lines.find((l) => l.startsWith('“')) ||
-        lines.find((l) => l.startsWith('받은 거절 멘트')) ||
-        lines[1] ||
-        '';
-
-      const short =
-        firstSentence.length > 40
-          ? firstSentence.slice(0, 40) + '…'
-          : firstSentence;
+      const typeLine = lines.find(l => l.startsWith('【거절 유형】')) || '';
+      const rawIndex = lines.findIndex(l => l.startsWith('【받은 거절 멘트】'));
+      const rawLine = rawIndex >= 0 ? lines[rawIndex + 1] ?? '' : '';
+      const short = rawLine.length > 40 ? rawLine.slice(0, 40) + '…' : rawLine;
 
       const title =
         '[피드백] ' +
-        (typeLine.replace('【거절 유형】', '').trim() ||
-          item.category ||
-          '반론 스크립트') +
-        ' · ' +
-        short.replace('받은 거절 멘트', '').trim();
+        (typeLine.replace('【거절 유형】', '').trim() || item.category || '반론 스크립트') +
+        (short ? ' · ' + short : '');
 
       const payload: any = {
         category: '피드백',
         title,
         content: item.content,
+        user_id: user.id,
       };
 
-      // 🔧 대표님 DB에 맞게 author_id / user_id 중 맞는 컬럼 쓰면 됨
-      payload.user_id = user.id;
-
-      const { error: postError } = await supabase
-        .from('community_posts')
-        .insert(payload);
+      const { error: postError } = await supabase.from('community_posts').insert(payload);
 
       if (postError) {
         console.error(postError);
         alert(
-          '커뮤니티에 올리는 중 오류가 발생했어요. 컬럼 이름(user_id/author_id) 확인이 필요할 수 있어요.',
+          '커뮤니티 공유 중 오류가 발생했어요. 컬럼 이름(user_id/author_id) 확인이 필요할 수 있어요.',
         );
         return;
       }
 
-      setToast(
-        '커뮤니티에 "피드백" 글로 자동 공유됐어요. 커뮤니티에서 바로 확인하실 수 있어요.',
-      );
-      // ✅ 공유 후 커뮤니티 화면으로 이동
+      setToast('커뮤니티에 "피드백" 글로 자동 공유됐어요.');
       router.push('/community');
     } catch (err) {
       console.error(err);
@@ -295,34 +313,27 @@ export default function RebuttalPage() {
     }
   };
 
-  /** 🔗 친구에게 공유: 친구 목록으로 이동 + 채팅방에서 쓸 텍스트 준비 */
-const handleShareToFriend = (item: MyRebuttal) => {
-  const raw = (item.content || '').trim();
-  if (!raw) {
-    setToast('공유할 내용이 없습니다.');
-    return;
-  }
-
-  // 채팅방에서 쓸 텍스트
-  const shareText = ['[UPLOG 반론 스크립트 공유]', '', raw].join('\n');
-
-  try {
-    if (typeof window !== 'undefined') {
-      // 채팅방에서 한 번만 꺼내 쓰도록 sessionStorage에 저장
-      sessionStorage.setItem('uplog-share-to-chat', shareText);
+  const handleShareToFriend = (item: MyRebuttal) => {
+    const raw = (item.content || '').trim();
+    if (!raw) {
+      setToast('공유할 내용이 없습니다.');
+      return;
     }
 
-    setToast('어느 친구에게 보낼지 선택해 주세요.');
-    // ✅ 바로 방으로 가지 않고, "채팅 목록" 페이지로만 이동
-    router.push('/memo-chat');
-  } catch (err) {
-    console.error(err);
-    setToast('공유 준비 중 오류가 발생했어요. 나중에 다시 시도해 주세요.');
-  }
-};
+    const shareText = ['[UPLOG 반론 스크립트 공유]', '', raw].join('\n');
 
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('uplog-share-to-chat', shareText);
+      }
+      setToast('어느 친구에게 보낼지 선택해 주세요.');
+      router.push('/memo-chat');
+    } catch (err) {
+      console.error(err);
+      setToast('공유 준비 중 오류가 발생했어요.');
+    }
+  };
 
-  // 아카이브 내용 렌더링 (제목 줄 / 단계 굵게)
   const renderContent = (content: string) => {
     const lines = content.split('\n');
     return (
@@ -367,64 +378,70 @@ const handleShareToFriend = (item: MyRebuttal) => {
   return (
     <div className="rebuttal-root">
       <div className="rebuttal-inner">
-        {/* 헤더 */}
-        <header className="rebuttal-hero">
-          <div className="hero-badge">UPLOG · REBUTTAL</div>
-          <h1 className="hero-title">반론 아카이브</h1>
-          <p className="hero-sub">
-            오늘 받은 거절 멘트를 AI와 함께 <strong>공감 멘트</strong>와{' '}
-            <strong>스토리텔링형 반론</strong>으로 정리하는 나만의 기록장이에요.
-          </p>
+        {/* ===== 헤더 ===== */}
+        <header className="rebuttal-header">
+          <div className="rebuttal-header-inner">
+            <div className="rebuttal-header-text">
+              <div className="rebuttal-header-tag">UPLOG · REBUTTAL</div>
+              <h1 className="rebuttal-header-title">반론 아카이브</h1>
+            </div>
 
-          <div className="hero-today-card">
-            <div className="hero-today-row">
-              <span className="hero-today-label">날짜</span>
-              <span className="hero-today-value">
-                {new Date().toLocaleDateString('ko-KR', {
-                  year: 'numeric',
-                  month: '2-digit',
-                  day: '2-digit',
-                })}
-              </span>
-            </div>
-            <div className="hero-today-row">
-              <span className="hero-today-label">오늘 기록한 거절</span>
-              <span className="hero-today-value hero-pill">
-                스크립트 연습 중
-              </span>
-            </div>
-            <div className="hero-today-row">
-              <span className="hero-today-label">AI 받은 조합</span>
-              <span className="hero-today-value hero-pill hero-pill-soft">
-                대표님만의 자산으로 저장됩니다
-              </span>
+            {/* ✅ 말풍선 + 마스코트(테두리 없음, upzzu7.png 고정) */}
+            <div className="header-bottom">
+              <div className="bubble-and-mascot">
+                <div className="guide-bubble">
+                  <div className="guide-bubble-top">
+                    <span className="guide-bubble-tag">오늘의 U P 반론 가이드</span>
+                  </div>
+                  <p className="guide-bubble-text">{FIXED_GUIDE}</p>
+                </div>
+
+                <img
+                  className="mascot-img"
+                  src="/assets/upzzu7.png"
+                  alt="업쮸"
+                  draggable={false}
+                />
+              </div>
             </div>
           </div>
         </header>
 
-        {/* TODAY INPUT */}
+        {/* ===== 오늘 카드 ===== */}
+        <section className="info-card">
+          <div className="info-row">
+            <span className="info-label">오늘 날짜</span>
+            <span className="info-value">{todayLabel}</span>
+          </div>
+          <div className="info-row">
+            <span className="info-label">오늘 상태</span>
+            <span className="info-pill info-pill-warm">스크립트 연습 중</span>
+          </div>
+          <div className="info-row">
+            <span className="info-label">AI 조합</span>
+            <span className="info-pill info-pill-soft">대표님만의 자산 {assetCount}개 저장</span>
+          </div>
+        </section>
+
+        {/* ===== 입력 ===== */}
         <section className="section">
-          <div className="section-header">
-            <h2 className="section-title">TODAY INPUT</h2>
+          <div className="section-head">
+            <h2 className="section-title">거절 유형 입력 · AI 피드백 받기</h2>
             <p className="section-desc">
-              감정은 그대로 두고, <strong>문장만 기록</strong>으로 남겨봅니다. AI가
-              대표님의 말투를 살려서{' '}
-              <strong>공감형·스토리텔링형 반론</strong>으로 바꿔 줄 거예요.
+              거절 유형과 오늘 받은 멘트를 저장해두면, AI가 <strong>공감 멘트</strong>와{' '}
+              <strong>스토리텔링형 반론 스크립트</strong>를 만들어 줘요.
             </p>
           </div>
 
-          <div className="card input-card">
-            {/* 거절 유형 */}
-            <div className="field-group">
-              <label className="field-label">거절 유형</label>
+          <div className="card">
+            <div className="field">
+              <label className="label">거절 유형</label>
               <select
-                className="field-select"
+                className="select"
                 value={rebuttalType}
-                onChange={(e) =>
-                  setRebuttalType(e.target.value as RebuttalType)
-                }
+                onChange={e => setRebuttalType(e.target.value as RebuttalType)}
               >
-                {REBUTTAL_OPTIONS.map((opt) => (
+                {REBUTTAL_OPTIONS.map(opt => (
                   <option key={opt.id} value={opt.id}>
                     {opt.label}
                   </option>
@@ -432,193 +449,145 @@ const handleShareToFriend = (item: MyRebuttal) => {
               </select>
             </div>
 
-            {/* 거절 멘트 */}
-            <div className="field-group">
-              <label className="field-label">
-                오늘 받은 거절 멘트를 그대로 적어주세요.
-              </label>
-              <p className="field-help">
-                기록한 문장을 기준으로 AI가{' '}
-                <strong>공감 멘트 + 스토리텔링형 반론</strong>을 만들어 줘요.
-              </p>
+            <div className="field">
+              <label className="label">오늘 받은 거절 멘트를 그대로 적어주세요.</label>
               <textarea
-                className="field-textarea"
+                className="textarea"
                 rows={4}
                 placeholder="예) 지금은 생각이 없어요. 나중에 필요하면 제가 연락드릴게요."
                 value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
+                onChange={e => setRawText(e.target.value)}
               />
             </div>
 
-            {/* 상황 메모 */}
-            <div className="field-group">
-              <label className="field-label">
-                상황 메모 <span className="field-optional">(선택)</span>
+            <div className="field">
+              <label className="label">
+                상황 메모 <span className="optional">(선택)</span>
               </label>
-              <p className="field-help">
-                예) 기존 고객 / 첫 통화 / 가격 부담을 많이 느끼는 상황 등 간단히 적어
-                두면, 나중에 다시 읽을 때 이해가 쉬워요.
-              </p>
               <textarea
-                className="field-textarea"
+                className="textarea"
                 rows={3}
-                placeholder="상황을 간단히 적어 두면, 나중에 다시 읽을 때 이해가 쉬워요."
+                placeholder="예) 기존 고객 / 첫 통화 / 가격 부담을 많이 느끼는 상황 등 간단히 적어 두면 좋아요."
                 value={situation}
-                onChange={(e) => setSituation(e.target.value)}
+                onChange={e => setSituation(e.target.value)}
               />
             </div>
 
-            {/* AI 피드백 버튼 */}
-            <div className="button-row">
+            <div className="btn-row">
               <button
                 type="button"
                 className="btn primary"
                 onClick={handleGetFeedback}
                 disabled={loading}
               >
-                {loading ? 'AI 피드백 만드는 중...' : 'AI 피드백 받기'}
+                {loading ? 'AI 피드백 만드는 중…' : 'AI 피드백 받기'}
               </button>
             </div>
           </div>
         </section>
 
-        {/* AI 결과 + 저장 버튼 */}
+        {/* ===== 결과 ===== */}
         <section className="section">
-          <div className="section-header">
+          <div className="section-head">
             <h2 className="section-title">AI 반론 스크립트 · 사용 팁</h2>
             <p className="section-desc">
-              대표님의 말투로 <strong>조금만 다듬어서</strong> 사용해 보세요. 마음을
-              먼저 받아준 뒤, 자연스럽게 다음 스텝으로 이어지는 흐름이면 좋아요.
+              대표님의 말투로 <strong>조금만</strong> 다듬어서 사용해 보세요.
             </p>
           </div>
 
-          <div className="card result-card">
+          <div className="card result-grid">
             <div className="result-block">
-              <div className="result-label">
-                AI가 제안하는 공감형·스토리텔링 반론
-              </div>
+              <div className="result-label">AI가 제안하는 공감형·스토리텔링 반론</div>
               <textarea
-                className="field-textarea result-textarea"
-                rows={8}
+                className="textarea textarea-big"
+                rows={10}
                 value={aiScript}
-                onChange={(e) => setAiScript(e.target.value)}
-                placeholder="AI 피드백을 받으면 이곳에 스크립트가 표시됩니다. 대표님 말투에 맞게 자유롭게 고쳐 쓰셔도 돼요."
+                onChange={e => setAiScript(e.target.value)}
+                placeholder="AI 피드백을 받으면 이곳에 스크립트가 표시됩니다."
               />
             </div>
 
             <div className="result-block">
               <div className="result-label">사용 팁 · 한 줄 정리</div>
               <textarea
-                className="field-textarea tip-textarea"
-                rows={4}
+                className="textarea textarea-tip"
+                rows={6}
                 value={aiTips}
-                onChange={(e) => setAiTips(e.target.value)}
+                onChange={e => setAiTips(e.target.value)}
                 placeholder="예) 먼저 고객의 부담감을 인정해 주고, 가격이 아닌 ‘얻는 변화’를 그림 그려주기."
               />
             </div>
           </div>
 
-          {/* 저장 버튼 */}
-          <div className="button-row result-save-row">
-            <button
-              type="button"
-              className="btn save-strong"
-              onClick={handleSave}
-              disabled={saving}
-            >
-              {saving ? '저장 중...' : '나의 반론 아카이브에 저장'}
+          <div className="btn-row save-row">
+            <button type="button" className="btn save" onClick={handleSave} disabled={saving}>
+              {saving ? '저장 중…' : '나의 반론 아카이브에 저장'}
             </button>
           </div>
 
           {toast && <div className="toast">{toast}</div>}
         </section>
 
-        {/* 나의 반론 아카이브 */}
+        {/* ===== 아카이브 ===== */}
         <section className="section">
-          <div className="section-header">
+          <div className="section-head">
             <h2 className="section-title">나의 반론 아카이브</h2>
-            <p className="section-desc">
-              최근에 저장한 반론 스크립트가 여기에 정리돼요. 발표용·복습용으로 그대로
-              활용하시면 됩니다.
-            </p>
+            <p className="section-desc">최근에 저장한 반론 스크립트가 여기에 정리돼요.</p>
           </div>
 
-          <div className="card archive-card">
+          <div className="card archive">
             {myList.length === 0 ? (
-              <p className="archive-empty">
-                아직 저장된 반론 스크립트가 없습니다.
-              </p>
+              <p className="empty">아직 저장된 반론 스크립트가 없습니다.</p>
             ) : (
               <ul className="archive-list">
-                {myList.map((item) => {
-                  const dateLabel = new Date(
-                    item.created_at,
-                  ).toLocaleDateString('ko-KR', {
-                    year: '2-digit',
-                    month: '2-digit',
-                    day: '2-digit',
-                  });
-                  const fullContent = item.content || '';
-                  const firstLine =
-                    fullContent
-                      .split('\n')
-                      .map((l) => l.trim())
-                      .filter(Boolean)[1] || '';
+                {myList.map(item => {
+                  const dateLabel = toYYMMDD(item.created_at);
+                  const full = item.content || '';
+
+                  const lines = full.split('\n').map(l => l.trim());
+                  const rawIndex = lines.findIndex(l => l.startsWith('【받은 거절 멘트】'));
+                  const previewSource =
+                    rawIndex >= 0 ? lines[rawIndex + 1] ?? '' : lines.find(l => l.startsWith('“')) ?? '';
                   const preview =
-                    firstLine.length > 40
-                      ? firstLine.slice(0, 40) + ' ···'
-                      : firstLine || '내용 미리보기를 불러올 수 없습니다.';
+                    previewSource.length > 44
+                      ? previewSource.slice(0, 44) + ' ···'
+                      : previewSource || '내용 미리보기를 불러올 수 없습니다.';
 
                   const isOpen = openId === item.id;
 
                   return (
                     <li key={item.id} className="archive-item">
-                      {/* 헤더 */}
                       <button
                         type="button"
-                        className={`archive-header ${
-                          isOpen ? 'open' : ''
-                        }`}
-                        onClick={() =>
-                          setOpenId(isOpen ? null : item.id)
-                        }
+                        className={'archive-head' + (isOpen ? ' open' : '')}
+                        onClick={() => setOpenId(isOpen ? null : item.id)}
                       >
-                        <div className="archive-header-left">
-                          <span className="archive-chip">
-                            {item.category || '유형 미지정'}
-                          </span>
-                          <span className="archive-preview-text">
-                            {preview}
-                          </span>
+                        <div className="archive-left">
+                          <span className="chip">{item.category || '유형 미지정'}</span>
+                          <span className="preview">{preview}</span>
                         </div>
-                        <span className="archive-date">
+                        <span className="date">
                           {dateLabel}
-                          <span className="archive-toggle-icon">
-                            {isOpen ? '▲' : '▼'}
-                          </span>
+                          <span className="toggle">{isOpen ? '▲' : '▼'}</span>
                         </span>
                       </button>
 
                       {isOpen && (
                         <>
-                          {renderContent(fullContent)}
+                          {renderContent(full)}
 
-                          <div className="archive-actions">
+                          <div className="actions">
                             <button
                               type="button"
-                              className="btn archive-btn archive-community"
-                              onClick={() =>
-                                handleShareToCommunity(item)
-                              }
+                              className="btn mini community"
+                              onClick={() => handleShareToCommunity(item)}
                             >
                               커뮤니티에 공유
                             </button>
                             <button
                               type="button"
-                              className="btn archive-btn archive-friend"
-                              onClick={() =>
-                                handleShareToFriend(item)
-                              }
+                              className="btn mini friend"
+                              onClick={() => handleShareToFriend(item)}
                             >
                               친구에게 공유
                             </button>
@@ -640,442 +609,442 @@ const handleShareToFriend = (item: MyRebuttal) => {
 }
 
 const styles = `
-.rebuttal-root {
-  min-height: 100vh;
-  padding: 24px 16px;
-  box-sizing: border-box;
+/* =========================
+   BASE
+   ========================= */
+.rebuttal-root{
+  min-height:100vh;
+  padding:24px;
+  box-sizing:border-box;
   background: linear-gradient(180deg, #ffe6f7 0%, #f5f0ff 45%, #e8f6ff 100%);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #1b1030;
-  overflow-x: hidden;
+  color:#1b1030;
+}
+.rebuttal-inner{
+  max-width:1160px;
+  margin:0 auto 80px;
 }
 
-.rebuttal-inner {
-  max-width: 980px;
-  margin: 0 auto 40px;
+/* 공통 타이틀 */
+.section-title{
+  font-size:18px;
+  font-weight:800;
+  color:#6b41ff;
+}
+.section-desc{
+  margin-top:6px;
+  font-size:14px;
+  color:#7a69c4;
+  line-height:1.6;
+}
+.section{ margin-top:24px; }
+.section-head{ margin-bottom:12px; }
+
+/* 카드 */
+.card{
+  border-radius:26px;
+  background:#ffffff;
+  border:1px solid #e5ddff;
+  box-shadow: 0 18px 32px rgba(0,0,0,0.12);
+  padding:18px 20px;
+  box-sizing:border-box;
 }
 
-.section {
-  margin-top: 20px;
+/* =========================
+   HEADER
+   ========================= */
+.rebuttal-header{
+  border-radius:40px;
+  background: radial-gradient(circle at top left, #ff8ac8 0, #a855f7 40%, #5b21ff 100%);
+  box-shadow: 0 28px 60px rgba(0,0,0,0.45);
+  color:#fff;
+
+  /* ✅ 헤더 영역 더 넓게 */
+  padding:64px 56px 52px;
+  margin-bottom:18px;
+}
+.rebuttal-header-inner{
+  display:flex;
+  flex-direction:column;
+  gap:28px;
+}
+.rebuttal-header-tag{
+  font-size:14px;
+  letter-spacing:0.18em;
+  font-weight:700;
+}
+.rebuttal-header-title{
+  font-size:34px;
+  font-weight:900;
+  margin:6px 0 0;
 }
 
-.section-header {
-  margin-bottom: 12px;
+/* 말풍선+업쮸 라인 */
+.header-bottom{
+  margin-top:18px;
+  display:flex;
+  justify-content:center;
+}
+.bubble-and-mascot{
+  width:100%;
+  max-width:860px;
+  display:flex;
+  gap:16px;
+  justify-content:center;
+  align-items:center;
 }
 
-.section-title {
-  font-size: 23px;
-  font-weight: 900;
-  color: #6b41ff;
+/* 말풍선 */
+.guide-bubble{
+  flex:1;
+  border-radius:999px;
+  padding:14px 22px;
+  background: rgba(255,255,255,0.97);
+  color:#2b163a;
+  box-shadow: 0 10px 22px rgba(0,0,0,0.18);
+  border:1px solid rgba(223, 202, 255, 0.9);
+  position:relative;
+  min-height:78px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
 }
 
-.section-desc {
-  margin-top: 4px;
-  font-size: 15px;
-  color: #7a69c4;
+/* ✅ 꼬리: 마스코트 방향(오른쪽 중앙) */
+.guide-bubble::after{
+  content:'';
+  position:absolute;
+  right:-6px;
+  top:50%;
+  transform: translateY(-50%) rotate(45deg);
+  width:14px;
+  height:14px;
+  background: rgba(255,255,255,0.97);
+  border-radius:4px;
+  border-right:1px solid rgba(223, 202, 255, 0.9);
+  border-bottom:1px solid rgba(223, 202, 255, 0.9);
 }
 
-.rebuttal-hero {
-  padding: 24px 24px 20px;
-  border-radius: 26px;
-  background: linear-gradient(135deg, #ff89bd, #a45bff);
-  color: #fffdfd;
-  box-shadow: 0 20px 38px rgba(0,0,0,0.32);
-  margin-bottom: 20px;
+.guide-bubble-top{
+  display:flex;
+  justify-content:center;
+  margin-bottom:6px;
+}
+.guide-bubble-tag{
+  font-size:11px;
+  font-weight:800;
+  padding:4px 10px;
+  border-radius:999px;
+  background: rgba(250, 244, 255, 0.95);
+  color:#f973b8;
+  border:1px solid rgba(223, 202, 255, 0.6);
+}
+.guide-bubble-text{
+  margin:0;
+  font-size:14px;
+  font-weight:650;
+  color:#4b2966;
+  text-align:center;
+  line-height:1.55;
+  white-space:normal;
 }
 
-.hero-badge {
-  display: inline-flex;
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 13px;
-  border: 1px solid rgba(255,255,255,0.7);
-  margin-bottom: 8px;
-  background: rgba(0,0,0,0.12);
+/* ✅ 마스코트: 테두리/프레임 없음 + 둥둥 */
+.mascot-img{
+  width:160px;
+  height:160px;
+  object-fit:contain;
+  flex-shrink:0;
+  user-select:none;
+  -webkit-user-drag:none;
+
+  animation: upzzu-float 2.6s ease-in-out infinite;
+  filter: drop-shadow(0 10px 14px rgba(0,0,0,0.18));
 }
 
-.hero-title {
-  font-size: 30px;
-  font-weight: 900;
-  margin: 0 0 6px;
+@keyframes upzzu-float{
+  0%   { transform: translateY(0) scale(1); }
+  45%  { transform: translateY(-6px) scale(1.02); }
+  100% { transform: translateY(0) scale(1); }
 }
 
-.hero-sub {
-  font-size: 16px;
-  max-width: 520px;
+/* =========================
+   INFO CARD
+   ========================= */
+.info-card{
+  border-radius:26px;
+  background:#ffffff;
+  border:1px solid #e5ddff;
+  box-shadow: 0 18px 32px rgba(0,0,0,0.12);
+  padding:14px 18px;
+  margin-top:16px;
 }
-
-.hero-sub strong {
-  color: #fffbaf;
+.info-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  font-size:14px;
+  padding:8px 0;
+  border-bottom:1px dashed rgba(148,114,255,0.3);
 }
-
-.hero-today-card {
-  margin-top: 14px;
-  padding: 14px 16px;
-  border-radius: 20px;
-  background: rgba(255,255,255,0.94);
-  color: #30133f;
-  box-shadow: 0 12px 24px rgba(0,0,0,0.18);
+.info-row:last-child{ border-bottom:none; }
+.info-label{ color:#7a69c4; font-weight:650; }
+.info-value{ font-weight:900; color:#241336; }
+.info-pill{
+  padding:6px 12px;
+  border-radius:999px;
+  font-size:13px;
+  font-weight:800;
 }
-
-.hero-today-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 14px;
-  padding: 5px 0;
-  border-bottom: 1px dashed rgba(148,114,255,0.3);
-}
-
-.hero-today-row:last-child {
-  border-bottom: none;
-}
-
-.hero-today-label {
-  color: #7a69c4;
-}
-
-.hero-today-value {
-  font-weight: 700;
-}
-
-.hero-pill {
-  padding: 3px 10px;
-  border-radius: 999px;
+.info-pill-warm{
   background: linear-gradient(135deg, #ffb5df, #ff9ad1);
-  color: #3b1030;
-  font-size: 13px;
+  color:#3b1030;
+}
+.info-pill-soft{
+  background:#f0ecff;
+  color:#7a3aed;
 }
 
-.hero-pill-soft {
-  background: #f0ecff;
-  color: #7a3aed;
+/* =========================
+   FORM
+   ========================= */
+.field{ margin-bottom:14px; }
+.label{
+  display:block;
+  font-size:15px;
+  font-weight:800;
+  color:#5a3cb2;
+  margin-bottom:6px;
 }
+.optional{ font-size:13px; font-weight:600; color:#a78bfa; }
 
-.card {
-  border-radius: 20px;
-  padding: 16px 18px;
-  background: #ffffff;
-  border: 1px solid #e5ddff;
-  box-shadow: 0 16px 30px rgba(0,0,0,0.12);
-  box-sizing: border-box;
+.select{
+  width:100%;
+  border-radius:999px;
+  border:1px solid #d6c7ff;
+  padding:10px 14px;
+  font-size:15px;
+  background:#faf7ff;
+  color:#241336;
+  outline:none;
+  box-sizing:border-box;
 }
-
-.input-card,
-.result-card,
-.archive-card {
-  font-size: 15px;
-}
-
-.field-group {
-  margin-bottom: 14px;
-}
-
-.field-label {
-  display: block;
-  font-size: 15px;
-  font-weight: 750;
-  color: #3a225c;
-  margin-bottom: 4px;
-}
-
-.field-optional {
-  font-size: 13px;
-  font-weight: 500;
-  color: #a78bfa;
-}
-
-.field-help {
-  font-size: 13px;
-  color: #8b7bd4;
-  margin-bottom: 4px;
-}
-
-.field-select {
-  width: 100%;
-  max-width: 100%;
-  border-radius: 999px;
-  padding: 10px 14px;
-  font-size: 15px;
-  border: 1px solid #d8cffd;
-  background: #f8f5ff;
-  color: #271434;
-  outline: none;
-  box-sizing: border-box;
-}
-
-.field-select:focus {
-  border-color: #a855f7;
+.select:focus{
+  border-color:#a855f7;
   box-shadow: 0 0 0 2px rgba(168,85,247,0.25);
 }
 
-.field-textarea {
-  width: 100%;
-  max-width: 100%;
-  border-radius: 16px;
-  padding: 10px 12px;
-  font-size: 15px;
-  border: 1px solid #d8cffd;
-  background: #faf7ff;
-  resize: vertical;
-  outline: none;
-  line-height: 1.55;
-  box-sizing: border-box;
+.textarea{
+  width:100%;
+  border-radius:18px;
+  border:1px solid #d6c7ff;
+  padding:10px 12px;
+  font-size:15px;
+  background:#faf7ff;
+  color:#241336;
+  outline:none;
+  resize:vertical;
+  line-height:1.7;
+  box-sizing:border-box;
 }
-
-.field-textarea:focus {
-  border-color: #a855f7;
+.textarea:focus{
+  border-color:#a855f7;
   box-shadow: 0 0 0 2px rgba(168,85,247,0.25);
 }
+.textarea::placeholder{ color:#aa97e0; }
+.textarea-big{ min-height:220px; }
+.textarea-tip{ min-height:160px; }
 
-.button-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 10px;
+.btn-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-top:10px;
 }
+.save-row{ margin-top:14px; justify-content:flex-end; }
 
-.result-save-row {
-  margin-top: 16px;
+.btn{
+  border-radius:999px;
+  border:none;
+  cursor:pointer;
+  padding:10px 18px;
+  font-size:14px;
+  font-weight:900;
 }
-
-.btn {
-  border-radius: 999px;
-  padding: 10px 20px;
-  font-size: 14px;
-  font-weight: 750;
-  border: none;
-  cursor: pointer;
-}
-
-.btn.primary {
+.btn.primary{
   background: linear-gradient(135deg, #f153aa, #a855f7);
-  color: #ffffff;
-  box-shadow: 0 12px 24px rgba(148,60,180,0.45);
+  color:#fff;
+  box-shadow: 0 12px 22px rgba(0,0,0,0.25);
+}
+.btn.save{
+  background: radial-gradient(circle at top left, #ff9ed5 0, #a35dff 70%);
+  color:#fff;
+  box-shadow: 0 16px 30px rgba(0,0,0,0.32);
+}
+.btn:disabled{ opacity:0.7; cursor:default; }
+
+/* results layout */
+.result-grid{
+  display:grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr);
+  gap:14px;
+}
+.result-block{ display:flex; flex-direction:column; gap:8px; }
+.result-label{
+  font-size:14px;
+  font-weight:900;
+  color:#6b41ff;
 }
 
-.btn.primary:disabled {
-  opacity: 0.7;
-  cursor: default;
+/* toast */
+.toast{
+  margin-top:12px;
+  border-radius:999px;
+  padding:10px 14px;
+  font-size:13px;
+  background:#ecfdf5;
+  color:#047857;
+  border:1px solid #a7f3d0;
+  font-weight:800;
 }
 
-.btn.save-strong {
-  background: linear-gradient(135deg, #f97316, #ec4899);
-  color: #ffffff;
-  box-shadow: 0 14px 26px rgba(236,72,153,0.45);
+/* =========================
+   ARCHIVE
+   ========================= */
+.archive{ padding-top:16px; }
+.empty{ font-size:14px; color:#7a69c4; line-height:1.6; }
+.archive-list{
+  list-style:none;
+  padding:0;
+  margin:0;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.archive-item{
+  padding:10px 10px 12px;
+  border-radius:18px;
+  border:1px dashed #e0d5ff;
+  background:#fbf9ff;
+}
+.archive-head{
+  width:100%;
+  border:none;
+  background:transparent;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:6px 6px 6px;
+  cursor:pointer;
+}
+.archive-head.open{
+  border-bottom:1px dashed #e0d5ff;
+  padding-bottom:10px;
+  margin-bottom:6px;
+}
+.archive-left{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  text-align:left;
+  min-width:0;
+}
+.chip{
+  font-size:13px;
+  padding:5px 10px;
+  border-radius:999px;
+  background:#efe9ff;
+  color:#5b21b6;
+  font-weight:900;
+  flex-shrink:0;
+}
+.preview{
+  font-size:14px;
+  color:#4b365f;
+  font-weight:700;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  max-width:680px;
+}
+.date{
+  font-size:12px;
+  color:#a1a1aa;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-weight:800;
+}
+.toggle{ font-size:11px; }
+
+/* expanded content */
+.archive-content{
+  margin-top:8px;
+  padding:10px 12px;
+  border-radius:14px;
+  background:#ffffff;
+  border:1px solid #e4ddff;
+  font-size:13.5px;
+  line-height:1.65;
+  color:#423154;
+}
+.archive-line{
+  margin:0;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+.archive-line-tag{
+  margin-top:8px;
+  font-weight:900;
+  color:#6b21a8;
+}
+.archive-line-step{
+  margin-top:6px;
+  font-weight:900;
+  color:#ea580c;
+}
+.archive-line-note{
+  font-size:13px;
+  color:#a16207;
+  font-weight:800;
 }
 
-.btn.save-strong:disabled {
-  opacity: 0.7;
-  cursor: default;
+.actions{
+  display:flex;
+  gap:10px;
+  margin-top:12px;
+  flex-wrap:wrap;
+}
+.btn.mini{
+  padding:9px 14px;
+  font-size:13px;
+  font-weight:900;
+  box-shadow:none;
+}
+.btn.mini.community{
+  background:#fef2ff;
+  color:#be185d;
+  border:1px solid #f9a8d4;
+}
+.btn.mini.friend{
+  background:#f0f9ff;
+  color:#0369a1;
+  border:1px solid #7dd3fc;
 }
 
-.toast {
-  margin-top: 10px;
-  border-radius: 999px;
-  padding: 7px 14px;
-  font-size: 13px;
-  background: #ecfdf5;
-  color: #047857;
-  border: 1px solid #a7f3d0;
+/* =========================
+   RESPONSIVE
+   ========================= */
+@media (max-width: 960px){
+  .rebuttal-root{ padding:16px; }
+  .rebuttal-header{ padding:36px 24px 30px; }
+  .rebuttal-header-title{ font-size:30px; }
+  .result-grid{ grid-template-columns: 1fr; }
+  .preview{ max-width: 420px; }
 }
 
-.result-card {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr);
-  gap: 14px;
-  margin-top: 6px;
-}
-
-.result-block {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.result-label {
-  font-size: 14px;
-  font-weight: 800;
-  color: #6b41ff;
-}
-
-.result-textarea {
-  min-height: 220px;
-}
-
-.tip-textarea {
-  min-height: 140px;
-}
-
-.archive-card {
-  padding-top: 14px;
-}
-
-.archive-empty {
-  font-size: 14px;
-  color: #9b8bdc;
-}
-
-.archive-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.archive-item {
-  padding: 8px 10px 10px;
-  border-radius: 14px;
-  border: 1px dashed #e0d5ff;
-  background: #fbf9ff;
-}
-
-.archive-header {
-  width: 100%;
-  border: none;
-  background: transparent;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 4px 4px;
-  cursor: pointer;
-}
-
-.archive-header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-align: left;
-}
-
-.archive-chip {
-  font-size: 13px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: #efe9ff;
-  color: #5b21b6;
-  font-weight: 700;
-}
-
-.archive-preview-text {
-  font-size: 14px;
-  color: #4b365f;
-}
-
-.archive-date {
-  font-size: 12px;
-  color: #a1a1aa;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.archive-toggle-icon {
-  font-size: 11px;
-}
-
-.archive-header.open {
-  border-bottom: 1px dashed #e0d5ff;
-  padding-bottom: 6px;
-}
-
-.archive-content {
-  margin-top: 6px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: #ffffff;
-  border: 1px solid #e4ddff;
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: #423154;
-}
-
-.archive-line {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.archive-line-tag {
-  margin-top: 6px;
-  font-weight: 800;
-  color: #6b21a8;
-}
-
-.archive-line-step {
-  margin-top: 4px;
-  font-weight: 800;
-  color: #ea580c;
-}
-
-.archive-line-note {
-  font-size: 13px;
-  color: #a16207;
-}
-
-.archive-actions {
-  display: flex;
-  gap: 12px;
-  margin-top: 10px;
-}
-
-.archive-btn {
-  padding: 7px 16px;
-  font-size: 13px;
-  box-shadow: none;
-}
-
-.archive-community {
-  background: #fef2ff;
-  color: #be185d;
-  border: 1px solid #f9a8d4;
-}
-
-.archive-friend {
-  background: #f0f9ff;
-  color: #0369a1;
-  border: 1px solid #7dd3fc;
-}
-
-@media (max-width: 960px) {
-  .rebuttal-root {
-    padding: 16px 12px;
-  }
-
-  .rebuttal-inner {
-    max-width: 100%;
-  }
-
-  .rebuttal-hero {
-    padding: 20px 18px 18px;
-  }
-
-  .hero-title {
-    font-size: 26px;
-  }
-
-  .result-card {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 640px) {
-  .section-title {
-    font-size: 21px;
-  }
-
-  .field-textarea {
-    font-size: 14px;
-  }
-
-  .field-select {
-    font-size: 14px;
-  }
-
-  .archive-content {
-    font-size: 13px;
-  }
+@media (max-width: 640px){
+  .bubble-and-mascot{ gap:12px; }
+  .mascot-img{ width:132px; height:132px; }
 }
 `;

@@ -25,8 +25,6 @@ type CommunityPost = {
   created_at: string;
 };
 
-const IMAGE_KEY_PREFIX = 'uplog-community-image-';
-
 export default function CommunityPage() {
   const router = useRouter();
 
@@ -35,7 +33,6 @@ export default function CommunityPage() {
   const [activeCategory, setActiveCategory] = useState<Category>('전체');
   const [search, setSearch] = useState('');
 
-  // 글 목록 로드
   useEffect(() => {
     const fetchPosts = async () => {
       const { data, error } = await supabase
@@ -55,10 +52,8 @@ export default function CommunityPage() {
     fetchPosts();
   }, []);
 
-  // 검색/카테고리 필터
   const filteredPosts = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-
     return posts.filter((post) => {
       const matchCategory =
         activeCategory === '전체' || post.category === activeCategory;
@@ -79,67 +74,260 @@ export default function CommunityPage() {
     <div
       style={{
         minHeight: '100vh',
-        padding: '32px 16px 40px',
+        padding: '32px 16px 44px',
         boxSizing: 'border-box',
         background:
           'linear-gradient(180deg,#ffe4f3 0%,#f1e4ff 45%,#e0f2ff 100%)',
         color: '#111827',
       }}
     >
+      {/* 애니메이션 */}
+      <style>{`
+        @keyframes upzzuFloat {
+          0% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+          100% { transform: translateY(0px); }
+        }
+        @keyframes neonPulse {
+          0% { box-shadow: 0 12px 22px rgba(0,0,0,0.16), 0 0 0 rgba(236,72,153,0.0), 0 0 0 rgba(168,85,247,0.0); }
+          50% { box-shadow: 0 12px 22px rgba(0,0,0,0.16), 0 0 18px rgba(236,72,153,0.28), 0 0 24px rgba(168,85,247,0.22); }
+          100% { box-shadow: 0 12px 22px rgba(0,0,0,0.16), 0 0 0 rgba(236,72,153,0.0), 0 0 0 rgba(168,85,247,0.0); }
+        }
+        @keyframes softGlowBg {
+          0% { opacity: 0.35; transform: scale(1); }
+          50% { opacity: 0.62; transform: scale(1.03); }
+          100% { opacity: 0.35; transform: scale(1); }
+        }
+        @keyframes chipGlow {
+          0% { box-shadow: 0 0 0 rgba(244,114,182,0); }
+          50% { box-shadow: 0 0 14px rgba(244,114,182,0.25); }
+          100% { box-shadow: 0 0 0 rgba(244,114,182,0); }
+        }
+      `}</style>
+
       <div
         style={{
           maxWidth: '980px',
           margin: '0 auto',
           display: 'flex',
           flexDirection: 'column',
-          rowGap: 28,
+          rowGap: 22,
         }}
       >
-        {/* 상단 타이틀 카드 */}
+        {/* 헤더 */}
         <section
           style={{
             borderRadius: 28,
-            padding: '22px 26px 20px',
+            padding: '22px 22px 18px',
             background:
               'linear-gradient(120deg,#ff9ecf 0%,#a855f7 45%,#6366f1 100%)',
-            boxShadow: '0 22px 40px rgba(0,0,0,0.32)',
+            boxShadow: '0 22px 40px rgba(0,0,0,0.28)',
             color: '#fdfcff',
+            position: 'relative',
+            overflow: 'hidden',
           }}
         >
-          <p
+          {/* 배경 글로우 */}
+          <div
             style={{
-              fontSize: 12,
-              letterSpacing: '0.32em',
-              textTransform: 'uppercase',
-              opacity: 0.95,
-              fontWeight: 600,
+              position: 'absolute',
+              inset: -40,
+              background:
+                'radial-gradient(circle at 18% 22%, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.0) 55%), radial-gradient(circle at 80% 75%, rgba(236,72,153,0.22) 0%, rgba(168,85,247,0.0) 62%)',
+              filter: 'blur(6px)',
+              animation: 'softGlowBg 4.8s ease-in-out infinite',
+              pointerEvents: 'none',
+            }}
+          />
+
+          {/* 타이틀 */}
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <p
+              style={{
+                fontSize: 12,
+                letterSpacing: '0.32em',
+                textTransform: 'uppercase',
+                opacity: 0.95,
+                fontWeight: 800,
+                margin: 0,
+              }}
+            >
+              UPLOG · COMMUNITY
+            </p>
+
+            <h1
+              style={{
+                marginTop: 10,
+                fontSize: 30,
+                fontWeight: 900,
+                letterSpacing: 0.5,
+                marginBottom: 0,
+              }}
+            >
+              성장하는 U P 커뮤니티
+            </h1>
+          </div>
+
+          {/* 말풍선(왼쪽 고정/작게) + 마스코트(오른쪽 고정) */}
+          <div
+            style={{
+              position: 'relative',
+              zIndex: 1,
+              marginTop: 16,
+              display: 'grid',
+              gridTemplateColumns: '1fr auto',
+              alignItems: 'end',
+              columnGap: 16,
+              rowGap: 12,
             }}
           >
-            UPLOG · COMMUNITY
-          </p>
-          <h1
-            style={{
-              marginTop: 10,
-              fontSize: 30,
-              fontWeight: 900,
-              letterSpacing: 1,
-            }}
-          >
-            성장하는 U P 커뮤니티
-          </h1>
-          <p
-            style={{
-              marginTop: 10,
-              fontSize: 15,
-              lineHeight: 1.7,
-              maxWidth: 520,
-              opacity: 0.96,
-            }}
-          >
-            영업 노하우, 거절 경험, 멘탈 관리까지.
-            <br />
-            대표님의 하루를 함께 나누고 서로 성장하는 공간입니다.
-          </p>
+            {/* 말풍선: 크기 줄임 + 왼쪽 고정 */}
+            <div
+              style={{
+                position: 'relative',
+                width: '100%',
+                maxWidth: 520, // ✅ 말풍선 사이즈 줄임
+                padding: '12px 14px', // ✅ 살짝 줄임
+                borderRadius: 20,
+                background:
+                  'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(255,255,255,0.86))',
+                border: '1px solid rgba(255,255,255,0.70)',
+                color: '#111827',
+                backdropFilter: 'blur(10px)',
+                animation: 'neonPulse 3.2s ease-in-out infinite',
+                justifySelf: 'start', // ✅ 무조건 왼쪽
+              }}
+            >
+             {/* 꼬리: 오른쪽(마스코트 방향) */}
+<div
+  style={{
+    position: 'absolute',
+    right: -8,                 // ✅ 말풍선 밖으로 살짝 튀어나오게
+    top: '58%',                // ✅ 아래가 아니라 "가운데쯤"
+    transform: 'translateY(-50%) rotate(45deg)',
+    width: 16,
+    height: 16,
+    background:
+      'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(255,255,255,0.86))',
+    borderRight: '1px solid rgba(255,255,255,0.70)',
+    borderBottom: '1px solid rgba(255,255,255,0.70)',
+    borderRadius: 4,
+    boxShadow: '8px 10px 18px rgba(0,0,0,0.08)', // ✅ 살짝 입체감
+    pointerEvents: 'none',
+  }}
+/>
+
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  marginBottom: 8,
+                }}
+              >
+                <span
+                  style={{
+                    width: 9,
+                    height: 30,
+                    borderRadius: 999,
+                    background: 'linear-gradient(180deg,#ec4899,#a855f7)',
+                    boxShadow: '0 0 14px rgba(236,72,153,0.30)',
+                  }}
+                />
+                <div>
+                  <div
+                    style={{
+                      fontSize: 15, // ✅ 살짝 줄임
+                      fontWeight: 900,
+                      color: '#111827',
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    업쮸의 안전 이용 안내 ✨
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 2,
+                      fontSize: 12,
+                      color: '#6b7280',
+                      fontWeight: 800,
+                    }}
+                  >
+                    따뜻하게, 똑똑하게, 오래 가자!
+                  </div>
+                </div>
+              </div>
+
+              <ul
+                style={{
+                  margin: 0,
+                  paddingLeft: 18,
+                  fontSize: 13, // ✅ 글도 살짝 줄임
+                  lineHeight: 1.75,
+                  color: '#374151',
+                }}
+              >
+                <li>
+                  <span style={{ fontWeight: 900, color: '#be185d' }}>
+                    개인정보(연락처/고객정보)
+                  </span>
+                  는 절대 올리지 않기
+                </li>
+                <li>
+                  <span style={{ fontWeight: 900, color: '#7c3aed' }}>
+                    비방·욕설·허위 사실
+                  </span>
+                  은{' '}
+                  <span style={{ fontWeight: 900, color: '#111827' }}>
+                    글 삭제 + 퇴출
+                  </span>
+                  될 수 있어요
+                </li>
+                <li>
+                  캡처/이미지 업로드 전{' '}
+                  <span style={{ fontWeight: 900, color: '#0f172a' }}>
+                    회사·고객 정보 노출
+                  </span>
+                  여부 확인
+                </li>
+                <li>
+                  <span style={{ fontWeight: 900, color: '#0ea5e9' }}>
+                    구체적으로
+                  </span>
+                  ,{' '}
+                  <span style={{ fontWeight: 900, color: '#ec4899' }}>
+                    친절하게
+                  </span>{' '}
+                  공유하면 서로가 빨라져요
+                </li>
+              </ul>
+            </div>
+
+            {/* 마스코트: 무조건 오른쪽 */}
+            <div
+              style={{
+                width: 170,
+                display: 'flex',
+                justifyContent: 'flex-end',
+                alignItems: 'flex-end',
+                justifySelf: 'end', // ✅ 무조건 오른쪽
+              }}
+            >
+              <img
+                src="/assets/upzzu3.png"
+                alt="Upzzu Mascot"
+                style={{
+                  width: 150,
+                  height: 150,
+                  objectFit: 'contain',
+                  animation: 'upzzuFloat 3.4s ease-in-out infinite',
+                  filter:
+                    'drop-shadow(0 18px 30px rgba(0,0,0,0.28)) drop-shadow(0 0 16px rgba(236,72,153,0.16))',
+                }}
+              />
+            </div>
+          </div>
         </section>
 
         {/* 검색 + 새 글쓰기 */}
@@ -152,13 +340,7 @@ export default function CommunityPage() {
             boxShadow: '0 14px 28px rgba(148,163,184,0.25)',
           }}
         >
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              rowGap: 12,
-            }}
-          >
+          <div style={{ display: 'flex', flexDirection: 'column', rowGap: 12 }}>
             <div style={{ flex: 1 }}>
               <label
                 style={{
@@ -166,7 +348,7 @@ export default function CommunityPage() {
                   fontSize: 13,
                   color: '#4b5563',
                   marginBottom: 4,
-                  fontWeight: 500,
+                  fontWeight: 800,
                 }}
               >
                 제목·내용 검색
@@ -199,87 +381,21 @@ export default function CommunityPage() {
                   padding: '0 28px',
                   borderRadius: 999,
                   border: 'none',
-                  background:
-                    'linear-gradient(90deg,#fb7185,#e879f9,#a855f7)',
+                  background: 'linear-gradient(90deg,#fb7185,#e879f9,#a855f7)',
                   color: '#ffffff',
                   fontSize: 14,
-                  fontWeight: 700,
+                  fontWeight: 900,
                   boxShadow: '0 0 22px rgba(244,114,182,0.5)',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
                   marginTop: 4,
+                  animation: 'chipGlow 3.1s ease-in-out infinite',
                 }}
               >
                 + 새 글쓰기
               </button>
             </div>
           </div>
-        </section>
-
-        {/* 커뮤니티 가이드 */}
-        <section
-          style={{
-            borderRadius: 24,
-            padding: '18px 22px 20px',
-            background:
-              'linear-gradient(135deg,#fdf2ff,#ffe4f4,#e0f2fe)',
-            border: '1px solid #f9a8d4',
-            boxShadow: '0 18px 40px rgba(236,72,153,0.18)',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              marginBottom: 8,
-            }}
-          >
-            <span
-              style={{
-                width: 9,
-                height: 34,
-                borderRadius: 999,
-                background:
-                  'linear-gradient(180deg,#ec4899,#a855f7)',
-              }}
-            />
-            <div>
-              <h2
-                style={{
-                  fontSize: 19,
-                  fontWeight: 800,
-                  color: '#111827',
-                }}
-              >
-                커뮤니티 가이드
-              </h2>
-              <p
-                style={{
-                  marginTop: 2,
-                  fontSize: 13,
-                  color: '#4b5563',
-                }}
-              >
-                따뜻한 영업인 공간을 위해 꼭 지켜주세요.
-              </p>
-            </div>
-          </div>
-
-          <ul
-            style={{
-              marginTop: 10,
-              fontSize: 14,
-              color: '#374151',
-              lineHeight: 1.8,
-              paddingLeft: 20,
-            }}
-          >
-            <li>개인정보(연락처/고객정보)는 절대 올리지 않습니다.</li>
-            <li>비방·욕설·허위 사실 업로드 시 글 삭제 및 퇴출될 수 있습니다.</li>
-            <li>실질적 도움이 되는 영업 경험·노하우·멘탈 관리 공유를 권장합니다.</li>
-            <li>캡처 시 회사·고객 정보가 노출되지 않도록 꼭 확인해주세요.</li>
-          </ul>
         </section>
 
         {/* 카테고리 + 게시글 목록 */}
@@ -321,7 +437,7 @@ export default function CommunityPage() {
                       ? '0 0 14px rgba(244,114,182,0.55)'
                       : 'none',
                     cursor: 'pointer',
-                    fontWeight: active ? 700 : 500,
+                    fontWeight: active ? 900 : 700,
                   }}
                 >
                   {cat}
@@ -330,7 +446,6 @@ export default function CommunityPage() {
             })}
           </div>
 
-          {/* 게시글 카드 리스트 */}
           {loading ? (
             <div
               style={{
@@ -376,6 +491,8 @@ export default function CommunityPage() {
                       fontSize: 12,
                       color: '#6b7280',
                       marginBottom: 8,
+                      gap: 10,
+                      flexWrap: 'wrap',
                     }}
                   >
                     <span
@@ -384,12 +501,12 @@ export default function CommunityPage() {
                         borderRadius: 999,
                         backgroundColor: '#ffe4f4',
                         color: '#be185d',
-                        fontWeight: 600,
+                        fontWeight: 900,
                       }}
                     >
                       {post.category}
                     </span>
-                    <span>
+                    <span style={{ fontWeight: 900 }}>
                       {new Date(post.created_at).toLocaleDateString('ko-KR', {
                         month: '2-digit',
                         day: '2-digit',
@@ -401,8 +518,9 @@ export default function CommunityPage() {
                   <h3
                     style={{
                       fontSize: 17,
-                      fontWeight: 700,
+                      fontWeight: 900,
                       color: '#111827',
+                      letterSpacing: 0.2,
                     }}
                   >
                     {post.title}
@@ -414,6 +532,11 @@ export default function CommunityPage() {
                       fontSize: 14,
                       color: '#374151',
                       lineHeight: 1.7,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                      wordBreak: 'break-word',
                     }}
                   >
                     {post.content}
@@ -427,9 +550,12 @@ export default function CommunityPage() {
                       alignItems: 'center',
                       fontSize: 12,
                       color: '#6b7280',
+                      gap: 10,
+                      flexWrap: 'wrap',
                     }}
                   >
-                    <span>익명 영업인 · 공개</span>
+                    <span style={{ fontWeight: 800 }}>익명 영업인 · 공개</span>
+
                     <div
                       style={{ display: 'flex', gap: 8 }}
                       onClick={(e) => e.stopPropagation()}
@@ -438,28 +564,29 @@ export default function CommunityPage() {
                         type="button"
                         onClick={() => router.push(`/community/${post.id}`)}
                         style={{
-                          padding: '5px 13px',
+                          padding: '6px 13px',
                           borderRadius: 999,
                           border: '1px solid #e5e7eb',
                           backgroundColor: '#ffffff',
                           color: '#374151',
                           cursor: 'pointer',
+                          fontWeight: 900,
                         }}
                       >
                         자세히 보기
                       </button>
+
                       <button
                         type="button"
-                        onClick={() =>
-                          router.push(`/community/share/${post.id}`)
-                        }
+                        onClick={() => router.push(`/community/share/${post.id}`)}
                         style={{
-                          padding: '5px 13px',
+                          padding: '6px 13px',
                           borderRadius: 999,
                           border: '1px solid #e5e7eb',
                           backgroundColor: '#ffffff',
                           color: '#374151',
                           cursor: 'pointer',
+                          fontWeight: 900,
                         }}
                       >
                         친구에게 공유

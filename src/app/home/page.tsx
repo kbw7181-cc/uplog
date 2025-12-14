@@ -5,6 +5,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabaseClient';
+import UpzzuHeaderCoach from '../components/UpzzuHeaderCoach';
+
+
+
+
 
 // 마스코트 감성 슬라이드 문구
 const EMO_QUOTES: string[] = [
@@ -110,9 +115,9 @@ function weatherEmoji(desc: string) {
 type ScheduleCategoryKind = 'work' | 'attendance' | 'etc';
 
 type ScheduleCategoryMeta = {
-  label: string;          // 화면에 보이는 라벨 (상담/방문/교육/행사/근태/기타 등)
-  badgeClass: string;     // 리스트(아래 스케줄)에서 뱃지 색상
-  kind: ScheduleCategoryKind; // 달력 요약용 그룹 (업무내용/근태/기타)
+  label: string; // 화면에 보이는 라벨
+  badgeClass: string; // 리스트(아래 스케줄)에서 뱃지 색상
+  kind: ScheduleCategoryKind; // 달력 요약용 그룹
 };
 
 function getScheduleCategoryMeta(
@@ -143,11 +148,7 @@ function getScheduleCategoryMeta(
     return { label: '교육', badgeClass: 'schedule-cat-edu', kind: 'work' };
   }
   if (c === 'event' || c === '행사' || c === '행사/이벤트') {
-    return {
-      label: '행사/이벤트',
-      badgeClass: 'schedule-cat-event',
-      kind: 'work',
-    };
+    return { label: '행사/이벤트', badgeClass: 'schedule-cat-event', kind: 'work' };
   }
 
   // 근태 계열
@@ -230,9 +231,7 @@ export default function HomePage() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-  const [selectedDate, setSelectedDate] = useState<string>(() =>
-    formatDate(new Date())
-  );
+  const [selectedDate, setSelectedDate] = useState<string>(() => formatDate(new Date()));
 
   const [daySummaries, setDaySummaries] = useState<DaySummary[]>([]);
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
@@ -246,7 +245,6 @@ export default function HomePage() {
   const [moodByDate, setMoodByDate] = useState<Record<string, string>>({});
 
   const todayStr = useMemo(() => formatDate(new Date()), []);
-
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
 
   // 마스코트 감성 슬라이드 인덱스
@@ -319,10 +317,7 @@ export default function HomePage() {
     () => schedules.filter((s) => s.schedule_date === todayStr).length,
     [schedules, todayStr]
   );
-  const newRebuttalCount = useMemo(
-    () => recentRebuttals.length,
-    [recentRebuttals]
-  );
+  const newRebuttalCount = useMemo(() => recentRebuttals.length, [recentRebuttals]);
 
   useEffect(() => {
     const init = async () => {
@@ -350,19 +345,14 @@ export default function HomePage() {
       if (!profileError && profile) {
         const anyProfile = profile as any;
 
-        if (anyProfile.nickname) {
-          setNickname(anyProfile.nickname);
-        } else if (anyProfile.name) {
-          setNickname(anyProfile.name);
-        } else if (user.email) {
-          setNickname(user.email.split('@')[0]);
-        }
+        if (anyProfile.nickname) setNickname(anyProfile.nickname);
+        else if (anyProfile.name) setNickname(anyProfile.name);
+        else if (user.email) setNickname(user.email.split('@')[0]);
 
         if (anyProfile.avatar_url) setProfileImage(anyProfile.avatar_url);
         if (anyProfile.industry) setIndustry(anyProfile.industry);
         if (anyProfile.grade) setGrade(anyProfile.grade);
-        if (anyProfile.career)
-          setCareerYears(getCareerLabel(anyProfile.career));
+        if (anyProfile.career) setCareerYears(getCareerLabel(anyProfile.career));
         if (anyProfile.company) setCompany(anyProfile.company);
         if (anyProfile.department) setDepartment(anyProfile.department);
         if (anyProfile.team) setTeam(anyProfile.team);
@@ -386,28 +376,18 @@ export default function HomePage() {
   }, [currentMonth, userId]);
 
   const loadDashboardData = async (uid: string, baseMonth: Date) => {
-    const monthStart = new Date(
-      baseMonth.getFullYear(),
-      baseMonth.getMonth(),
-      1
-    );
-    const monthEnd = new Date(
-      baseMonth.getFullYear(),
-      baseMonth.getMonth() + 1,
-      0
-    );
+    const monthStart = new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1);
+    const monthEnd = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 0);
 
     const from = formatDate(monthStart);
     const to = formatDate(monthEnd);
 
-    setCurrentMonthLabel(
-      `${monthStart.getFullYear()}년 ${monthStart.getMonth() + 1}월`
-    );
+    setCurrentMonthLabel(`${monthStart.getFullYear()}년 ${monthStart.getMonth() + 1}월`);
 
     const moodMap: Record<string, string> = {};
     const contractByDate: Record<string, number> = {};
 
-    // ▼ category 컬럼 같이 조회
+    // schedules
     const { data: scheduleRows, error: scheduleError } = await supabase
       .from('schedules')
       .select('id, title, schedule_date, schedule_time, category')
@@ -416,24 +396,19 @@ export default function HomePage() {
       .lte('schedule_date', to)
       .order('schedule_date', { ascending: true });
 
-    if (scheduleError) {
-      console.error('schedules error', scheduleError);
-    }
+    if (scheduleError) console.error('schedules error', scheduleError);
 
     const safeSchedules = (scheduleRows ?? []) as ScheduleRow[];
     setSchedules(safeSchedules);
 
     const summaryMap: Record<string, number> = {};
     safeSchedules.forEach((row) => {
-      if (!summaryMap[row.schedule_date]) summaryMap[row.schedule_date] = 0;
-      summaryMap[row.schedule_date] += 1;
+      summaryMap[row.schedule_date] = (summaryMap[row.schedule_date] ?? 0) + 1;
     });
 
-    const summaries: DaySummary[] = Object.entries(summaryMap).map(
-      ([date, count]) => ({ date, count })
-    );
-    setDaySummaries(summaries);
+    setDaySummaries(Object.entries(summaryMap).map(([date, count]) => ({ date, count })));
 
+    // up_logs
     const { data: upRows, error: upError } = await supabase
       .from('up_logs')
       .select('id, day_goal, week_goal, month_goal, log_date, mood')
@@ -454,18 +429,15 @@ export default function HomePage() {
         if (!row.log_date) return;
         const raw = row.log_date;
         const str =
-          typeof raw === 'string'
-            ? raw.slice(0, 10)
-            : formatDate(new Date(raw));
-        if (row.mood) {
-          moodMap[str] = row.mood as string;
-        }
+          typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
+        if (row.mood) moodMap[str] = row.mood as string;
       });
     } else {
       setLatestGoals(null);
       if (upError) console.error('up_logs error', upError);
     }
 
+    // customers -> 계약 그래프
     try {
       const { data: customerRows, error: customerError } = await supabase
         .from('customers')
@@ -478,15 +450,10 @@ export default function HomePage() {
         (customerRows as any[]).forEach((row) => {
           const raw = (row as any).created_at;
           if (!raw) return;
-
           const dateStr =
-            typeof raw === 'string'
-              ? raw.slice(0, 10)
-              : formatDate(new Date(raw));
+            typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
           const status: string = ((row as any).status ?? '') as string;
-
           if (!status) return;
-
           if (status.includes('계약')) {
             contractByDate[dateStr] = (contractByDate[dateStr] ?? 0) + 1;
           }
@@ -501,20 +468,14 @@ export default function HomePage() {
     const daysInThisMonth = monthEnd.getDate();
     const growth: GrowthDay[] = [];
     for (let d = 1; d <= daysInThisMonth; d++) {
-      const cur = new Date(
-        monthStart.getFullYear(),
-        monthStart.getMonth(),
-        d
-      );
+      const cur = new Date(monthStart.getFullYear(), monthStart.getMonth(), d);
       const dateStr = formatDate(cur);
-      growth.push({
-        date: dateStr,
-        contractCount: contractByDate[dateStr] || 0,
-      });
+      growth.push({ date: dateStr, contractCount: contractByDate[dateStr] || 0 });
     }
     setGrowthDays(growth);
     setMoodByDate(moodMap);
 
+    // rebuttals
     const { data: rebutRows, error: rebutError } = await supabase
       .from('rebuttals')
       .select('id, category, content')
@@ -522,13 +483,13 @@ export default function HomePage() {
       .order('id', { ascending: false })
       .limit(3);
 
-    if (!rebutError && rebutRows) {
-      setRecentRebuttals(rebutRows as RebuttalSummary[]);
-    } else {
+    if (!rebutError && rebutRows) setRecentRebuttals(rebutRows as RebuttalSummary[]);
+    else {
       setRecentRebuttals([]);
       if (rebutError) console.error('rebuttals error', rebutError);
     }
 
+    // daily_tasks
     const today = formatDate(new Date());
     const { data: taskRows, error: taskError } = await supabase
       .from('daily_tasks')
@@ -566,41 +527,25 @@ export default function HomePage() {
   };
 
   const daysInMonth = useMemo(() => {
-    const firstDay = new Date(
-      currentMonth.getFullYear(),
-      currentMonth.getMonth(),
-      1
-    );
-    const lastDay = new Date(
-      currentMonth.getFullYear(),
-      currentMonth.getMonth() + 1,
-      0
-    );
+    const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const lastDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
 
     const days: Date[] = [];
     const startWeekday = firstDay.getDay();
 
     for (let i = 0; i < startWeekday; i++) {
       days.push(
-        new Date(
-          firstDay.getFullYear(),
-          firstDay.getMonth(),
-          firstDay.getDate() - (startWeekday - i)
-        )
+        new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate() - (startWeekday - i))
       );
     }
 
     for (let d = 1; d <= lastDay.getDate(); d++) {
-      days.push(
-        new Date(currentMonth.getFullYear(), currentMonth.getMonth(), d)
-      );
+      days.push(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), d));
     }
 
     while (days.length % 7 !== 0) {
       const last = days[days.length - 1];
-      days.push(
-        new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1)
-      );
+      days.push(new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1));
     }
 
     return days;
@@ -608,12 +553,7 @@ export default function HomePage() {
 
   const selectedDateSchedules = useMemo(() => {
     const list = schedules.filter((s) => s.schedule_date === selectedDate);
-    // 시간 기준 정렬 (나의 U P 관리와 동일하게 위→아래)
-    return [...list].sort((a, b) => {
-      const ta = a.schedule_time || '';
-      const tb = b.schedule_time || '';
-      return ta.localeCompare(tb);
-    });
+    return [...list].sort((a, b) => (a.schedule_time || '').localeCompare(b.schedule_time || ''));
   }, [schedules, selectedDate]);
 
   const selectedDateLabel = useMemo(() => {
@@ -637,20 +577,12 @@ export default function HomePage() {
     if (!userId) return;
     const nextDone = !task.done;
 
-    setTodayTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t))
-    );
+    setTodayTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t)));
 
-    const { error } = await supabase
-      .from('daily_tasks')
-      .update({ done: nextDone })
-      .eq('id', task.id)
-      .eq('user_id', userId);
+    const { error } = await supabase.from('daily_tasks').update({ done: nextDone }).eq('id', task.id).eq('user_id', userId);
 
     if (error) {
-      setTodayTasks((prev) =>
-        prev.map((t) => (t.id === task.id ? { ...t, done: task.done } : t))
-      );
+      setTodayTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: task.done } : t)));
       console.error('toggle daily_task error', error);
       alert('오늘 할 일 상태 저장 중 오류가 발생했어요.');
     }
@@ -667,25 +599,17 @@ export default function HomePage() {
     );
   }
 
-  const avatarInitial =
-    nickname && nickname.length > 0 ? nickname.trim()[0]?.toUpperCase() : 'U';
+  const avatarInitial = nickname && nickname.length > 0 ? nickname.trim()[0]?.toUpperCase() : 'U';
 
   const careerCombined =
-    grade && careerYears
-      ? `${grade} · ${careerYears}`
-      : grade
-      ? grade
-      : careerYears
-      ? careerYears
-      : '경력/직함 미설정';
+    grade && careerYears ? `${grade} · ${careerYears}` : grade ? grade : careerYears ? careerYears : '경력/직함 미설정';
 
-  const orgCombined =
-    [company, department, team].filter(Boolean).join(' / ') || '조직/팀 미설정';
+  const orgCombined = [company, department, team].filter(Boolean).join(' / ') || '조직/팀 미설정';
 
   return (
     <div className="home-root">
       <div className="home-inner">
-        {/* ★ 헤더: 위줄 = 로고 + 프로필 나란히 / 아래줄 = 마스코트 + 말풍선 */}
+        {/* ★ 헤더 */}
         <header className="home-header">
           {/* 상단: 로고/환영 + 프로필 박스 */}
           <div className="home-header-top">
@@ -733,9 +657,7 @@ export default function HomePage() {
                 </div>
 
                 <div className="profile-meta">
-                  <span className="profile-pill">
-                    {industry ?? '업종 미설정'}
-                  </span>
+                  <span className="profile-pill">{industry ?? '업종 미설정'}</span>
                   <span className="profile-pill">{careerCombined}</span>
                   <span className="profile-pill">{orgCombined}</span>
                 </div>
@@ -760,27 +682,14 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* 하단: 마스코트 mp4 + 말풍선 (오늘의 UP 한마디) */}
-          <div className="home-header-bottom">
-            <div className="mascot-wrap">
-              <div className="mascot-bubble">
-                <div className="mascot-bubble-tag">오늘의 U P 한마디</div>
-                <p className="mascot-bubble-main">
-                  {EMO_QUOTES[emotionIndex] ?? ''}
-                </p>
-              </div>
-              <div className="mascot-video-frame">
-                <video
-                  className="mascot-video"
-                  src="/assets/videos/upzzu-mascot.mp4"
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                />
-              </div>
-            </div>
-          </div>
+                    {/* 하단: 마스코트(이미지) + 말풍선 */}
+          <UpzzuHeaderCoach
+  mascotSrc="/assets/upzzu1.png"
+  text={EMO_QUOTES[emotionIndex] ?? ''}
+  tag="오늘의 U P 한마디"
+  sizePx={160}
+/>
+
         </header>
 
         {/* 메뉴 버튼 */}
@@ -802,15 +711,14 @@ export default function HomePage() {
           </Link>
         </section>
 
+
         {/* 날씨 */}
         <section className="weather-wide">
           <div className="weather-panel">
             <div className="weather-panel-header">
               <div>
                 <div className="section-title">오늘 날씨</div>
-                <div className="section-sub">
-                  외근/미팅 계획 세울 때 참고하세요.
-                </div>
+                <div className="section-sub">외근/미팅 계획 세울 때 참고하세요.</div>
               </div>
             </div>
             <div className="weather-strip">
@@ -838,31 +746,22 @@ export default function HomePage() {
               <div className="goals-list">
                 <div className="goal-card goal-card-today">
                   <div className="goal-label">오늘 목표</div>
-                  <div className="goal-text">
-                    {latestGoals?.day_goal || '가망고객 안부 문자인사하기'}
-                  </div>
+                  <div className="goal-text">{latestGoals?.day_goal || '가망고객 안부 문자인사하기'}</div>
                 </div>
 
                 <div className="goal-card">
                   <div className="goal-label">이번 주 목표</div>
-                  <div className="goal-text">
-                    {latestGoals?.week_goal || '신규고객 3명 이상'}
-                  </div>
+                  <div className="goal-text">{latestGoals?.week_goal || '신규고객 3명 이상'}</div>
                 </div>
 
                 <div className="goal-card">
                   <div className="goal-label">이번 달 목표</div>
-                  <div className="goal-text">
-                    {latestGoals?.month_goal || '이달엔 30건 이상 계약하기'}
-                  </div>
+                  <div className="goal-text">{latestGoals?.month_goal || '이달엔 30건 이상 계약하기'}</div>
                 </div>
               </div>
 
               <div className="goal-main">
-                나의 최종 목표{' '}
-                <span className="goal-main-strong">
-                  “{mainGoal || '1등 찍어보자'}”
-                </span>
+                나의 최종 목표 <span className="goal-main-strong">“{mainGoal || '1등 찍어보자'}”</span>
               </div>
             </div>
 
@@ -870,8 +769,7 @@ export default function HomePage() {
             <div className="summary-card todo-card">
               <h3 className="summary-title">오늘 할 일</h3>
               <p className="summary-desc">
-                <strong>나의 U P 관리</strong>에서 입력한 오늘의 체크항목을
-                여기에서 한 번에 체크할 수 있어요.
+                <strong>나의 U P 관리</strong>에서 입력한 오늘의 체크항목을 여기에서 한 번에 체크할 수 있어요.
               </p>
 
               {todayTasks.length === 0 ? (
@@ -888,21 +786,12 @@ export default function HomePage() {
                     <li key={task.id} className="todo-item">
                       <button
                         type="button"
-                        className={
-                          'todo-check ' +
-                          (task.done ? 'todo-check-done' : '')
-                        }
+                        className={'todo-check ' + (task.done ? 'todo-check-done' : '')}
                         onClick={() => handleToggleTask(task)}
                       >
                         {task.done ? '✓' : ''}
                       </button>
-                      <span
-                        className={
-                          'todo-text ' + (task.done ? 'todo-text-done' : '')
-                        }
-                      >
-                        {task.content}
-                      </span>
+                      <span className={'todo-text ' + (task.done ? 'todo-text-done' : '')}>{task.content}</span>
                     </li>
                   ))}
                 </ul>
@@ -931,10 +820,7 @@ export default function HomePage() {
 
                     return (
                       <div key={g.date} className="growth-col">
-                        <div
-                          className="bar contract-bar"
-                          style={{ height: `${height}px` }}
-                        />
+                        <div className="bar contract-bar" style={{ height: `${height}px` }} />
                         <div className="growth-day-label">{day}</div>
                       </div>
                     );
@@ -950,24 +836,15 @@ export default function HomePage() {
               <div>
                 <div className="section-title">CALENDAR &amp; PERFORMANCE</div>
                 <div className="section-sub">
-                  달력에서 기록과 스케줄 카테고리를 색상으로 보고, 선택한 날짜의
-                  일정을 아래에서 입력·관리할 수 있어요.
+                  달력에서 기록과 스케줄 카테고리를 색상으로 보고, 선택한 날짜의 일정을 아래에서 확인할 수 있어요.
                 </div>
               </div>
               <div className="month-nav">
-                <button
-                  type="button"
-                  className="nav-btn"
-                  onClick={() => moveMonth(-1)}
-                >
+                <button type="button" className="nav-btn" onClick={() => moveMonth(-1)}>
                   ◀
                 </button>
                 <div className="month-label">{getMonthLabel(currentMonth)}</div>
-                <button
-                  type="button"
-                  className="nav-btn"
-                  onClick={() => moveMonth(1)}
-                >
+                <button type="button" className="nav-btn" onClick={() => moveMonth(1)}>
                   ▶
                 </button>
               </div>
@@ -982,32 +859,25 @@ export default function HomePage() {
 
               {daysInMonth.map((d, index) => {
                 const dStr = formatDate(d);
-                const isCurrentMonth =
-                  d.getMonth() === currentMonth.getMonth();
+                const isCurrentMonth = d.getMonth() === currentMonth.getMonth();
                 const isToday = dStr === todayStr;
                 const isSelected = dStr === selectedDate;
 
-                const schedulesForDay = schedules.filter(
-                  (s) => s.schedule_date === dStr
-                );
-
+                const schedulesForDay = schedules.filter((s) => s.schedule_date === dStr);
                 const moodCode = moodByDate[dStr];
+                const daySummary = daySummaries.find((ds) => ds.date === dStr);
 
-                const daySummary = daySummaries.find(
-                  (ds) => ds.date === dStr
-                );
-
-                // 오늘(해당 날짜)의 카테고리 분포 → 업무내용/근태/기타 중 하나로 요약
+                // 카테고리 분포 요약
                 let mainKind: ScheduleCategoryKind | null = null;
                 if (schedulesForDay.length > 0) {
                   let hasWork = false;
                   let hasAttendance = false;
                   let hasEtc = false;
+
                   schedulesForDay.forEach((s) => {
                     const meta = getScheduleCategoryMeta(s.category);
                     if (meta.kind === 'work') hasWork = true;
-                    else if (meta.kind === 'attendance')
-                      hasAttendance = true;
+                    else if (meta.kind === 'attendance') hasAttendance = true;
                     else hasEtc = true;
                   });
 
@@ -1045,23 +915,13 @@ export default function HomePage() {
                   >
                     <div className="calendar-day-head">
                       <div className="calendar-day-number">{d.getDate()}</div>
-                      {moodCode && (
-                        <div className="calendar-day-mood">
-                          {getMoodEmoji(moodCode)}
-                        </div>
-                      )}
+                      {moodCode && <div className="calendar-day-mood">{getMoodEmoji(moodCode)}</div>}
                     </div>
 
                     <div className="calendar-day-dots">
-                      {mainKind && (
-                        <div className={`calendar-pill ${mainClass}`}>
-                          {mainLabel}
-                        </div>
-                      )}
+                      {mainKind && <div className={`calendar-pill ${mainClass}`}>{mainLabel}</div>}
                       {daySummary && daySummary.count > 0 && (
-                        <div className="calendar-pill calendar-pill-count">
-                          일정/기록 {daySummary.count}개
-                        </div>
+                        <div className="calendar-pill calendar-pill-count">일정/기록 {daySummary.count}개</div>
                       )}
                     </div>
                   </button>
@@ -1071,8 +931,7 @@ export default function HomePage() {
 
             <div className="calendar-footer">
               <span>
-                오늘은 <strong>{getKoreanWeekday(new Date())}</strong>
-                입니다.
+                오늘은 <strong>{getKoreanWeekday(new Date())}</strong> 입니다.
               </span>
             </div>
 
@@ -1090,28 +949,19 @@ export default function HomePage() {
                 <div className="empty-text">
                   아직 등록된 일정이 없어요.
                   <br />
-                  스케줄 추가/수정은{' '}
-                  <strong>나의 U P 관리 · 고객관리</strong>에서 할 수 있어요.
+                  스케줄 추가/수정은 <strong>나의 U P 관리 · 고객관리</strong>에서 할 수 있어요.
                 </div>
               ) : (
                 <ul className="schedule-list">
                   {selectedDateSchedules.map((s) => {
                     const meta = getScheduleCategoryMeta(s.category);
-                    const timeText = s.schedule_time
-                      ? s.schedule_time.slice(0, 5)
-                      : '--:--';
+                    const timeText = s.schedule_time ? s.schedule_time.slice(0, 5) : '--:--';
 
                     return (
                       <li key={s.id} className="schedule-item">
                         <div className="schedule-time">{timeText}</div>
                         <div className="schedule-content">
-                          <span
-                            className={
-                              'schedule-category ' + meta.badgeClass
-                            }
-                          >
-                            {meta.label}
-                          </span>
+                          <span className={'schedule-category ' + meta.badgeClass}>{meta.label}</span>
                           <span className="schedule-title">{s.title}</span>
                         </div>
                       </li>
@@ -1124,18 +974,10 @@ export default function HomePage() {
             <div className="right-card friend-card">
               <div className="friend-card-header">
                 <div>
-                  <div className="section-title friend-title">
-                    친구 목록 · U P 채팅
-                  </div>
-                  <div className="section-sub friend-sub">
-                    함께 올라가는 동료들의 상태와 프로필을 확인해요.
-                  </div>
+                  <div className="section-title friend-title">친구 목록 · U P 채팅</div>
+                  <div className="section-sub friend-sub">함께 올라가는 동료들의 상태와 프로필을 확인해요.</div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => router.push('/memo-chat')}
-                  className="friend-chat-banner big"
-                >
+                <button type="button" onClick={() => router.push('/memo-chat')} className="friend-chat-banner big">
                   U P 채팅방 열기
                 </button>
               </div>
@@ -1149,18 +991,9 @@ export default function HomePage() {
               ) : (
                 <ul className="friends-list">
                   {friends.map((friend) => (
-                    <li
-                      key={friend.id}
-                      className="friend-item"
-                      onClick={() => setSelectedFriend(friend)}
-                    >
+                    <li key={friend.id} className="friend-item" onClick={() => setSelectedFriend(friend)}>
                       <div className="friend-main-row">
-                        <span
-                          className={
-                            'friend-dot ' +
-                            (friend.online ? 'friend-dot-on' : 'friend-dot-off')
-                          }
-                        />
+                        <span className={'friend-dot ' + (friend.online ? 'friend-dot-on' : 'friend-dot-off')} />
                         <div className="friend-avatar-small">
                           {friend.avatarUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -1171,11 +1004,7 @@ export default function HomePage() {
                         </div>
                         <span className="friend-name-wrap">
                           <span className="friend-name">{friend.name}</span>
-                          {friend.role && (
-                            <span className="friend-role-pill">
-                              {friend.role}
-                            </span>
-                          )}
+                          {friend.role && <span className="friend-role-pill">{friend.role}</span>}
                         </span>
                       </div>
 
@@ -1196,19 +1025,9 @@ export default function HomePage() {
 
         {/* 친구 프로필 모달 */}
         {selectedFriend && (
-          <div
-            className="friend-modal-backdrop"
-            onClick={() => setSelectedFriend(null)}
-          >
-            <div
-              className="friend-modal"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                type="button"
-                className="friend-modal-close"
-                onClick={() => setSelectedFriend(null)}
-              >
+          <div className="friend-modal-backdrop" onClick={() => setSelectedFriend(null)}>
+            <div className="friend-modal" onClick={(e) => e.stopPropagation()}>
+              <button type="button" className="friend-modal-close" onClick={() => setSelectedFriend(null)}>
                 ✕
               </button>
 
@@ -1216,10 +1035,7 @@ export default function HomePage() {
                 <div className="friend-modal-avatar">
                   {selectedFriend.avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={selectedFriend.avatarUrl}
-                      alt={selectedFriend.name}
-                    />
+                    <img src={selectedFriend.avatarUrl} alt={selectedFriend.name} />
                   ) : (
                     selectedFriend.name[0]
                   )}
@@ -1227,19 +1043,9 @@ export default function HomePage() {
 
                 <div className="friend-modal-title">
                   <div className="friend-modal-name-row">
-                    <span className="friend-modal-name">
-                      {selectedFriend.name}
-                    </span>
-                    {selectedFriend.role && (
-                      <span className="friend-modal-role">
-                        {selectedFriend.role}
-                      </span>
-                    )}
-                    {selectedFriend.mood && (
-                      <span className="friend-modal-mood">
-                        {getMoodEmoji(selectedFriend.mood)}
-                      </span>
-                    )}
+                    <span className="friend-modal-name">{selectedFriend.name}</span>
+                    {selectedFriend.role && <span className="friend-modal-role">{selectedFriend.role}</span>}
+                    {selectedFriend.mood && <span className="friend-modal-mood">{getMoodEmoji(selectedFriend.mood)}</span>}
                   </div>
 
                   <div className="friend-modal-sub">
@@ -1254,9 +1060,7 @@ export default function HomePage() {
               <div className="friend-modal-body">
                 <div className="friend-modal-section">
                   <div className="friend-modal-label">메인 목표</div>
-                  <div className="friend-modal-main-goal">
-                    “{selectedFriend.mainGoal}”
-                  </div>
+                  <div className="friend-modal-main-goal">“{selectedFriend.mainGoal}”</div>
                 </div>
 
                 <div className="friend-modal-section">
@@ -1280,16 +1084,12 @@ export default function HomePage() {
                 <div className="friend-modal-section cheer-row">
                   <div>
                     <div className="friend-modal-label">응원 받은 지수</div>
-                    <div className="friend-modal-cheer">
-                      💜 {selectedFriend.cheerCount}개
-                    </div>
+                    <div className="friend-modal-cheer">💜 {selectedFriend.cheerCount}개</div>
                   </div>
                 </div>
 
                 <div className="friend-modal-actions">
-                  <button className="friend-modal-btn primary">
-                    U P 채팅하기
-                  </button>
+                  <button className="friend-modal-btn primary">U P 채팅하기</button>
                   <button className="friend-modal-btn">친구 추가</button>
                   <button className="friend-modal-btn">응원 보내기 💜</button>
                 </div>
@@ -1299,11 +1099,7 @@ export default function HomePage() {
         )}
 
         {/* 문의하기 플로팅 버튼 */}
-        <button
-          type="button"
-          onClick={() => router.push('/support')}
-          className="floating-support-btn"
-        >
+        <button type="button" onClick={() => router.push('/support')} className="floating-support-btn">
           <span>문의하기</span>
           <span>실시간 채팅</span>
         </button>
@@ -1315,6 +1111,24 @@ export default function HomePage() {
 }
 
 const styles = `
+/* ===== styled-jsx 전역 셀렉터는 :global()로 감싸야 에러 안 남 ===== */
+:global(:root) {
+  --uplog-bg: #050013;
+  --uplog-surface: #0b021b;
+  --uplog-surface-soft: #12062a;
+  --uplog-card: #130727;
+  --uplog-accent-pink: #f472b6;
+  --uplog-accent-purple: #a855f7;
+  --uplog-accent-soft: #fdf2ff;
+  --uplog-border-soft: rgba(255, 255, 255, 0.06);
+}
+
+:global(html),
+:global(body) {
+  margin: 0;
+  padding: 0;
+}
+
 .home-root {
   min-height: 100vh;
   padding: 24px;
@@ -1348,7 +1162,6 @@ const styles = `
 }
 
 /* 헤더 전체 */
-
 .home-header {
   display: flex;
   flex-direction: column;
@@ -1359,36 +1172,19 @@ const styles = `
   box-shadow: 0 18px 34px rgba(0,0,0,0.25);
   margin-bottom: 16px;
   color: #fffdfd;
+
+  overflow: visible; /* ✅ 헤더 내부 요소 잘림 방지 */
 }
 
-/* 상단: 로고/환영 + 프로필 나란히 */
-
-.home-header-top {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr);
-  gap: 18px;
-  align-items: stretch;
+/* ✅ 여기가 대표님이 물어본 그 줄 */
+.home-header-bottom{
+  height: 170px;
+  overflow: visible;
 }
 
-.home-header-left {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 
-.home-header-profile {
-  display: flex;
-  align-items: stretch;
-}
-
-/* 하단: 마스코트 라인 */
-
-.home-header-bottom {
-  margin-top: 4px;
-}
 
 /* 로고 */
-
 .home-logo-row {
   display: flex;
   align-items: center;
@@ -1425,7 +1221,6 @@ const styles = `
 }
 
 /* 닉네임/환영 문구 */
-
 .home-welcome {
   margin-top: 10px;
   font-size: 20px;
@@ -1450,7 +1245,6 @@ const styles = `
 }
 
 /* 프로필 박스 */
-
 .profile-box {
   background: #ffffff;
   border-radius: 22px;
@@ -1462,7 +1256,6 @@ const styles = `
   border: 1px solid #e3dafb;
   color: #211437;
 
-  /* ★ 높이 고정: 말풍선이 뭐라고 해도 너는 안 움직인다 */
   height: 230px;
   min-height: 230px;
   max-height: 230px;
@@ -1557,80 +1350,7 @@ const styles = `
   text-decoration: none;
 }
 
-/* 마스코트 + 말풍선 (아래줄 가로) */
-
-.mascot-wrap {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-top: 4px;
-}
-
-.mascot-bubble {
-  flex: 1;
-  border-radius: 16px;
-  padding: 10px 12px;
-  background: rgba(255,255,255,0.97);
-  color: #2b163a;
-  box-shadow: 0 8px 18px rgba(0,0,0,0.18);
-  border: 1px solid rgba(223, 202, 255, 0.9);
-  position: relative;
-  min-height: 68px;
-}
-
-.mascot-bubble::after {
-  content: '';
-  position: absolute;
-  right: -8px;
-  bottom: 18px;
-  width: 12px;
-  height: 12px;
-  background: rgba(255,255,255,0.97);
-  border-radius: 4px;
-  transform: rotate(45deg);
-  border-right: 1px solid rgba(223,202,255,0.9);
-  border-bottom: 1px solid rgba(223,202,255,0.9);
-}
-
-.mascot-bubble-tag {
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(250, 244, 255, 0.95);
-  color: #f973b8;
-  margin-bottom: 4px;
-}
-
-.mascot-bubble-main {
-  font-size: 14px;
-  font-weight: 600;
-  color: #4b2966;
-}
-
-.mascot-video-frame {
-  width: 120px;
-  height: 120px;
-  border-radius: 999px;
-  overflow: hidden;
-  border: 4px solid rgba(255,255,255,0.95);
-  box-shadow:
-    0 14px 26px rgba(0,0,0,0.3),
-    0 0 0 1px rgba(148, 93, 255, 0.9);
-  background: radial-gradient(circle at top left, #ffe5fb 0, #a855f7 60%);
-  flex-shrink: 0;
-}
-
-.mascot-video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 /* 라운드 사각형 메뉴 버튼 */
-
 .home-quick-nav {
   display: flex;
   gap: 8px;
@@ -1664,7 +1384,6 @@ const styles = `
 }
 
 /* 날씨 */
-
 .weather-wide {
   margin-bottom: 10px;
 }
@@ -1717,7 +1436,6 @@ const styles = `
 }
 
 /* 메인 레이아웃 */
-
 .home-main {
   display: flex;
   flex-direction: column;
@@ -1763,7 +1481,6 @@ const styles = `
 }
 
 /* 목표 카드 */
-
 .goals-list {
   display: flex;
   flex-direction: column;
@@ -1807,10 +1524,7 @@ const styles = `
 }
 
 /* 오늘 할 일 */
-
-.todo-card {
-  position: relative;
-}
+.todo-card { position: relative; }
 
 .todo-empty {
   margin-top: 10px;
@@ -1823,9 +1537,7 @@ const styles = `
   line-height: 1.5;
 }
 
-.todo-empty-sub {
-  font-size: 13px;
-}
+.todo-empty-sub { font-size: 13px; }
 
 .todo-list {
   margin: 10px 0 0;
@@ -1863,9 +1575,7 @@ const styles = `
   box-shadow: 0 0 10px rgba(241, 83, 170, 0.6);
 }
 
-.todo-text {
-  color: #241336;
-}
+.todo-text { color: #241336; }
 
 .todo-text-done {
   color: #a39ad3;
@@ -1873,17 +1583,13 @@ const styles = `
 }
 
 /* 실적 그래프 */
-
 .growth-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
 }
 
-.growth-month {
-  font-size: 14px;
-  color: #7e6fd6;
-}
+.growth-month { font-size: 14px; color: #7e6fd6; }
 
 .growth-caption {
   margin-top: 4px;
@@ -1928,14 +1634,9 @@ const styles = `
     0 0 8px rgba(251, 146, 60, 0.85);
 }
 
-.growth-day-label {
-  margin-top: 4px;
-  font-size: 11px;
-  color: #8775c8;
-}
+.growth-day-label { margin-top: 4px; font-size: 11px; color: #8775c8; }
 
 /* 공통 카드 */
-
 .right-card {
   background: #ffffff;
   border-radius: 20px;
@@ -1952,24 +1653,12 @@ const styles = `
   margin-bottom: 6px;
 }
 
-.empty-text {
-  font-size: 13px;
-  color: #7a69c4;
-  line-height: 1.5;
-}
+.empty-text { font-size: 13px; color: #7a69c4; line-height: 1.5; }
 
 /* 달력 */
+.section-header { margin-bottom: 6px; grid-column: 1 / -1; }
 
-.section-header {
-  margin-bottom: 6px;
-  grid-column: 1 / -1;
-}
-
-.month-nav {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+.month-nav { display: flex; align-items: center; gap: 6px; }
 
 .nav-btn {
   border-radius: 999px;
@@ -1981,11 +1670,7 @@ const styles = `
   cursor: pointer;
 }
 
-.month-label {
-  font-size: 15px;
-  font-weight: 700;
-  color: #372153;
-}
+.month-label { font-size: 15px; font-weight: 700; color: #372153; }
 
 .calendar-grid {
   background: #ffffff;
@@ -2021,42 +1706,20 @@ const styles = `
   transition: all 0.12s ease;
 }
 
-.calendar-day-out {
-  opacity: 0.35;
-}
+.calendar-day-out { opacity: 0.35; }
 
-.calendar-day-today {
-  box-shadow: 0 0 0 1px #f153aa;
-}
+.calendar-day-today { box-shadow: 0 0 0 1px #f153aa; }
 
 .calendar-day-selected {
   box-shadow: 0 0 0 2px #a45bff;
   background: linear-gradient(135deg, #f5e6ff, #ffe1f1);
 }
 
-.calendar-day-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+.calendar-day-head { display: flex; justify-content: space-between; align-items: center; }
+.calendar-day-number { font-weight: 700; font-size: 13px; }
+.calendar-day-mood { font-size: 14px; }
 
-.calendar-day-number {
-  font-weight: 700;
-  font-size: 13px;
-}
-
-.calendar-day-mood {
-  font-size: 14px;
-}
-
-.calendar-day-dots {
-  margin-top: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-/* 달력용 요약 뱃지 */
+.calendar-day-dots { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
 
 .calendar-pill {
   font-size: 11px;
@@ -2080,10 +1743,7 @@ const styles = `
   box-shadow: 0 4px 10px rgba(248, 113, 113, 0.5);
 }
 
-.calendar-pill-etc {
-  background: #e5e7eb;
-  color: #111827;
-}
+.calendar-pill-etc { background: #e5e7eb; color: #111827; }
 
 .calendar-pill-count {
   background: #fee2ff;
@@ -2098,18 +1758,10 @@ const styles = `
   color: #7e6fd6;
 }
 
-.calendar-selected-card {
-  grid-column: 1 / -1;
-  margin-top: 8px;
-}
+.calendar-selected-card { grid-column: 1 / -1; margin-top: 8px; }
 
 /* 선택한 날짜 스케줄 리스트 */
-
-.schedule-list {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-}
+.schedule-list { list-style: none; margin: 8px 0 0; padding: 0; }
 
 .schedule-item {
   display: grid;
@@ -2119,22 +1771,11 @@ const styles = `
   padding: 6px 0;
   border-bottom: 1px dashed #e0d4ff;
 }
+.schedule-item:last-child { border-bottom: none; }
 
-.schedule-item:last-child {
-  border-bottom: none;
-}
+.schedule-time { color: #f153aa; font-weight: 600; font-size: 14px; }
 
-.schedule-time {
-  color: #f153aa;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.schedule-content {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+.schedule-content { display: flex; align-items: center; gap: 10px; }
 
 .schedule-category {
   border-radius: 999px;
@@ -2146,45 +1787,15 @@ const styles = `
   white-space: nowrap;
 }
 
-/* 카테고리별 색상 */
+.schedule-cat-work { background: #fef2ff; color: #db2777; border-color: rgba(244, 114, 182, 0.4); }
+.schedule-cat-edu { background: #fef9c3; color: #ca8a04; border-color: rgba(250, 204, 21, 0.5); }
+.schedule-cat-event { background: #fee2e2; color: #dc2626; border-color: rgba(248, 113, 113, 0.6); }
+.schedule-cat-attend { background: #e0f2fe; color: #1d4ed8; border-color: rgba(59, 130, 246, 0.6); }
+.schedule-cat-etc { background: #f3f4ff; color: #4b5563; border-color: rgba(148, 163, 184, 0.6); }
 
-.schedule-cat-work {
-  background: #fef2ff;
-  color: #db2777;
-  border-color: rgba(244, 114, 182, 0.4);
-}
-
-.schedule-cat-edu {
-  background: #fef9c3;
-  color: #ca8a04;
-  border-color: rgba(250, 204, 21, 0.5);
-}
-
-.schedule-cat-event {
-  background: #fee2e2;
-  color: #dc2626;
-  border-color: rgba(248, 113, 113, 0.6);
-}
-
-.schedule-cat-attend {
-  background: #e0f2fe;
-  color: #1d4ed8;
-  border-color: rgba(59, 130, 246, 0.6);
-}
-
-.schedule-cat-etc {
-  background: #f3f4ff;
-  color: #4b5563;
-  border-color: rgba(148, 163, 184, 0.6);
-}
-
-.schedule-title {
-  color: #241336;
-  font-size: 14px;
-}
+.schedule-title { color: #241336; font-size: 14px; }
 
 /* 친구 카드 */
-
 .friend-card {
   margin-top: 24px;
   padding: 16px 20px 20px;
@@ -2206,13 +1817,8 @@ const styles = `
   align-items: center;
 }
 
-.friend-title {
-  color: #ffffff;
-}
-
-.friend-sub {
-  color: #fee2f2;
-}
+.friend-title { color: #ffffff; }
+.friend-sub { color: #fee2f2; }
 
 .friend-chat-banner {
   border-radius: 999px;
@@ -2226,10 +1832,7 @@ const styles = `
   box-shadow: 0 4px 10px rgba(0,0,0,0.18);
 }
 
-.friend-chat-banner.big {
-  min-width: 140px;
-  text-align: center;
-}
+.friend-chat-banner.big { min-width: 140px; text-align: center; }
 
 .friends-list {
   list-style: none;
@@ -2249,9 +1852,7 @@ const styles = `
   transition: all 0.16s ease;
 }
 
-.friend-item:last-child {
-  margin-bottom: 0;
-}
+.friend-item:last-child { margin-bottom: 0; }
 
 .friend-item:hover {
   background: #f4eeff;
@@ -2259,11 +1860,7 @@ const styles = `
   box-shadow: 0 6px 16px rgba(0,0,0,0.12);
 }
 
-.friend-main-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+.friend-main-row { display: flex; align-items: center; gap: 12px; }
 
 .friend-avatar-small {
   width: 34px;
@@ -2279,35 +1876,12 @@ const styles = `
   box-shadow: 0 0 10px rgba(185, 129, 255, 0.8);
 }
 
-.friend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  flex-shrink: 0;
-}
+.friend-dot { width: 10px; height: 10px; border-radius: 999px; flex-shrink: 0; }
+.friend-dot-on { background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.9); }
+.friend-dot-off { background: #9ca3af; opacity: 0.8; }
 
-.friend-dot-on {
-  background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.9);
-}
-
-.friend-dot-off {
-  background: #9ca3af;
-  opacity: 0.8;
-}
-
-.friend-name-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.friend-name {
-  font-size: 16px;
-  font-weight: 800;
-  color: #111827;
-}
+.friend-name-wrap { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.friend-name { font-size: 16px; font-weight: 800; color: #111827; }
 
 .friend-role-pill {
   font-size: 11px;
@@ -2327,8 +1901,7 @@ const styles = `
   color: #4b5563;
 }
 
-/* 친구 프로필 모달 */
-
+/* 친구 모달 */
 .friend-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -2365,12 +1938,7 @@ const styles = `
   font-size: 14px;
 }
 
-.friend-modal-header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 10px;
-}
+.friend-modal-header { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
 
 .friend-modal-avatar {
   width: 54px;
@@ -2386,102 +1954,34 @@ const styles = `
   overflow: hidden;
 }
 
-.friend-modal-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
+.friend-modal-avatar img { width: 100%; height: 100%; object-fit: cover; }
 
-.friend-modal-title {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
+.friend-modal-title { display: flex; flex-direction: column; gap: 2px; }
 
-.friend-modal-name-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+.friend-modal-name-row { display: flex; align-items: center; gap: 6px; }
 
-.friend-modal-name {
-  font-size: 18px;
-  font-weight: 900;
-  color: #1e1034;
-}
+.friend-modal-name { font-size: 18px; font-weight: 900; color: #1e1034; }
 
-.friend-modal-role {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: #f3e8ff;
-  color: #7c3aed;
-}
+.friend-modal-role { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #f3e8ff; color: #7c3aed; }
 
-.friend-modal-mood {
-  font-size: 18px;
-}
+.friend-modal-mood { font-size: 18px; }
 
-.friend-modal-sub {
-  font-size: 13px;
-  color: #7a69c4;
-}
+.friend-modal-sub { font-size: 13px; color: #7a69c4; }
 
-.friend-modal-body {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
+.friend-modal-body { margin-top: 8px; display: flex; flex-direction: column; gap: 10px; }
 
-.friend-modal-section {
-  padding: 8px 10px;
-  border-radius: 14px;
-  background: #faf7ff;
-  border: 1px solid rgba(212, 200, 255, 0.9);
-}
+.friend-modal-section { padding: 8px 10px; border-radius: 14px; background: #faf7ff; border: 1px solid rgba(212, 200, 255, 0.9); }
 
-.friend-modal-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: #7c6acd;
-  margin-bottom: 4px;
-}
+.friend-modal-label { font-size: 12px; font-weight: 700; color: #7c6acd; margin-bottom: 4px; }
 
-.friend-modal-main-goal {
-  font-size: 15px;
-  font-weight: 700;
-  color: #f153aa;
-}
+.friend-modal-main-goal { font-size: 15px; font-weight: 700; color: #f153aa; }
 
-.friend-modal-goals {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
+.friend-modal-goals { list-style: none; margin: 0; padding: 0; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.friend-modal-goals li { display: flex; justify-content: space-between; }
 
-.friend-modal-goals li {
-  display: flex;
-  justify-content: space-between;
-}
+.friend-modal-cheer { margin-top: 4px; font-size: 14px; font-weight: 700; color: #7c3aed; }
 
-.friend-modal-cheer {
-  margin-top: 4px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #7c3aed;
-}
-
-.friend-modal-actions {
-  margin-top: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
+.friend-modal-actions { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 8px; }
 
 .friend-modal-btn {
   flex: 1;
@@ -2503,7 +2003,6 @@ const styles = `
 }
 
 /* 플로팅 문의하기 버튼 */
-
 .floating-support-btn {
   position: fixed;
   right: 26px;
@@ -2525,75 +2024,27 @@ const styles = `
   z-index: 30;
 }
 
-/* 링크 리셋 */
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-a:hover {
-  text-decoration: none;
-}
+/* 전역 링크 리셋도 :global 처리 */
+:global(a) { color: inherit; text-decoration: none; }
+:global(a:hover) { text-decoration: none; }
 
 /* 반응형 */
-
 @media (max-width: 1024px) {
-  .home-root {
-    padding: 16px;
-  }
-
-  .home-header {
-    padding: 16px 14px 12px;
-  }
-
-  .home-header-top {
-    grid-template-columns: 1fr;
-  }
-
-  .home-header-profile {
-    margin-top: 6px;
-  }
-
-  .home-quick-nav {
-    flex-wrap: wrap;
-  }
-
-  .home-top-summary {
-    grid-template-columns: 1fr;
-  }
-
-  .calendar-grid {
-    font-size: 11px;
-  }
-
-  .friend-card {
-    margin-top: 16px;
-  }
+  .home-root { padding: 16px; }
+  .home-header { padding: 16px 14px 12px; }
+  .home-header-top { grid-template-columns: 1fr; }
+  .home-header-profile { margin-top: 6px; }
+  .home-quick-nav { flex-wrap: wrap; }
+  .home-top-summary { grid-template-columns: 1fr; }
+  .calendar-grid { font-size: 11px; }
+  .friend-card { margin-top: 16px; }
 }
 
 @media (max-width: 640px) {
-  .home-inner {
-    max-width: 100%;
-  }
-
-  .home-quick-nav {
-    flex-wrap: wrap;
-  }
-
-  .quick-card {
-    flex: 1 1 calc(50% - 4px);
-  }
-
-  .weather-slot {
-    min-width: 88px;
-  }
-
-  .floating-support-btn {
-    right: 16px;
-    bottom: 16px;
-  }
+  .home-inner { max-width: 100%; }
+  .home-quick-nav { flex-wrap: wrap; }
+  .quick-card { flex: 1 1 calc(50% - 4px); }
+  .weather-slot { min-width: 88px; }
+  .floating-support-btn { right: 16px; bottom: 16px; }
 }
 `;
-
-export {};

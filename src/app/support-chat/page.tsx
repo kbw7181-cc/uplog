@@ -15,6 +15,9 @@ type ChatMessage = {
   created_at: string;
 };
 
+const FIXED_GUIDE =
+  '여기엔 문의 내용을 편하게 남겨주세요. 운영자가 순서대로 확인하고 답변해요.';
+
 export default function SupportChatPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
@@ -50,7 +53,6 @@ export default function SupportChatPage() {
     }
 
     loadUser();
-
     return () => {
       isMounted = false;
     };
@@ -153,213 +155,71 @@ export default function SupportChatPage() {
   );
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        backgroundColor: '#050013',
-        display: 'flex',
-        justifyContent: 'center',
-        padding: '24px 12px',
-        boxSizing: 'border-box',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 960,
-          borderRadius: 24,
-          padding: 20,
-          background:
-            'radial-gradient(circle at top left,#312e81 0,#020016 55%,#000 100%)',
-          border: '1px solid rgba(148,163,184,0.4)',
-          boxShadow: '0 20px 50px rgba(15,23,42,0.6)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-        }}
-      >
-        {/* 헤더 */}
-        <header
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <div>
-            <p
-              style={{
-                fontSize: 11,
-                letterSpacing: '0.35em',
-                textTransform: 'uppercase',
-                margin: 0,
-                color: '#a5b4fc',
-              }}
-            >
-              UPLOG · SUPPORT
-            </p>
-            <h1
-              style={{
-                margin: '6px 0 0',
-                fontSize: 22,
-                fontWeight: 700,
-                color: '#f9fafb',
-              }}
-            >
-              문의하기 · 실시간 채팅
-            </h1>
-            <p
-              style={{
-                margin: '4px 0 0',
-                fontSize: 12,
-                color: '#e5e7eb',
-              }}
-            >
-              사용 중 궁금한 점이나 불편한 점을 남겨주시면, 관리자 또는
-              담당자가 순서대로 답변을 드립니다.
-            </p>
+    <div className="root">
+      <div className="inner">
+        {/* ===== 헤더 (UP 채팅 + 말풍선/마스코트) ===== */}
+        <header className="header">
+          <div className="headerTop">
+            <p className="headerTag">UPLOG · SUPPORT CHAT</p>
+            <h1 className="headerTitle">UP 채팅</h1>
+          </div>
+
+          <div className="headerBottom">
+            <div className="bubbleAndMascot">
+              <div className="guideBubble">
+                <div className="guideBubbleTop">
+                  <span className="guideBubbleChip">채팅 가이드</span>
+                </div>
+                <p className="guideBubbleText">{FIXED_GUIDE}</p>
+              </div>
+
+              <img
+                className="mascotImg"
+                src="/assets/upzzu4.png"
+                alt="업쮸"
+                draggable={false}
+              />
+            </div>
           </div>
         </header>
 
-        {/* 채팅 박스 */}
-        <section
-          style={{
-            flex: 1,
-            minHeight: 360,
-            maxHeight: '60vh',
-            borderRadius: 18,
-            padding: 12,
-            backgroundColor: 'rgba(15,23,42,0.85)',
-            border: '1px solid rgba(148,163,184,0.4)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
-        >
-          {/* 안내 문구 */}
-          <div
-            style={{
-              padding: '8px 12px 10px',
-              borderRadius: 12,
-              marginBottom: 6,
-              background:
-                'linear-gradient(90deg,rgba(251,113,133,0.14),rgba(168,85,247,0.12))',
-              border: '1px solid rgba(244,114,182,0.5)',
-            }}
-          >
-            <p
-              style={{
-                margin: 0,
-                fontSize: 11,
-                color: '#fecaca',
-                lineHeight: 1.5,
-              }}
-            >
-              ✨
-              <span style={{ fontWeight: 600 }}> TIP</span> · 대표님이 남기신
-              문의는 채널별로 기록이 남습니다. 설치 오류, 기능 제안, 버그
-              제보 등 편하게 말씀해 주세요.
-            </p>
-          </div>
-
-          {/* 메시지 목록 */}
-          <div
-            style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: '6px 4px 4px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-            }}
-          >
+        {/* ===== 채팅 박스 ===== */}
+        <section className="chatBox">
+          <div className="chatScroll">
             {(!isReady || loadingMessages) && (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: '#9ca3af',
-                  padding: '8px 4px',
-                }}
-              >
-                채팅 내역을 불러오는 중입니다…
-              </div>
+              <div className="stateText">채팅 내역을 불러오는 중입니다…</div>
             )}
 
             {isReady && !loadingMessages && messages.length === 0 && (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: '#9ca3af',
-                  padding: '8px 4px',
-                }}
-              >
+              <div className="stateText">
                 아직 대화가 없습니다. 아래 입력창에 첫 문의를 남겨 주세요.
               </div>
             )}
 
             {messages.map((msg) => {
               const isMine = msg.role === 'user';
-              const timeLabel = new Date(
-                msg.created_at
-              ).toLocaleTimeString('ko-KR', {
-                hour: '2-digit',
-                minute: '2-digit',
-              });
+              const timeLabel = new Date(msg.created_at).toLocaleTimeString(
+                'ko-KR',
+                { hour: '2-digit', minute: '2-digit' }
+              );
 
               return (
                 <div
                   key={msg.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: isMine ? 'flex-end' : 'flex-start',
-                  }}
+                  className="row"
+                  style={{ justifyContent: isMine ? 'flex-end' : 'flex-start' }}
                 >
                   <div
-                    style={{
-                      maxWidth: '80%',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: isMine ? 'flex-end' : 'flex-start',
-                      gap: 2,
-                    }}
+                    className="bubbleWrap"
+                    style={{ alignItems: isMine ? 'flex-end' : 'flex-start' }}
                   >
-                    <span
-                      style={{
-                        fontSize: 11,
-                        color: '#9ca3af',
-                      }}
-                    >
-                      {isMine ? '나' : '운영자'}
-                    </span>
-                    <div
-                      style={{
-                        borderRadius: 18,
-                        padding: '8px 12px',
-                        fontSize: 13,
-                        lineHeight: 1.5,
-                        whiteSpace: 'pre-line',
-                        background: isMine
-                          ? 'linear-gradient(135deg,#fb7185,#a855f7)'
-                          : 'rgba(15,23,42,0.9)',
-                        color: '#f9fafb',
-                        border: isMine
-                          ? '1px solid rgba(248,250,252,0.3)'
-                          : '1px solid rgba(148,163,184,0.6)',
-                        boxShadow: isMine
-                          ? '0 0 14px rgba(244,114,182,0.55)'
-                          : '0 4px 10px rgba(15,23,42,0.8)',
-                      }}
-                    >
+                    <span className="who">{isMine ? '나' : '운영자'}</span>
+
+                    <div className={'bubble ' + (isMine ? 'mine' : 'admin')}>
                       {msg.content}
                     </div>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        color: '#6b7280',
-                      }}
-                    >
-                      {timeLabel}
-                    </span>
+
+                    <span className="time">{timeLabel}</span>
                   </div>
                 </div>
               );
@@ -368,94 +228,297 @@ export default function SupportChatPage() {
           </div>
         </section>
 
-        {/* 입력창 */}
-        <section
-          style={{
-            borderRadius: 18,
-            padding: 12,
-            backgroundColor: 'rgba(17,24,39,0.95)',
-            border: '1px solid rgba(148,163,184,0.5)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
-        >
-          <label
-            style={{
-              fontSize: 12,
-              color: '#e5e7eb',
-              fontWeight: 500,
-            }}
-          >
-            메시지 입력
-          </label>
+        {/* ===== 입력창 ===== */}
+        <section className="inputBox">
+          <label className="inputLabel">메시지 입력</label>
+
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={3}
-            placeholder="문의하실 내용을 편하게 남겨 주세요. 엔터로 전송, 줄바꿈은 Shift+Enter 입니다."
-            style={{
-              width: '100%',
-              borderRadius: 12,
-              border: '1px solid rgba(156,163,175,0.7)',
-              backgroundColor: 'rgba(15,23,42,0.9)',
-              color: '#f9fafb',
-              fontSize: 13,
-              padding: '8px 10px',
-              resize: 'vertical',
-              outline: 'none',
-            }}
+            placeholder="문의하실 내용을 편하게 남겨 주세요. 엔터 전송, 줄바꿈은 Shift+Enter"
+            className="textarea"
           />
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: 8,
-              marginTop: 2,
-            }}
-          >
-            <p
-              style={{
-                margin: 0,
-                fontSize: 11,
-                color: '#9ca3af',
-              }}
-            >
-              • 대표님 계정 기준으로 채팅이 저장됩니다.  
-              • 서비스/기능 제안도 언제든 환영합니다.
-            </p>
+
+          <div className="inputBottom">
             <button
               type="button"
               onClick={handleSend}
               disabled={!input.trim() || sending || !isReady}
-              style={{
-                padding: '8px 18px',
-                borderRadius: 999,
-                border: 'none',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor:
-                  !input.trim() || sending || !isReady
-                    ? 'default'
-                    : 'pointer',
-                background: !input.trim() || sending || !isReady
-                  ? 'rgba(148,163,184,0.4)'
-                  : 'linear-gradient(90deg,#fb7185,#a855f7)',
-                color: '#f9fafb',
-                boxShadow:
-                  !input.trim() || sending || !isReady
-                    ? 'none'
-                    : '0 0 14px rgba(244,114,182,0.55)',
-                opacity: sending ? 0.7 : 1,
-              }}
+              className={'sendBtn ' + (!input.trim() || sending || !isReady ? 'disabled' : '')}
             >
               {sending ? '전송 중…' : '전송하기'}
             </button>
           </div>
         </section>
       </div>
+
+      <style jsx>{styles}</style>
     </div>
   );
 }
+
+const styles = `
+/* =========================
+   BASE
+   ========================= */
+.root{
+  min-height:100vh;
+  padding:24px 12px;
+  box-sizing:border-box;
+  display:flex;
+  justify-content:center;
+  background: linear-gradient(180deg, #ffe6f7 0%, #f5f0ff 45%, #e8f6ff 100%);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color:#1b1030;
+}
+.inner{
+  width:100%;
+  max-width:960px;
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+
+/* =========================
+   HEADER
+   ========================= */
+.header{
+  border-radius:34px;
+  background: radial-gradient(circle at top left, #ff8ac8 0, #a855f7 40%, #2a1bff 100%);
+  box-shadow: 0 26px 60px rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.18);
+  padding:22px 20px 16px;
+  color:#fff;
+}
+.headerTop{ display:flex; flex-direction:column; gap:6px; }
+.headerTag{
+  font-size:11px;
+  letter-spacing:0.35em;
+  text-transform:uppercase;
+  margin:0;
+  color: rgba(255,255,255,0.88);
+  font-weight:900;
+}
+.headerTitle{
+  margin:0;
+  font-size:24px;
+  font-weight:950;
+  letter-spacing:-0.02em;
+}
+
+/* 말풍선+업쮸 */
+.headerBottom{
+  margin-top:14px;
+  display:flex;
+  justify-content:center;
+}
+.bubbleAndMascot{
+  width:100%;
+  max-width:860px;
+  display:flex;
+  gap:14px;
+  justify-content:center;
+  align-items:center;
+}
+
+.guideBubble{
+  flex:1;
+  border-radius:999px;
+  padding:14px 20px;
+  background: rgba(255,255,255,0.97);
+  color:#2b163a;
+  box-shadow: 0 10px 22px rgba(0,0,0,0.18);
+  border:1px solid rgba(223, 202, 255, 0.9);
+  position:relative;
+  min-height:78px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+}
+.guideBubble::after{
+  content:'';
+  position:absolute;
+  right:-6px;
+  top:50%;
+  transform: translateY(-50%) rotate(45deg);
+  width:14px;
+  height:14px;
+  background: rgba(255,255,255,0.97);
+  border-radius:4px;
+  border-right:1px solid rgba(223, 202, 255, 0.9);
+  border-bottom:1px solid rgba(223, 202, 255, 0.9);
+}
+.guideBubbleTop{ display:flex; justify-content:center; margin-bottom:6px; }
+.guideBubbleChip{
+  font-size:11px;
+  font-weight:900;
+  padding:4px 10px;
+  border-radius:999px;
+  background: rgba(250, 244, 255, 0.95);
+  color:#f973b8;
+  border:1px solid rgba(223, 202, 255, 0.6);
+}
+.guideBubbleText{
+  margin:0;
+  font-size:14px;
+  font-weight:750;
+  color:#4b2966;
+  text-align:center;
+  line-height:1.55;
+}
+
+.mascotImg{
+  width:150px;
+  height:150px;
+  object-fit:contain;
+  flex-shrink:0;
+  user-select:none;
+  -webkit-user-drag:none;
+  animation: upzzu-float 2.6s ease-in-out infinite;
+  filter: drop-shadow(0 10px 14px rgba(0,0,0,0.18));
+}
+@keyframes upzzu-float{
+  0%   { transform: translateY(0) scale(1); }
+  45%  { transform: translateY(-6px) scale(1.02); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+/* =========================
+   CHAT BOX
+   ========================= */
+.chatBox{
+  flex:1;
+  min-height:360px;
+  max-height:60vh;
+  border-radius:22px;
+  padding:12px;
+  background:#ffffff;
+  border: 1px solid #e5ddff;
+  box-shadow: 0 18px 32px rgba(0,0,0,0.10);
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
+.chatScroll{
+  flex:1;
+  overflow-y:auto;
+  padding:6px 4px 4px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.stateText{
+  font-size:14px;
+  color:#7a69c4;
+  padding:10px 8px;
+  font-weight:700;
+}
+
+/* messages */
+.row{ display:flex; }
+.bubbleWrap{
+  max-width:80%;
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+}
+.who{
+  font-size:11px;
+  color:#7a69c4;
+  font-weight:900;
+}
+.bubble{
+  border-radius:18px;
+  padding:10px 12px;
+  font-size:14px;
+  line-height:1.6;
+  white-space:pre-line;
+  color:#1b1030;
+  border:1px solid #e5ddff;
+  background:#faf7ff;
+}
+.bubble.mine{
+  background: linear-gradient(135deg,#fb7185,#a855f7);
+  color:#fff;
+  border: 1px solid rgba(255,255,255,0.35);
+  box-shadow: 0 0 14px rgba(244,114,182,0.35);
+}
+.bubble.admin{
+  background:#ffffff;
+  color:#1b1030;
+}
+.time{
+  font-size:10px;
+  color:#a78bfa;
+  font-weight:900;
+}
+
+/* =========================
+   INPUT
+   ========================= */
+.inputBox{
+  border-radius:22px;
+  padding:12px;
+  background:#ffffff;
+  border: 1px solid #e5ddff;
+  box-shadow: 0 18px 32px rgba(0,0,0,0.10);
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.inputLabel{
+  font-size:13px;
+  color:#5a3cb2;
+  font-weight:950;
+}
+.textarea{
+  width:100%;
+  border-radius:14px;
+  border: 1px solid #d6c7ff;
+  background:#faf7ff;
+  color:#241336;
+  font-size:14px;
+  padding:10px 12px;
+  resize: vertical;
+  outline:none;
+  line-height:1.6;
+  box-sizing:border-box;
+}
+.textarea:focus{
+  border-color:#a855f7;
+  box-shadow: 0 0 0 2px rgba(168,85,247,0.20);
+}
+.inputBottom{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  gap:10px;
+  margin-top:2px;
+}
+.sendBtn{
+  padding:10px 18px;
+  border-radius:999px;
+  border:none;
+  font-size:13px;
+  font-weight:950;
+  cursor:pointer;
+  background: linear-gradient(90deg,#fb7185,#a855f7);
+  color:#fff;
+  box-shadow: 0 0 14px rgba(244,114,182,0.35);
+}
+.sendBtn.disabled{
+  cursor:default;
+  background: rgba(148,163,184,0.35);
+  box-shadow:none;
+  color:#ffffff;
+}
+
+@media (max-width: 640px){
+  .header{ padding:20px 14px 14px; border-radius:28px; }
+  .headerTitle{ font-size:22px; }
+  .bubbleAndMascot{ gap:10px; }
+  .mascotImg{ width:128px; height:128px; }
+}
+`;
