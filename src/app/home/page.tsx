@@ -1,4 +1,6 @@
-// src/app/home/page.tsx
+// ✅✅✅ 전체복붙 (말풍선/마스코트 내려감 해결 + 프로필설정/로그아웃 버튼 통일감/진하게)
+// 파일: src/app/home/page.tsx
+
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -6,10 +8,6 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabaseClient';
 import UpzzuHeaderCoach from '../components/UpzzuHeaderCoach';
-
-
-
-
 
 // 마스코트 감성 슬라이드 문구
 const EMO_QUOTES: string[] = [
@@ -535,7 +533,11 @@ export default function HomePage() {
 
     for (let i = 0; i < startWeekday; i++) {
       days.push(
-        new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate() - (startWeekday - i))
+        new Date(
+          firstDay.getFullYear(),
+          firstDay.getMonth(),
+          firstDay.getDate() - (startWeekday - i)
+        )
       );
     }
 
@@ -579,7 +581,11 @@ export default function HomePage() {
 
     setTodayTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t)));
 
-    const { error } = await supabase.from('daily_tasks').update({ done: nextDone }).eq('id', task.id).eq('user_id', userId);
+    const { error } = await supabase
+      .from('daily_tasks')
+      .update({ done: nextDone })
+      .eq('id', task.id)
+      .eq('user_id', userId);
 
     if (error) {
       setTodayTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: task.done } : t)));
@@ -611,7 +617,6 @@ export default function HomePage() {
       <div className="home-inner">
         {/* ★ 헤더 */}
         <header className="home-header">
-          {/* 상단: 로고/환영 + 프로필 박스 */}
           <div className="home-header-top">
             <div className="home-header-left">
               <div className="home-logo-row">
@@ -638,7 +643,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* 로고 옆 프로필 가로 박스 */}
             <div className="home-header-profile">
               <div className="profile-box">
                 <div className="profile-main">
@@ -674,22 +678,36 @@ export default function HomePage() {
                   </span>
                 </div>
 
+                {/* ✅ 통일된 버튼 */}
                 <div className="profile-links">
-                  <Link href="/profile">프로필 설정</Link>
-                  <Link href="/support">문의하기</Link>
+                  <Link href="/profile" className="action-pill action-pill-primary">
+                    프로필 설정
+                  </Link>
+
+                  <button
+                    type="button"
+                    className="action-pill action-pill-danger"
+                    onClick={async () => {
+                      await supabase.auth.signOut();
+                      router.replace('/');
+                    }}
+                  >
+                    로그아웃
+                  </button>
                 </div>
               </div>
             </div>
           </div>
 
-                    {/* 하단: 마스코트(이미지) + 말풍선 */}
-          <UpzzuHeaderCoach
-  mascotSrc="/assets/upzzu1.png"
-  text={EMO_QUOTES[emotionIndex] ?? ''}
-  tag="오늘의 U P 한마디"
-  sizePx={160}
-/>
-
+          {/* ✅ 말풍선/마스코트: 헤더 안에 고정 (내려가지 않게) */}
+          <div className="home-header-bottom">
+            <UpzzuHeaderCoach
+              mascotSrc="/assets/upzzu1.png"
+              text={EMO_QUOTES[emotionIndex] ?? ''}
+              tag="오늘의 U P 한마디"
+              sizePx={160}
+            />
+          </div>
         </header>
 
         {/* 메뉴 버튼 */}
@@ -710,7 +728,6 @@ export default function HomePage() {
             문자 도우미
           </Link>
         </section>
-
 
         {/* 날씨 */}
         <section className="weather-wide">
@@ -1163,26 +1180,27 @@ const styles = `
 
 /* 헤더 전체 */
 .home-header {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 20px 24px 16px;
+  padding: 24px 28px 44px;
   border-radius: 26px;
   background: linear-gradient(135deg, #ff89bd, #a45bff);
   box-shadow: 0 18px 34px rgba(0,0,0,0.25);
   margin-bottom: 16px;
   color: #fffdfd;
-
   overflow: visible; /* ✅ 헤더 내부 요소 잘림 방지 */
 }
 
-/* ✅ 여기가 대표님이 물어본 그 줄 */
+/* ✅ 말풍선/마스코트가 밑으로 밀리는 문제 해결 */
 .home-header-bottom{
-  height: 170px;
+  height: 200px;
   overflow: visible;
+  margin-top: -20px; /* ✅ 핵심: 위로 당겨서 헤더 안에 붙임 */
+  display: flex;
+  align-items: center;
 }
-
-
 
 /* 로고 */
 .home-logo-row {
@@ -1257,10 +1275,9 @@ const styles = `
   color: #211437;
 
   height: 230px;
-  min-height: 230px;
-  max-height: 230px;
-  box-sizing: border-box;
-  overflow: hidden;
+  height: 200px;
+  min-height: 200px;
+  max-height: 200px;
 }
 
 .profile-main {
@@ -1337,17 +1354,47 @@ const styles = `
   color: #ff4f9f;
 }
 
+/* ✅ 프로필 설정/로그아웃: 촌스럽지 않게 통일 버튼 */
 .profile-links {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  font-size: 13px;
   margin-top: auto;
 }
 
-.profile-links a {
-  color: #a24cff;
+.action-pill{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: -0.2px;
+  cursor: pointer;
+  border: 1px solid rgba(124, 58, 237, 0.35);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.12);
+  transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
   text-decoration: none;
+}
+
+.action-pill:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 14px 24px rgba(0,0,0,0.18);
+  filter: brightness(1.02);
+}
+
+.action-pill-primary{
+  background: linear-gradient(135deg, #f472b6, #a855f7);
+  color: #ffffff;
+  border-color: rgba(255,255,255,0.55);
+}
+
+.action-pill-danger{
+  background: linear-gradient(135deg, #ff4d8d, #ff7a45);
+  color: #ffffff;
+  border-color: rgba(255,255,255,0.55);
 }
 
 /* 라운드 사각형 메뉴 버튼 */

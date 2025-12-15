@@ -1,10 +1,7 @@
-// src/app/layout.tsx
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import './globals.css';
 import ClientShell from './ClientShell';
-
-
 
 export const metadata: Metadata = {
   title: 'UPLOG',
@@ -14,7 +11,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ko">
-      <body className="bg-[#B982FF]">
+      <body className="min-h-screen bg-[#F7F2FF]">
         <ClientShell>{children}</ClientShell>
       </body>
     </html>

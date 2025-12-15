@@ -797,3 +797,8 @@ a:hover {
   animation: fadeInUp 0.4s ease-out both;
 }
 .home-header-bottom { overflow: visible; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #F7F2FF;
+}
