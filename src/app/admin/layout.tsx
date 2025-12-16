@@ -1,57 +1,56 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-
-import AdminGuard from './_componts/AdminGuard'; // ✅ 폴더명이 _componts 라서 이게 정답
-import AdminHeaderUnread from '../components/AdminHeaderUnread'; // ✅ src/app/components
-
-function NavItem({ href, label }: { href: string; label: string }) {
-  const pathname = usePathname();
-  const active = pathname === href || pathname.startsWith(href + '/');
-
-  return (
-    <Link
-      href={href}
-      className={[
-        'px-3 py-2 rounded-xl text-sm font-semibold transition',
-        active ? 'bg-white text-purple-700' : 'bg-white/10 text-white hover:bg-white/15',
-      ].join(' ')}
-    >
-      {label}
-    </Link>
-  );
-}
+import { ReactNode, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  return (
-    <AdminGuard>
-      <div className="min-h-screen bg-[#B982FF]">
-        <div className="sticky top-0 z-40">
-          <div className="mx-auto max-w-[980px] px-4 pt-4">
-            <div className="rounded-3xl bg-white/10 border border-white/15 backdrop-blur-xl p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <div className="text-white font-extrabold tracking-wide">UPLOG ADMIN</div>
-                  <span className="text-white/70 text-xs">관리 콘솔</span>
-                </div>
+  const router = useRouter();
+  const [ok, setOk] = useState(false);
 
-                <AdminHeaderUnread />
-              </div>
+  useEffect(() => {
+    let alive = true;
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <NavItem href="/admin" label="대시보드" />
-                <NavItem href="/admin/support" label="문의 관리" />
-                <NavItem href="/admin/users" label="회원 관리" />
-                <NavItem href="/home" label="홈으로" />
-              </div>
-            </div>
-          </div>
-        </div>
+    (async () => {
+      // 1️⃣ 로그인 체크
+      const { data: u } = await supabase.auth.getUser();
+      const uid = u?.user?.id;
 
-        <main className="mx-auto max-w-[980px] px-4 py-6">{children}</main>
+      if (!uid) {
+        router.replace('/login'); // 로그인 안 했으면 로그인 페이지
+        return;
+      }
+
+      // 2️⃣ 관리자 권한 체크
+      const { data: p } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('user_id', uid)
+        .maybeSingle();
+
+      if (!alive) return;
+
+      if (p?.role !== 'admin') {
+        router.replace('/home'); // 관리자 아니면 홈
+        return;
+      }
+
+      // 3️⃣ 통과
+      setOk(true);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [router]);
+
+  if (!ok) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#B982FF] text-white font-black text-[22px]">
+        관리자 권한 확인 중…
       </div>
-    </AdminGuard>
-  );
+    );
+  }
+
+  return <>{children}</>;
 }

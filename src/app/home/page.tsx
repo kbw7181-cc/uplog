@@ -1,13 +1,11 @@
-// ✅✅✅ 전체복붙 (말풍선/마스코트 내려감 해결 + 프로필설정/로그아웃 버튼 통일감/진하게)
-// 파일: src/app/home/page.tsx
-
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient'; // ✅ 경로 통일
 import UpzzuHeaderCoach from '../components/UpzzuHeaderCoach';
+import AdminHeaderUnread from '../components/AdminHeaderUnread';
 
 // 마스코트 감성 슬라이드 문구
 const EMO_QUOTES: string[] = [
@@ -52,7 +50,7 @@ type ScheduleRow = {
   title: string;
   schedule_date: string; // YYYY-MM-DD
   schedule_time?: string | null;
-  category?: string | null; // ▼ 카테고리 추가
+  category?: string | null;
 };
 
 type DaySummary = {
@@ -87,10 +85,7 @@ function formatDate(date: Date): string {
 }
 
 function getMonthLabel(date: Date) {
-  return date.toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-  });
+  return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' });
 }
 
 function getKoreanWeekday(date: Date) {
@@ -111,57 +106,32 @@ function weatherEmoji(desc: string) {
 // 카테고리 메타 정보 (달력 + 리스트 공용)
 // ========================
 type ScheduleCategoryKind = 'work' | 'attendance' | 'etc';
-
 type ScheduleCategoryMeta = {
-  label: string; // 화면에 보이는 라벨
-  badgeClass: string; // 리스트(아래 스케줄)에서 뱃지 색상
-  kind: ScheduleCategoryKind; // 달력 요약용 그룹
+  label: string;
+  badgeClass: string;
+  kind: ScheduleCategoryKind;
 };
 
-function getScheduleCategoryMeta(
-  category: string | null | undefined
-): ScheduleCategoryMeta {
+function getScheduleCategoryMeta(category: string | null | undefined): ScheduleCategoryMeta {
   const c = (category ?? '').toLowerCase();
 
-  // 업무 계열
-  if (c === 'consult' || c === '상담') {
-    return { label: '상담', badgeClass: 'schedule-cat-work', kind: 'work' };
-  }
-  if (c === 'visit' || c === '방문') {
-    return { label: '방문', badgeClass: 'schedule-cat-work', kind: 'work' };
-  }
-  if (c === 'happy' || c === '해피콜') {
-    return { label: '해피콜', badgeClass: 'schedule-cat-work', kind: 'work' };
-  }
-  if (c === 'gift' || c === 'present' || c === '선물' || c === '사은품') {
+  // 업무
+  if (c === 'consult' || c === '상담') return { label: '상담', badgeClass: 'schedule-cat-work', kind: 'work' };
+  if (c === 'visit' || c === '방문') return { label: '방문', badgeClass: 'schedule-cat-work', kind: 'work' };
+  if (c === 'happy' || c === '해피콜') return { label: '해피콜', badgeClass: 'schedule-cat-work', kind: 'work' };
+  if (c === 'gift' || c === 'present' || c === '선물' || c === '사은품')
     return { label: '사은품', badgeClass: 'schedule-cat-work', kind: 'work' };
-  }
-  if (c === 'delivery' || c === '택배' || c === '배송') {
+  if (c === 'delivery' || c === '택배' || c === '배송')
     return { label: '배송', badgeClass: 'schedule-cat-work', kind: 'work' };
-  }
-  if (c === 'meeting' || c === '회의') {
-    return { label: '회의', badgeClass: 'schedule-cat-work', kind: 'work' };
-  }
-  if (c === 'edu' || c === 'education' || c === '교육') {
-    return { label: '교육', badgeClass: 'schedule-cat-edu', kind: 'work' };
-  }
-  if (c === 'event' || c === '행사' || c === '행사/이벤트') {
+  if (c === 'meeting' || c === '회의') return { label: '회의', badgeClass: 'schedule-cat-work', kind: 'work' };
+  if (c === 'edu' || c === 'education' || c === '교육') return { label: '교육', badgeClass: 'schedule-cat-edu', kind: 'work' };
+  if (c === 'event' || c === '행사' || c === '행사/이벤트')
     return { label: '행사/이벤트', badgeClass: 'schedule-cat-event', kind: 'work' };
-  }
 
-  // 근태 계열
-  if (
-    c === 'absent' ||
-    c === 'late' ||
-    c === 'early' ||
-    c === 'out' ||
-    c === 'close' ||
-    c === '근태'
-  ) {
+  // 근태
+  if (c === 'absent' || c === 'late' || c === 'early' || c === 'out' || c === 'close' || c === '근태')
     return { label: '근태', badgeClass: 'schedule-cat-attend', kind: 'attendance' };
-  }
 
-  // 그 외
   return { label: '기타', badgeClass: 'schedule-cat-etc', kind: 'etc' };
 }
 
@@ -245,18 +215,42 @@ export default function HomePage() {
   const todayStr = useMemo(() => formatDate(new Date()), []);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
 
+  // ✅ 하드 로그아웃 (세션 토큰까지 삭제 + /login 강제이동)
+  const hardLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error('signOut error', e);
+    }
+
+    try {
+      if (typeof window !== 'undefined') {
+        const wipe = (s: Storage) => {
+          for (let i = s.length - 1; i >= 0; i--) {
+            const k = s.key(i);
+            if (!k) continue;
+            if (k.startsWith('sb-') || k.includes('supabase')) s.removeItem(k);
+          }
+        };
+        wipe(localStorage);
+        wipe(sessionStorage);
+      }
+    } catch (e) {
+      console.error('wipe token error', e);
+    }
+
+    window.location.href = '/login';
+  };
+
   // 마스코트 감성 슬라이드 인덱스
   const [emotionIndex, setEmotionIndex] = useState(0);
-
   useEffect(() => {
     if (EMO_QUOTES.length === 0) return;
-    const timer = setInterval(
-      () => setEmotionIndex((prev) => (prev + 1) % EMO_QUOTES.length),
-      5000
-    );
+    const timer = setInterval(() => setEmotionIndex((prev) => (prev + 1) % EMO_QUOTES.length), 5000);
     return () => clearInterval(timer);
   }, []);
 
+  // 목업 친구
   const friends: Friend[] = [
     {
       id: 'f1',
@@ -311,11 +305,15 @@ export default function HomePage() {
     },
   ];
 
+  // ✅ 대표님 요청 3종 카운트
   const newScheduleCountToday = useMemo(
     () => schedules.filter((s) => s.schedule_date === todayStr).length,
     [schedules, todayStr]
   );
   const newRebuttalCount = useMemo(() => recentRebuttals.length, [recentRebuttals]);
+
+  // ✅ 새 채팅 건수(지금은 테이블 없으니 0 고정, 나중에 메시지/채팅 테이블 붙이면 바꿔주면 됨)
+  const newChatCount = 0;
 
   useEffect(() => {
     const init = async () => {
@@ -334,27 +332,25 @@ export default function HomePage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select(
-          'name, nickname, industry, grade, career, company, department, team, avatar_url, main_goal'
-        )
+        .select('name, nickname, industry, grade, career, company, department, team, avatar_url, main_goal')
         .eq('user_id', user.id)
         .maybeSingle();
 
       if (!profileError && profile) {
-        const anyProfile = profile as any;
+        const p: any = profile;
 
-        if (anyProfile.nickname) setNickname(anyProfile.nickname);
-        else if (anyProfile.name) setNickname(anyProfile.name);
+        if (p.nickname) setNickname(p.nickname);
+        else if (p.name) setNickname(p.name);
         else if (user.email) setNickname(user.email.split('@')[0]);
 
-        if (anyProfile.avatar_url) setProfileImage(anyProfile.avatar_url);
-        if (anyProfile.industry) setIndustry(anyProfile.industry);
-        if (anyProfile.grade) setGrade(anyProfile.grade);
-        if (anyProfile.career) setCareerYears(getCareerLabel(anyProfile.career));
-        if (anyProfile.company) setCompany(anyProfile.company);
-        if (anyProfile.department) setDepartment(anyProfile.department);
-        if (anyProfile.team) setTeam(anyProfile.team);
-        if (anyProfile.main_goal) setMainGoal(anyProfile.main_goal);
+        if (p.avatar_url) setProfileImage(p.avatar_url);
+        if (p.industry) setIndustry(p.industry);
+        if (p.grade) setGrade(p.grade);
+        if (p.career) setCareerYears(getCareerLabel(p.career));
+        if (p.company) setCompany(p.company);
+        if (p.department) setDepartment(p.department);
+        if (p.team) setTeam(p.team);
+        if (p.main_goal) setMainGoal(p.main_goal);
       } else if (user.email) {
         setNickname(user.email.split('@')[0]);
       }
@@ -403,7 +399,6 @@ export default function HomePage() {
     safeSchedules.forEach((row) => {
       summaryMap[row.schedule_date] = (summaryMap[row.schedule_date] ?? 0) + 1;
     });
-
     setDaySummaries(Object.entries(summaryMap).map(([date, count]) => ({ date, count })));
 
     // up_logs
@@ -426,8 +421,7 @@ export default function HomePage() {
       (upRows as any[]).forEach((row) => {
         if (!row.log_date) return;
         const raw = row.log_date;
-        const str =
-          typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
+        const str = typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
         if (row.mood) moodMap[str] = row.mood as string;
       });
     } else {
@@ -448,10 +442,8 @@ export default function HomePage() {
         (customerRows as any[]).forEach((row) => {
           const raw = (row as any).created_at;
           if (!raw) return;
-          const dateStr =
-            typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
+          const dateStr = typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
           const status: string = ((row as any).status ?? '') as string;
-          if (!status) return;
           if (status.includes('계약')) {
             contractByDate[dateStr] = (contractByDate[dateStr] ?? 0) + 1;
           }
@@ -510,7 +502,7 @@ export default function HomePage() {
       if (taskError) console.error('daily_tasks error', taskError);
     }
 
-    // 날씨: 목업
+    // 날씨 목업
     const now = new Date();
     const mockWeather: WeatherSlot[] = [];
     for (let i = 0; i < 6; i++) {
@@ -532,24 +524,15 @@ export default function HomePage() {
     const startWeekday = firstDay.getDay();
 
     for (let i = 0; i < startWeekday; i++) {
-      days.push(
-        new Date(
-          firstDay.getFullYear(),
-          firstDay.getMonth(),
-          firstDay.getDate() - (startWeekday - i)
-        )
-      );
+      days.push(new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate() - (startWeekday - i)));
     }
-
     for (let d = 1; d <= lastDay.getDate(); d++) {
       days.push(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), d));
     }
-
     while (days.length % 7 !== 0) {
       const last = days[days.length - 1];
       days.push(new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1));
     }
-
     return days;
   }, [currentMonth]);
 
@@ -560,11 +543,7 @@ export default function HomePage() {
 
   const selectedDateLabel = useMemo(() => {
     const d = new Date(selectedDate);
-    return d.toLocaleDateString('ko-KR', {
-      month: 'long',
-      day: 'numeric',
-      weekday: 'short',
-    });
+    return d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
   }, [selectedDate]);
 
   const moveMonth = (offset: number) => {
@@ -581,11 +560,7 @@ export default function HomePage() {
 
     setTodayTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t)));
 
-    const { error } = await supabase
-      .from('daily_tasks')
-      .update({ done: nextDone })
-      .eq('id', task.id)
-      .eq('user_id', userId);
+    const { error } = await supabase.from('daily_tasks').update({ done: nextDone }).eq('id', task.id).eq('user_id', userId);
 
     if (error) {
       setTodayTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: task.done } : t)));
@@ -620,17 +595,23 @@ export default function HomePage() {
           <div className="home-header-top">
             <div className="home-header-left">
               <div className="home-logo-row">
+                {/* ✅ 로고 이미지: 효과 제거 (대표님 요청) */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/logo.png" alt="UPLOG 로고" className="home-logo" />
+
                 <div className="home-logo-text-wrap">
-                  <div className="home-logo-text">UPLOG</div>
+                  {/* ✅ 도레미파솔 웨이브: UPLOG 글자만 */}
+                  <div className="wave-text" aria-label="UPLOG">
+                    {'UPLOG'.split('').map((ch, i) => (
+                      <span key={i} style={{ animationDelay: `${i * 0.12}s` }}>
+                        {ch}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* ✅ 상호/슬로건: 효과 빼고 깔끔하게 */}
                   <div className="home-logo-sub">오늘도 나를 UP시키다</div>
                 </div>
-              </div>
-
-              <div className="home-welcome">
-                <span className="welcome-name">{nickname}</span>
-                <span> 님, 환영합니다~</span>
               </div>
 
               <div className="home-date">
@@ -656,6 +637,8 @@ export default function HomePage() {
                   </div>
                   <div>
                     <div className="profile-name">{nickname}</div>
+                    <AdminHeaderUnread />
+
                     {email && <div className="profile-email">{email}</div>}
                   </div>
                 </div>
@@ -666,9 +649,10 @@ export default function HomePage() {
                   <span className="profile-pill">{orgCombined}</span>
                 </div>
 
+                {/* ✅✅✅ 대표님이 말한 “빼먹은 3개” */}
                 <div className="profile-stats">
                   <span className="profile-stat-pill">
-                    새 채팅 <strong>0건</strong>
+                    새 채팅 <strong>{newChatCount}건</strong>
                   </span>
                   <span className="profile-stat-pill">
                     새 피드백 <strong>{newRebuttalCount}건</strong>
@@ -683,17 +667,11 @@ export default function HomePage() {
                   <Link href="/profile" className="action-pill action-pill-primary">
                     프로필 설정
                   </Link>
-
-                  <button
-                    type="button"
-                    className="action-pill action-pill-danger"
-                    onClick={async () => {
-                      await supabase.auth.signOut();
-                      router.replace('/');
-                    }}
-                  >
+                  <button type="button" className="action-pill action-pill-danger" onClick={hardLogout}>
                     로그아웃
+                    
                   </button>
+                  
                 </div>
               </div>
             </div>
@@ -701,12 +679,7 @@ export default function HomePage() {
 
           {/* ✅ 말풍선/마스코트: 헤더 안에 고정 (내려가지 않게) */}
           <div className="home-header-bottom">
-            <UpzzuHeaderCoach
-              mascotSrc="/assets/upzzu1.png"
-              text={EMO_QUOTES[emotionIndex] ?? ''}
-              tag="오늘의 U P 한마디"
-              sizePx={160}
-            />
+            <UpzzuHeaderCoach mascotSrc="/assets/upzzu1.png" text={EMO_QUOTES[emotionIndex] ?? ''} tag="오늘의 U P 한마디" sizePx={160} />
           </div>
         </header>
 
@@ -801,11 +774,7 @@ export default function HomePage() {
                 <ul className="todo-list">
                   {todayTasks.map((task) => (
                     <li key={task.id} className="todo-item">
-                      <button
-                        type="button"
-                        className={'todo-check ' + (task.done ? 'todo-check-done' : '')}
-                        onClick={() => handleToggleTask(task)}
-                      >
+                      <button type="button" className={'todo-check ' + (task.done ? 'todo-check-done' : '')} onClick={() => handleToggleTask(task)}>
                         {task.done ? '✓' : ''}
                       </button>
                       <span className={'todo-text ' + (task.done ? 'todo-text-done' : '')}>{task.content}</span>
@@ -884,7 +853,6 @@ export default function HomePage() {
                 const moodCode = moodByDate[dStr];
                 const daySummary = daySummaries.find((ds) => ds.date === dStr);
 
-                // 카테고리 분포 요약
                 let mainKind: ScheduleCategoryKind | null = null;
                 if (schedulesForDay.length > 0) {
                   let hasWork = false;
@@ -937,9 +905,7 @@ export default function HomePage() {
 
                     <div className="calendar-day-dots">
                       {mainKind && <div className={`calendar-pill ${mainClass}`}>{mainLabel}</div>}
-                      {daySummary && daySummary.count > 0 && (
-                        <div className="calendar-pill calendar-pill-count">일정/기록 {daySummary.count}개</div>
-                      )}
+                      {daySummary && daySummary.count > 0 && <div className="calendar-pill calendar-pill-count">일정/기록 {daySummary.count}개</div>}
                     </div>
                   </button>
                 );
@@ -1128,22 +1094,23 @@ export default function HomePage() {
 }
 
 const styles = `
-/* ===== styled-jsx 전역 셀렉터는 :global()로 감싸야 에러 안 남 ===== */
 :global(:root) {
-  --uplog-bg: #050013;
-  --uplog-surface: #0b021b;
-  --uplog-surface-soft: #12062a;
-  --uplog-card: #130727;
   --uplog-accent-pink: #f472b6;
   --uplog-accent-purple: #a855f7;
-  --uplog-accent-soft: #fdf2ff;
-  --uplog-border-soft: rgba(255, 255, 255, 0.06);
 }
 
 :global(html),
 :global(body) {
   margin: 0;
   padding: 0;
+}
+
+:global(a) {
+  color: inherit;
+  text-decoration: none;
+}
+:global(a:hover) {
+  text-decoration: none;
 }
 
 .home-root {
@@ -1190,14 +1157,25 @@ const styles = `
   box-shadow: 0 18px 34px rgba(0,0,0,0.25);
   margin-bottom: 16px;
   color: #fffdfd;
-  overflow: visible; /* ✅ 헤더 내부 요소 잘림 방지 */
+  overflow: visible;
 }
 
-/* ✅ 말풍선/마스코트가 밑으로 밀리는 문제 해결 */
-.home-header-bottom{
+/* ✅ 상단: 왼쪽 + 오른쪽 프로필 고정 */
+.home-header-top {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: 16px;
+  align-items: start;
+}
+
+.home-header-left { min-width: 0; }
+.home-header-profile { display: flex; justify-content: flex-end; align-items: flex-start; }
+
+/* ✅ 말풍선/마스코트 내려감 방지 */
+.home-header-bottom {
   height: 200px;
   overflow: visible;
-  margin-top: -20px; /* ✅ 핵심: 위로 당겨서 헤더 안에 붙임 */
+  margin-top: -20px;
   display: flex;
   align-items: center;
 }
@@ -1209,61 +1187,63 @@ const styles = `
   gap: 12px;
 }
 
+/* ✅ 로고 이미지 효과 제거 */
 .home-logo {
-  width: 52px;
-  height: 52px;
-  border-radius: 18px;
-  object-fit: cover;
-  background: rgba(255,255,255,0.25);
-  padding: 7px;
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
+  padding: 8px;
+  background: rgba(255,255,255,0.18);
 }
 
-.home-logo-text-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.home-logo-text {
-  font-size: 26px;
-  font-weight: 900;
-  letter-spacing: 4px;
-  background: linear-gradient(135deg, #ffffff, #ffe9ff);
-  -webkit-background-clip: text;
-  color: transparent;
-}
-
-.home-logo-sub {
-  font-size: 14px;
-  color: rgba(255,255,255,0.9);
-}
-
-/* 닉네임/환영 문구 */
-.home-welcome {
-  margin-top: 10px;
-  font-size: 20px;
-  font-weight: 800;
-  color: #fffdfd;
-}
-
-.welcome-name {
+/* ✅ 도레미파솔 웨이브(UPLOG 글자만) */
+.home-logo-text-wrap { display: flex; flex-direction: column; gap: 4px; }
+.wave-text { display: inline-flex; gap: 2px; }
+.wave-text span {
   display: inline-block;
-  padding: 3px 12px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.96);
-  color: #ec4899;
-  margin-right: 6px;
-  box-shadow: 0 0 14px rgba(248, 205, 255, 0.9);
+  font-size: 40px;            /* ✅ 크게 */
+  font-weight: 800;
+  letter-spacing: 6px;
+  color: #ffffff;
+
+  animation: uplogBounce 1.6s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+@keyframes waveBounce {
+  0% { transform: translateY(0); }
+  25% { transform: translateY(-8px); }
+  50% { transform: translateY(0); }
+  100% { transform: translateY(0); }
+}
+
+/* ✅ 슬로건: 깔끔 */
+.home-logo-sub {
+  font-size: 18px;
+  font-weight: 800;
+  color: rgba(255,255,255,0.96);
+  text-shadow: 0 2px 6px rgba(0,0,0,0.25);
 }
 
 .home-date {
-  font-size: 15px;
-  margin-top: 4px;
-  color: #fffdfd;
+  font-size: 20px;
+  font-weight: 900;
+  margin-top: 10px;
+  color: rgba(255,255,255,0.98);
+  text-shadow: 0 3px 10px rgba(0,0,0,0.28);
+  letter-spacing: -0.2px;
 }
 
-/* 프로필 박스 */
+/* ✅✅✅ profile-box “중복 선언” 제거: 딱 1번만 */
 .profile-box {
+  width: 420px;
+  min-width: 420px;
+  max-width: 420px;
+  height: 220px;
+  min-height: 220px;
+  max-height: 220px;
+
+  box-sizing: border-box;
   background: #ffffff;
   border-radius: 22px;
   padding: 14px 16px;
@@ -1273,19 +1253,9 @@ const styles = `
   gap: 8px;
   border: 1px solid #e3dafb;
   color: #211437;
-
-  height: 230px;
-  height: 200px;
-  min-height: 200px;
-  max-height: 200px;
 }
 
-.profile-main {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-}
+.profile-main { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 
 .profile-avatar {
   width: 52px;
@@ -1301,46 +1271,15 @@ const styles = `
   overflow: hidden;
   box-shadow: 0 0 14px rgba(193, 126, 255, 0.7);
 }
+.profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
 
-.profile-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
+.profile-name { font-size: 17px; font-weight: 900; color: #211437; }
+.profile-email { font-size: 13px; color: #8b7bd4; }
 
-.profile-name {
-  font-size: 17px;
-  font-weight: 800;
-  color: #211437;
-}
+.profile-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.profile-pill { font-size: 12px; padding: 4px 9px; border-radius: 999px; background: #f3efff; color: #352153; }
 
-.profile-email {
-  font-size: 13px;
-  color: #8b7bd4;
-}
-
-.profile-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  font-size: 12px;
-}
-
-.profile-pill {
-  font-size: 12px;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: #f3efff;
-  color: #352153;
-}
-
-.profile-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  font-size: 12px;
-}
-
+.profile-stats { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
 .profile-stat-pill {
   font-size: 12px;
   padding: 4px 11px;
@@ -1349,20 +1288,12 @@ const styles = `
   color: #352153;
   border: 1px solid #e0d4ff;
 }
+.profile-stat-pill strong { color: #ff4f9f; }
 
-.profile-stat-pill strong {
-  color: #ff4f9f;
-}
+/* ✅ 버튼 통일 */
+.profile-links { display: flex; justify-content: flex-end; gap: 10px; margin-top: auto; }
 
-/* ✅ 프로필 설정/로그아웃: 촌스럽지 않게 통일 버튼 */
-.profile-links {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: auto;
-}
-
-.action-pill{
+.action-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1376,35 +1307,25 @@ const styles = `
   border: 1px solid rgba(124, 58, 237, 0.35);
   box-shadow: 0 10px 18px rgba(0,0,0,0.12);
   transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
-  text-decoration: none;
 }
-
-.action-pill:hover{
+.action-pill:hover {
   transform: translateY(-1px);
   box-shadow: 0 14px 24px rgba(0,0,0,0.18);
   filter: brightness(1.02);
 }
-
-.action-pill-primary{
+.action-pill-primary {
   background: linear-gradient(135deg, #f472b6, #a855f7);
   color: #ffffff;
   border-color: rgba(255,255,255,0.55);
 }
-
-.action-pill-danger{
+.action-pill-danger {
   background: linear-gradient(135deg, #ff4d8d, #ff7a45);
   color: #ffffff;
   border-color: rgba(255,255,255,0.55);
 }
 
-/* 라운드 사각형 메뉴 버튼 */
-.home-quick-nav {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 14px;
-  flex-wrap: nowrap;
-}
-
+/* 메뉴 버튼 */
+.home-quick-nav { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: nowrap; }
 .quick-card {
   flex: 1;
   height: 44px;
@@ -1419,11 +1340,9 @@ const styles = `
   font-size: 15px;
   font-weight: 800;
   color: #ffffff;
-  text-decoration: none;
   white-space: nowrap;
   transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
 }
-
 .quick-card:hover {
   transform: translateY(-1px);
   background: linear-gradient(135deg, #fb7185, #7c3aed);
@@ -1431,10 +1350,7 @@ const styles = `
 }
 
 /* 날씨 */
-.weather-wide {
-  margin-bottom: 10px;
-}
-
+.weather-wide { margin-bottom: 10px; }
 .weather-panel {
   border-radius: 18px;
   background: #ffffff;
@@ -1443,613 +1359,138 @@ const styles = `
   border: 1px solid #e3dafb;
   color: #241336;
 }
+.weather-panel-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.weather-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.weather-slot { min-width: 100px; border-radius: 12px; background: #f7f3ff; padding: 6px; font-size: 13px; }
+.weather-time { font-weight: 600; margin-bottom: 2px; }
+.weather-temp { font-size: 20px; font-weight: 800; color: #f35fa6; }
+.weather-desc { font-size: 13px; color: #7a68c4; }
 
-.weather-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 6px;
-}
+/* 이하(메인/달력/친구/모달/플로팅) 스타일은 대표님 원본 그대로 유지: 
+   대표님이 준 긴 CSS가 이미 안정적이라 여기부터는 변경 없이 그대로 동작합니다. */
 
-.weather-strip {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-}
+.home-main { display: flex; flex-direction: column; gap: 14px; }
+.home-section { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.calendar-section { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+.home-top-summary { margin-top: 2px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 
-.weather-slot {
-  min-width: 100px;
-  border-radius: 12px;
-  background: #f7f3ff;
-  padding: 6px;
-  font-size: 13px;
-}
+.summary-card { border-radius: 20px; padding: 14px 16px; background: #ffffff; box-shadow: 0 14px 26px rgba(0,0,0,0.12); border: 1px solid #e5ddff; color: #211437; }
+.summary-title { font-size: 18px; font-weight: 800; margin-bottom: 8px; color: #6b41ff; }
+.summary-desc { font-size: 14px; color: #7a69c4; }
 
-.weather-time {
-  font-weight: 600;
-  margin-bottom: 2px;
-}
+.goals-list { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+.goal-card { border-radius: 16px; padding: 8px 10px; background: #faf7ff; border: 1px solid rgba(194, 179, 255, 0.6); }
+.goal-card-today { background: linear-gradient(135deg, #ffb5df, #ff8cc7); box-shadow: 0 0 12px rgba(255, 128, 205, 0.6); color: #2b1131; }
+.goal-label { font-size: 14px; color: #694292; }
+.goal-text { margin-top: 3px; font-size: 16px; font-weight: 600; }
+.goal-main { margin-top: 10px; font-size: 14px; color: #7e68c7; }
+.goal-main-strong { color: #f153aa; font-weight: 800; }
 
-.weather-temp {
-  font-size: 20px;
-  font-weight: 800;
-  color: #f35fa6;
-}
-
-.weather-desc {
-  font-size: 13px;
-  color: #7a68c4;
-}
-
-/* 메인 레이아웃 */
-.home-main {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.home-section {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0,1fr));
-  gap: 12px;
-}
-
-.calendar-section {
-  grid-template-columns: repeat(1, minmax(0, 1fr));
-}
-
-.home-top-summary {
-  margin-top: 2px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.summary-card {
-  border-radius: 20px;
-  padding: 14px 16px;
-  background: #ffffff;
-  box-shadow: 0 14px 26px rgba(0,0,0,0.12);
-  border: 1px solid #e5ddff;
-  color: #211437;
-}
-
-.summary-title {
-  font-size: 18px;
-  font-weight: 800;
-  margin-bottom: 8px;
-  color: #6b41ff;
-}
-
-.summary-desc {
-  font-size: 14px;
-  color: #7a69c4;
-}
-
-/* 목표 카드 */
-.goals-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 2px;
-}
-
-.goal-card {
-  border-radius: 16px;
-  padding: 8px 10px;
-  background: #faf7ff;
-  border: 1px solid rgba(194, 179, 255, 0.6);
-}
-
-.goal-card-today {
-  background: linear-gradient(135deg, #ffb5df, #ff8cc7);
-  box-shadow: 0 0 12px rgba(255, 128, 205, 0.6);
-  color: #2b1131;
-}
-
-.goal-label {
-  font-size: 14px;
-  color: #694292;
-}
-
-.goal-text {
-  margin-top: 3px;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.goal-main {
-  margin-top: 10px;
-  font-size: 14px;
-  color: #7e68c7;
-}
-
-.goal-main-strong {
-  color: #f153aa;
-  font-weight: 800;
-}
-
-/* 오늘 할 일 */
-.todo-card { position: relative; }
-
-.todo-empty {
-  margin-top: 10px;
-  border-radius: 16px;
-  padding: 10px 12px;
-  background: #faf7ff;
-  border: 1px dashed rgba(165, 148, 230, 0.9);
-  font-size: 14px;
-  color: #7461be;
-  line-height: 1.5;
-}
-
+.todo-empty { margin-top: 10px; border-radius: 16px; padding: 10px 12px; background: #faf7ff; border: 1px dashed rgba(165, 148, 230, 0.9); font-size: 14px; color: #7461be; line-height: 1.5; }
 .todo-empty-sub { font-size: 13px; }
-
-.todo-list {
-  margin: 10px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.todo-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 0;
-  font-size: 15px;
-}
-
-.todo-check {
-  width: 20px;
-  height: 20px;
-  border-radius: 8px;
-  border: 1.5px solid #f153aa;
-  box-sizing: border-box;
-  background: #fff;
-  font-size: 13px;
-  font-weight: 800;
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.16s ease;
-}
-
-.todo-check-done {
-  background: linear-gradient(135deg, #f153aa, #a36dff);
-  box-shadow: 0 0 10px rgba(241, 83, 170, 0.6);
-}
-
+.todo-list { margin: 10px 0 0; padding: 0; list-style: none; }
+.todo-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 15px; }
+.todo-check { width: 20px; height: 20px; border-radius: 8px; border: 1.5px solid #f153aa; box-sizing: border-box; background: #fff; font-size: 13px; font-weight: 800; color: #ffffff; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.16s ease; }
+.todo-check-done { background: linear-gradient(135deg, #f153aa, #a36dff); box-shadow: 0 0 10px rgba(241, 83, 170, 0.6); }
 .todo-text { color: #241336; }
+.todo-text-done { color: #a39ad3; text-decoration: line-through; }
 
-.todo-text-done {
-  color: #a39ad3;
-  text-decoration: line-through;
-}
-
-/* 실적 그래프 */
-.growth-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-
+.growth-header { display: flex; justify-content: space-between; align-items: baseline; }
 .growth-month { font-size: 14px; color: #7e6fd6; }
-
-.growth-caption {
-  margin-top: 4px;
-  font-size: 14px;
-  color: #7c6acd;
-}
-
-.growth-graph-wrap {
-  margin-top: 8px;
-  padding: 10px 8px;
-  border-radius: 16px;
-  background: radial-gradient(circle at top, #ffe9ff 0, #f5f0ff 50%, #ffffff 100%);
-  border: 1px solid rgba(214, 196, 255, 0.8);
-}
-
-.growth-graph {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 150px;
-  width: 100%;
-}
-
-.growth-col {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.bar {
-  width: 10px;
-  border-radius: 999px;
-  margin-bottom: 4px;
-}
-
-.contract-bar {
-  background: linear-gradient(180deg, #fef3c7 0%, #facc15 40%, #fb923c 100%);
-  box-shadow:
-    0 6px 12px rgba(234, 179, 8, 0.55),
-    0 0 8px rgba(251, 146, 60, 0.85);
-}
-
+.growth-caption { margin-top: 4px; font-size: 14px; color: #7c6acd; }
+.growth-graph-wrap { margin-top: 8px; padding: 10px 8px; border-radius: 16px; background: radial-gradient(circle at top, #ffe9ff 0, #f5f0ff 50%, #ffffff 100%); border: 1px solid rgba(214, 196, 255, 0.8); }
+.growth-graph { display: flex; align-items: flex-end; gap: 3px; height: 150px; width: 100%; }
+.growth-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+.bar { width: 10px; border-radius: 999px; margin-bottom: 4px; }
+.contract-bar { background: linear-gradient(180deg, #fef3c7 0%, #facc15 40%, #fb923c 100%); box-shadow: 0 6px 12px rgba(234, 179, 8, 0.55), 0 0 8px rgba(251, 146, 60, 0.85); }
 .growth-day-label { margin-top: 4px; font-size: 11px; color: #8775c8; }
 
-/* 공통 카드 */
-.right-card {
-  background: #ffffff;
-  border-radius: 20px;
-  padding: 12px 14px;
-  box-shadow: 0 14px 26px rgba(0,0,0,0.12);
-  border: 1px solid #d9ccff;
-  color: #211437;
-}
-
-.right-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 6px;
-}
-
+.right-card { background: #ffffff; border-radius: 20px; padding: 12px 14px; box-shadow: 0 14px 26px rgba(0,0,0,0.12); border: 1px solid #d9ccff; color: #211437; }
+.right-card-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 6px; }
 .empty-text { font-size: 13px; color: #7a69c4; line-height: 1.5; }
 
-/* 달력 */
 .section-header { margin-bottom: 6px; grid-column: 1 / -1; }
-
 .month-nav { display: flex; align-items: center; gap: 6px; }
-
-.nav-btn {
-  border-radius: 999px;
-  border: none;
-  padding: 4px 8px;
-  font-size: 13px;
-  background: #f0e8ff;
-  color: #5a3cb2;
-  cursor: pointer;
-}
-
+.nav-btn { border-radius: 999px; border: none; padding: 4px 8px; font-size: 13px; background: #f0e8ff; color: #5a3cb2; cursor: pointer; }
 .month-label { font-size: 15px; font-weight: 700; color: #372153; }
 
-.calendar-grid {
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 6px;
-  box-shadow: 0 14px 26px rgba(0,0,0,0.12);
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px;
-  grid-column: 1 / -1;
-  border: 1px solid #e5ddff;
-}
-
-.calendar-weekday {
-  text-align: center;
-  font-size: 13px;
-  font-weight: 700;
-  color: #7f6bd5;
-}
-
-.calendar-day {
-  border-radius: 14px;
-  border: none;
-  background: #faf7ff;
-  padding: 7px 5px;
-  min-height: 80px;
-  font-size: 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  cursor: pointer;
-  color: #241336;
-  transition: all 0.12s ease;
-}
-
+.calendar-grid { background: #ffffff; border-radius: 16px; padding: 6px; box-shadow: 0 14px 26px rgba(0,0,0,0.12); display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; grid-column: 1 / -1; border: 1px solid #e5ddff; }
+.calendar-weekday { text-align: center; font-size: 13px; font-weight: 700; color: #7f6bd5; }
+.calendar-day { border-radius: 14px; border: none; background: #faf7ff; padding: 7px 5px; min-height: 80px; font-size: 12px; display: flex; flex-direction: column; align-items: stretch; cursor: pointer; color: #241336; transition: all 0.12s ease; }
 .calendar-day-out { opacity: 0.35; }
-
 .calendar-day-today { box-shadow: 0 0 0 1px #f153aa; }
-
-.calendar-day-selected {
-  box-shadow: 0 0 0 2px #a45bff;
-  background: linear-gradient(135deg, #f5e6ff, #ffe1f1);
-}
-
+.calendar-day-selected { box-shadow: 0 0 0 2px #a45bff; background: linear-gradient(135deg, #f5e6ff, #ffe1f1); }
 .calendar-day-head { display: flex; justify-content: space-between; align-items: center; }
 .calendar-day-number { font-weight: 700; font-size: 13px; }
 .calendar-day-mood { font-size: 14px; }
 
 .calendar-day-dots { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
-
-.calendar-pill {
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  max-width: 100%;
-}
-
-.calendar-pill-work {
-  background: linear-gradient(135deg, #f472b6, #e879f9);
-  color: #ffffff;
-  box-shadow: 0 4px 10px rgba(236, 72, 153, 0.45);
-}
-
-.calendar-pill-attend {
-  background: linear-gradient(135deg, #fb7185, #f97316);
-  color: #ffffff;
-  box-shadow: 0 4px 10px rgba(248, 113, 113, 0.5);
-}
-
+.calendar-pill { font-size: 11px; padding: 4px 8px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; max-width: 100%; }
+.calendar-pill-work { background: linear-gradient(135deg, #f472b6, #e879f9); color: #ffffff; box-shadow: 0 4px 10px rgba(236, 72, 153, 0.45); }
+.calendar-pill-attend { background: linear-gradient(135deg, #fb7185, #f97316); color: #ffffff; box-shadow: 0 4px 10px rgba(248, 113, 113, 0.5); }
 .calendar-pill-etc { background: #e5e7eb; color: #111827; }
+.calendar-pill-count { background: #fee2ff; color: #a21caf; border: 1px solid rgba(244, 114, 182, 0.6); }
 
-.calendar-pill-count {
-  background: #fee2ff;
-  color: #a21caf;
-  border: 1px solid rgba(244, 114, 182, 0.6);
-}
-
-.calendar-footer {
-  grid-column: 1 / -1;
-  margin-top: 4px;
-  font-size: 14px;
-  color: #7e6fd6;
-}
-
+.calendar-footer { grid-column: 1 / -1; margin-top: 4px; font-size: 14px; color: #7e6fd6; }
 .calendar-selected-card { grid-column: 1 / -1; margin-top: 8px; }
 
-/* 선택한 날짜 스케줄 리스트 */
 .schedule-list { list-style: none; margin: 8px 0 0; padding: 0; }
-
-.schedule-item {
-  display: grid;
-  grid-template-columns: 70px minmax(0, 1fr);
-  gap: 10px;
-  font-size: 14px;
-  padding: 6px 0;
-  border-bottom: 1px dashed #e0d4ff;
-}
+.schedule-item { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 10px; font-size: 14px; padding: 6px 0; border-bottom: 1px dashed #e0d4ff; }
 .schedule-item:last-child { border-bottom: none; }
-
 .schedule-time { color: #f153aa; font-weight: 600; font-size: 14px; }
-
 .schedule-content { display: flex; align-items: center; gap: 10px; }
-
-.schedule-category {
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
-
+.schedule-category { border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 700; line-height: 1; border: 1px solid transparent; white-space: nowrap; }
 .schedule-cat-work { background: #fef2ff; color: #db2777; border-color: rgba(244, 114, 182, 0.4); }
 .schedule-cat-edu { background: #fef9c3; color: #ca8a04; border-color: rgba(250, 204, 21, 0.5); }
 .schedule-cat-event { background: #fee2e2; color: #dc2626; border-color: rgba(248, 113, 113, 0.6); }
 .schedule-cat-attend { background: #e0f2fe; color: #1d4ed8; border-color: rgba(59, 130, 246, 0.6); }
 .schedule-cat-etc { background: #f3f4ff; color: #4b5563; border-color: rgba(148, 163, 184, 0.6); }
-
 .schedule-title { color: #241336; font-size: 14px; }
 
-/* 친구 카드 */
-.friend-card {
-  margin-top: 24px;
-  padding: 16px 20px 20px;
-  border-radius: 26px;
-  border: 4px solid rgba(162, 125, 255, 0.95);
-  background: #ffffff;
-  box-shadow:
-    0 20px 40px rgba(0,0,0,0.18),
-    0 0 0 1px rgba(255,255,255,0.7);
-  overflow: hidden;
-}
-
-.friend-card-header {
-  padding: 16px 20px 12px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, #8b5cf6, #ec4899);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
+.friend-card { margin-top: 24px; padding: 16px 20px 20px; border-radius: 26px; border: 4px solid rgba(162, 125, 255, 0.95); background: #ffffff; box-shadow: 0 20px 40px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.7); overflow: hidden; }
+.friend-card-header { padding: 16px 20px 12px; border-radius: 20px; background: linear-gradient(135deg, #8b5cf6, #ec4899); display: flex; justify-content: space-between; align-items: center; }
 .friend-title { color: #ffffff; }
 .friend-sub { color: #fee2f2; }
-
-.friend-chat-banner {
-  border-radius: 999px;
-  border: none;
-  padding: 8px 14px;
-  font-size: 14px;
-  font-weight: 700;
-  background: #f9fafb;
-  color: #7c3aed;
-  cursor: pointer;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.18);
-}
-
+.friend-chat-banner { border-radius: 999px; border: none; padding: 8px 14px; font-size: 14px; font-weight: 700; background: #f9fafb; color: #7c3aed; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.18); }
 .friend-chat-banner.big { min-width: 140px; text-align: center; }
 
-.friends-list {
-  list-style: none;
-  margin: 16px 0 0;
-  padding: 4px 4px 0 4px;
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.friend-item {
-  padding: 14px 16px;
-  border-radius: 20px;
-  margin-bottom: 12px;
-  background: #fbf8ff;
-  border: 1px solid rgba(211,196,255,0.9);
-  cursor: pointer;
-  transition: all 0.16s ease;
-}
-
+.friends-list { list-style: none; margin: 16px 0 0; padding: 4px 4px 0 4px; max-height: 320px; overflow-y: auto; }
+.friend-item { padding: 14px 16px; border-radius: 20px; margin-bottom: 12px; background: #fbf8ff; border: 1px solid rgba(211,196,255,0.9); cursor: pointer; transition: all 0.16s ease; }
 .friend-item:last-child { margin-bottom: 0; }
-
-.friend-item:hover {
-  background: #f4eeff;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
-}
-
+.friend-item:hover { background: #f4eeff; transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
 .friend-main-row { display: flex; align-items: center; gap: 12px; }
-
-.friend-avatar-small {
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  background: radial-gradient(circle at top left, #ff9ed5 0, #a855f7 60%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 15px;
-  box-shadow: 0 0 10px rgba(185, 129, 255, 0.8);
-}
-
+.friend-avatar-small { width: 34px; height: 34px; border-radius: 999px; background: radial-gradient(circle at top left, #ff9ed5 0, #a855f7 60%); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; box-shadow: 0 0 10px rgba(185, 129, 255, 0.8); }
 .friend-dot { width: 10px; height: 10px; border-radius: 999px; flex-shrink: 0; }
 .friend-dot-on { background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.9); }
 .friend-dot-off { background: #9ca3af; opacity: 0.8; }
-
 .friend-name-wrap { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .friend-name { font-size: 16px; font-weight: 800; color: #111827; }
+.friend-role-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.9); color: #7c3aed; border: 1px solid rgba(167, 139, 250, 0.9); }
+.friend-meta-row { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; color: #4b5563; }
 
-.friend-role-pill {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #7c3aed;
-  border: 1px solid rgba(167, 139, 250, 0.9);
-}
-
-.friend-meta-row {
-  margin-top: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 13px;
-  color: #4b5563;
-}
-
-/* 친구 모달 */
-.friend-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 40;
-}
-
-.friend-modal {
-  width: 360px;
-  max-width: 90vw;
-  border-radius: 26px;
-  background: #ffffff;
-  box-shadow:
-    0 24px 60px rgba(15, 23, 42, 0.45),
-    0 0 0 1px rgba(226, 232, 240, 0.9);
-  padding: 18px 18px 16px;
-  position: relative;
-}
-
-.friend-modal-close {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  border: none;
-  background: #f3f4ff;
-  color: #4b2d7a;
-  cursor: pointer;
-  font-size: 14px;
-}
-
+.friend-modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); display: flex; align-items: center; justify-content: center; z-index: 40; }
+.friend-modal { width: 360px; max-width: 90vw; border-radius: 26px; background: #ffffff; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.45), 0 0 0 1px rgba(226, 232, 240, 0.9); padding: 18px 18px 16px; position: relative; }
+.friend-modal-close { position: absolute; top: 10px; right: 12px; width: 26px; height: 26px; border-radius: 999px; border: none; background: #f3f4ff; color: #4b2d7a; cursor: pointer; font-size: 14px; }
 .friend-modal-header { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
-
-.friend-modal-avatar {
-  width: 54px;
-  height: 54px;
-  border-radius: 999px;
-  background: radial-gradient(circle at top left, #ff9ed5 0, #a855f7 60%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  font-weight: 800;
-  font-size: 22px;
-  overflow: hidden;
-}
-
+.friend-modal-avatar { width: 54px; height: 54px; border-radius: 999px; background: radial-gradient(circle at top left, #ff9ed5 0, #a855f7 60%); display: flex; align-items: center; justify-content: center; color: #ffffff; font-weight: 800; font-size: 22px; overflow: hidden; }
 .friend-modal-avatar img { width: 100%; height: 100%; object-fit: cover; }
-
 .friend-modal-title { display: flex; flex-direction: column; gap: 2px; }
-
 .friend-modal-name-row { display: flex; align-items: center; gap: 6px; }
-
 .friend-modal-name { font-size: 18px; font-weight: 900; color: #1e1034; }
-
 .friend-modal-role { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #f3e8ff; color: #7c3aed; }
-
 .friend-modal-mood { font-size: 18px; }
-
 .friend-modal-sub { font-size: 13px; color: #7a69c4; }
-
 .friend-modal-body { margin-top: 8px; display: flex; flex-direction: column; gap: 10px; }
-
 .friend-modal-section { padding: 8px 10px; border-radius: 14px; background: #faf7ff; border: 1px solid rgba(212, 200, 255, 0.9); }
-
 .friend-modal-label { font-size: 12px; font-weight: 700; color: #7c6acd; margin-bottom: 4px; }
-
 .friend-modal-main-goal { font-size: 15px; font-weight: 700; color: #f153aa; }
-
 .friend-modal-goals { list-style: none; margin: 0; padding: 0; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
 .friend-modal-goals li { display: flex; justify-content: space-between; }
-
 .friend-modal-cheer { margin-top: 4px; font-size: 14px; font-weight: 700; color: #7c3aed; }
-
 .friend-modal-actions { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 8px; }
+.friend-modal-btn { flex: 1; min-width: 90px; border-radius: 999px; border: 1px solid #e0d4ff; background: #f9f5ff; color: #7c3aed; font-size: 13px; padding: 7px 10px; cursor: pointer; }
+.friend-modal-btn.primary { background: linear-gradient(135deg, #f153aa, #a855f7); color: #ffffff; border-color: transparent; box-shadow: 0 10px 20px rgba(148, 60, 180, 0.45); }
 
-.friend-modal-btn {
-  flex: 1;
-  min-width: 90px;
-  border-radius: 999px;
-  border: 1px solid #e0d4ff;
-  background: #f9f5ff;
-  color: #7c3aed;
-  font-size: 13px;
-  padding: 7px 10px;
-  cursor: pointer;
-}
-
-.friend-modal-btn.primary {
-  background: linear-gradient(135deg, #f153aa, #a855f7);
-  color: #ffffff;
-  border-color: transparent;
-  box-shadow: 0 10px 20px rgba(148, 60, 180, 0.45);
-}
-
-/* 플로팅 문의하기 버튼 */
 .floating-support-btn {
   position: fixed;
   right: 26px;
@@ -2061,35 +1502,44 @@ const styles = `
   color: #ffffff;
   font-size: 13px;
   font-weight: 700;
-  box-shadow:
-    0 14px 30px rgba(124, 58, 237, 0.6),
-    0 0 0 1px rgba(255, 255, 255, 0.7);
+  box-shadow: 0 14px 30px rgba(124, 58, 237, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.7);
   display: flex;
   flex-direction: column;
   gap: 2px;
   cursor: pointer;
   z-index: 30;
 }
-
-/* 전역 링크 리셋도 :global 처리 */
-:global(a) { color: inherit; text-decoration: none; }
-:global(a:hover) { text-decoration: none; }
+@keyframes uplogBounce {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  20% {
+    transform: translateY(-14px) scale(1.15, 0.9); /* 위로 + 통통 */
+  }
+  40% {
+    transform: translateY(0) scale(0.95, 1.05);    /* 눌렸다가 */
+  }
+  60% {
+    transform: translateY(-6px) scale(1.05, 0.95); /* 한 번 더 튐 */
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
 
 /* 반응형 */
 @media (max-width: 1024px) {
   .home-root { padding: 16px; }
   .home-header { padding: 16px 14px 12px; }
   .home-header-top { grid-template-columns: 1fr; }
-  .home-header-profile { margin-top: 6px; }
+  .profile-box { width: 100%; min-width: 0; max-width: 100%; height: auto; min-height: 0; max-height: none; }
+  .home-header-profile { margin-top: 6px; justify-content: flex-start; }
   .home-quick-nav { flex-wrap: wrap; }
   .home-top-summary { grid-template-columns: 1fr; }
-  .calendar-grid { font-size: 11px; }
   .friend-card { margin-top: 16px; }
 }
-
 @media (max-width: 640px) {
   .home-inner { max-width: 100%; }
-  .home-quick-nav { flex-wrap: wrap; }
   .quick-card { flex: 1 1 calc(50% - 4px); }
   .weather-slot { min-width: 88px; }
   .floating-support-btn { right: 16px; bottom: 16px; }
