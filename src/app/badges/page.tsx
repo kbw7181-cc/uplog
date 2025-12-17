@@ -8,37 +8,40 @@ type MonthlyBadgeRow = {
   badge_code: string;
   badge_name: string;
   winner_user_id: string | null;
-  month_start: string | null; // date
-  month_end: string | null;   // date
+  month_start: string | null;
+  month_end: string | null;
   reason: string;
   winner_name?: string | null;
+  streak_len?: number; // ✅ 연속 개월
+  crown?: string;      // ✅ 👑👑 / 👑👑👑
 };
-
-function ymLabel(iso: string | null) {
-  if (!iso) return '';
-  const y = iso.slice(0, 4);
-  const m = iso.slice(5, 7);
-  return `${y}.${m}`;
-}
 
 function toYM(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   return `${y}-${m}`;
 }
-
 function monthStartISO(ym: string) {
-  // ym: 'YYYY-MM' -> 'YYYY-MM-01'
   return `${ym}-01`;
 }
-
 function nextMonthStartISO(ym: string) {
   const y = Number(ym.slice(0, 4));
   const m = Number(ym.slice(5, 7));
-  const d = new Date(y, m, 1); // 다음달 1일
+  const d = new Date(y, m, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
-
+function ymLabel(iso: string | null) {
+  if (!iso) return '';
+  const y = iso.slice(0, 4);
+  const m = iso.slice(5, 7);
+  return `${y}.${m}`;
+}
+function crownByStreak(n: number) {
+  if (n >= 3) return '👑👑👑';
+  if (n === 2) return '👑👑';
+  if (n === 1) return '👑';
+  return '';
+}
 function iconByCode(code: string) {
   switch (code) {
     case 'monthly_top':
@@ -59,7 +62,6 @@ function iconByCode(code: string) {
       return '🏅';
   }
 }
-
 function reasonByCode(code: string) {
   return code === 'monthly_top'
     ? '이번 달 종합 활동 지표 1위를 기록했습니다'
@@ -80,13 +82,7 @@ function reasonByCode(code: string) {
 
 export default function AdminPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
 
-  const [monthlyBadges, setMonthlyBadges] = useState<MonthlyBadgeRow[]>([]);
-  const [selected, setSelected] = useState<MonthlyBadgeRow | null>(null);
-
-  // ✅ 최근 6개월 옵션
   const monthOptions = useMemo(() => {
     const now = new Date();
     const arr: { ym: string; label: string }[] = [];
@@ -98,8 +94,14 @@ export default function AdminPage() {
     return arr;
   }, []);
 
-  // ✅ 기본값: 이번 달
   const [ym, setYm] = useState(() => toYM(new Date()));
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  const [monthlyBadges, setMonthlyBadges] = useState<MonthlyBadgeRow[]>([]);
+  const [selected, setSelected] = useState<MonthlyBadgeRow | null>(null);
+
+  const title = useMemo(() => `${ym.slice(0, 4)}.${ym.slice(5, 7)} 월간 배지`, [ym]);
 
   async function load(targetYm = ym) {
     setLoading(true);
@@ -108,7 +110,7 @@ export default function AdminPage() {
     const start = monthStartISO(targetYm);
     const nextStart = nextMonthStartISO(targetYm);
 
-    // 1) 월 필터로 monthly_badges 로드
+    // 1) 월간 배지 (선택 월)
     const { data, error } = await supabase
       .from('monthly_badges')
       .select('badge_code,badge_name,winner_user_id,month_start,month_end')
@@ -128,7 +130,7 @@ export default function AdminPage() {
       reason: reasonByCode(r.badge_code),
     })) as MonthlyBadgeRow[];
 
-    // 2) winner_user_id -> profiles.name 매핑(가능하면)
+    // 2) 닉네임 매핑
     const winnerIds = Array.from(
       new Set(baseRows.map((r) => r.winner_user_id).filter(Boolean))
     ) as string[];
@@ -147,28 +149,53 @@ export default function AdminPage() {
       }
     }
 
-    setMonthlyBadges(
-      baseRows.map((r) => ({
-        ...r,
-        winner_name: r.winner_user_id ? nameMap.get(r.winner_user_id) ?? null : null,
-      }))
-    );
+    // 3) 연속수상 streak(배지코드별) 매핑
+    const { data: streakRows } = await supabase
+      .from('v_monthly_badge_streaks')
+      .select('badge_code,winner_user_id,streak_len,last_month');
 
+    const streakMap = new Map<string, { streak_len: number; last_month: string }>();
+    for (const s of (streakRows ?? []) as any[]) {
+      const key = `${s.badge_code}::${s.winner_user_id}`;
+      streakMap.set(key, {
+        streak_len: Number(s.streak_len ?? 0),
+        last_month: String(s.last_month ?? ''),
+      });
+    }
+
+    // 선택 월이 “마지막 수상 월”인 경우만 streak 표시
+    const thisMonthKey = `${targetYm}-01`;
+
+    const finalRows = baseRows.map((r) => {
+      const winner_name = r.winner_user_id ? nameMap.get(r.winner_user_id) ?? null : null;
+      const key = `${r.badge_code}::${r.winner_user_id}`;
+      const hit = r.winner_user_id ? streakMap.get(key) : null;
+
+      const streak_len =
+        hit && hit.last_month === thisMonthKey ? Math.max(1, hit.streak_len) : 1;
+
+      return {
+        ...r,
+        winner_name,
+        streak_len,
+        crown: crownByStreak(streak_len),
+      };
+    });
+
+    setMonthlyBadges(finalRows);
     setLoading(false);
   }
 
   useEffect(() => {
-    load();
+    load(ym);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 월 바뀌면 자동 새로고침
   useEffect(() => {
     load(ym);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ym]);
 
-  // ESC로 모달 닫기
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') setSelected(null);
@@ -177,14 +204,12 @@ export default function AdminPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const title = useMemo(() => `${ym.slice(0, 4)}.${ym.slice(5, 7)} 월간 배지`, [ym]);
-
   return (
     <div className="page">
       <div className="top">
         <div>
           <h1>{title}</h1>
-          <p>월 선택 → 해당 월 배지 + 사유(reason)를 카드로 보여줍니다.</p>
+          <p>배지별 연속 수상(2연속/3연속) 왕관 업그레이드까지 표시합니다.</p>
         </div>
 
         <div className="actions">
@@ -196,10 +221,10 @@ export default function AdminPage() {
             ))}
           </select>
 
-          <button onClick={() => router.push('/home')} className="btn ghost">
+          <button className="btn ghost" onClick={() => router.push('/home')}>
             홈
           </button>
-          <button onClick={() => load(ym)} className="btn primary">
+          <button className="btn primary" onClick={() => load(ym)}>
             새로고침
           </button>
         </div>
@@ -230,15 +255,19 @@ export default function AdminPage() {
 
             <div className="badgeFooter">
               <span className="badgeMonth">{ymLabel(b.month_start) || title.slice(0, 7)}</span>
+
               <span className="badgeUser">
                 {b.winner_name ? `🏆 ${b.winner_name}` : `${b.winner_user_id?.slice(0, 8)}…`}
+
+                <span className="streakPill">
+                  {b.crown} {b.streak_len}연속
+                </span>
               </span>
             </div>
           </button>
         ))}
       </div>
 
-      {/* ✅ 상세 모달 */}
       {selected && (
         <div className="modalBackdrop" onClick={() => setSelected(null)}>
           <div className={`modalCard ${selected.badge_code}`} onClick={(e) => e.stopPropagation()}>
@@ -259,6 +288,9 @@ export default function AdminPage() {
               <div className="pill">📅 {title}</div>
               <div className="pill">
                 👤 수상자: <b>{selected.winner_name ?? selected.winner_user_id ?? '-'}</b>
+              </div>
+              <div className="pill">
+                {selected.crown} <b>{selected.streak_len}연속</b>
               </div>
             </div>
 
@@ -420,14 +452,9 @@ export default function AdminPage() {
           border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
-        .titles {
-          min-width: 0;
-        }
-
         .badgeName {
           font-size: 20px;
           font-weight: 950;
-          letter-spacing: -0.2px;
         }
 
         .badgeCode {
@@ -466,34 +493,36 @@ export default function AdminPage() {
         }
 
         .badgeUser {
-          max-width: 55%;
+          max-width: 70%;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .streakPill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          border-radius: 999px;
+          background: rgba(0, 0, 0, 0.22);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          font-weight: 950;
+          font-size: 12px;
+          flex: 0 0 auto;
         }
 
         /* 배지별 색상 */
-        .monthly_top {
-          background: linear-gradient(135deg, #f6d365, #fda085);
-        }
-        .attendance_month_mvp {
-          background: linear-gradient(135deg, #ff512f, #dd2476);
-        }
-        .streak_month_king {
-          background: linear-gradient(135deg, #8360c3, #2ebf91);
-        }
-        .most_likes_month {
-          background: linear-gradient(135deg, #ff5f9e, #ffc371);
-        }
-        .most_posts_month {
-          background: linear-gradient(135deg, #43cea2, #185a9d);
-        }
-        .mvp_amount_month {
-          background: linear-gradient(135deg, #f7971e, #ffd200);
-        }
-        .mvp_count_month {
-          background: linear-gradient(135deg, #56ccf2, #2f80ed);
-        }
+        .monthly_top { background: linear-gradient(135deg, #f6d365, #fda085); }
+        .attendance_month_mvp { background: linear-gradient(135deg, #ff512f, #dd2476); }
+        .streak_month_king { background: linear-gradient(135deg, #8360c3, #2ebf91); }
+        .most_likes_month { background: linear-gradient(135deg, #ff5f9e, #ffc371); }
+        .most_posts_month { background: linear-gradient(135deg, #43cea2, #185a9d); }
+        .mvp_amount_month { background: linear-gradient(135deg, #f7971e, #ffd200); }
+        .mvp_count_month { background: linear-gradient(135deg, #56ccf2, #2f80ed); }
 
         /* 모달 */
         .modalBackdrop {
@@ -532,23 +561,9 @@ export default function AdminPage() {
           border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
-        .modalTitles {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .modalName {
-          font-size: 22px;
-          font-weight: 950;
-          letter-spacing: -0.2px;
-        }
-
-        .modalCode {
-          margin-top: 3px;
-          font-size: 12px;
-          opacity: 0.75;
-          font-weight: 900;
-        }
+        .modalTitles { flex: 1; min-width: 0; }
+        .modalName { font-size: 22px; font-weight: 950; }
+        .modalCode { margin-top: 3px; font-size: 12px; opacity: 0.75; font-weight: 900; }
 
         .modalClose {
           height: 40px;
@@ -563,7 +578,7 @@ export default function AdminPage() {
 
         .modalReason {
           margin-top: 14px;
-          padding: 16px 16px;
+          padding: 16px;
           border-radius: 20px;
           background: rgba(0, 0, 0, 0.26);
           border: 1px solid rgba(255, 255, 255, 0.16);
@@ -572,12 +587,7 @@ export default function AdminPage() {
           line-height: 1.55;
         }
 
-        .modalInfo {
-          margin-top: 14px;
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-        }
+        .modalInfo { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
 
         .pill {
           padding: 8px 12px;
@@ -588,20 +598,10 @@ export default function AdminPage() {
           font-size: 13px;
         }
 
-        .modalHint {
-          margin-top: 12px;
-          font-size: 12px;
-          opacity: 0.8;
-          font-weight: 800;
-          text-align: right;
-        }
+        .modalHint { margin-top: 12px; font-size: 12px; opacity: 0.8; font-weight: 800; text-align: right; }
 
         @media (prefers-reduced-motion: reduce) {
-          .badgeCard,
-          .btn,
-          .shine {
-            transition: none !important;
-          }
+          .badgeCard, .btn, .shine { transition: none !important; }
         }
       `}</style>
     </div>

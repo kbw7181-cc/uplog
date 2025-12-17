@@ -1,37 +1,43 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { supabase } from '../../../lib/supabaseClient';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 
 type SupportStatus = 'open' | 'pending' | 'closed';
 type TabKey = 'unread' | 'open' | 'pending' | 'closed' | 'all';
+type ReadMode = 'click' | 'save'; // ✅ 클릭즉시 열람 / 저장(상태저장·답변전송) 시 열람
 
 type SupportRow = {
   id: string;
+  user_id: string | null;
   title: string | null;
-  body: string | null;          // ✅ 이제 정식 컬럼
-  category: string | null;      // ✅ 이제 정식 컬럼
-  status: SupportStatus;
-  created_at: string;
+  category: string | null;
+  body: string | null;
+  status: SupportStatus | null;
+  created_at: string | null;
   is_read_admin: boolean | null;
 };
 
-type SupportMessage = {
+type MsgRow = {
   id: string;
   support_id: string;
-  sender: 'user' | 'admin';
+  sender: string;
   message: string;
-  created_at: string;
+  created_at: string | null;
 };
 
-const fmtDate = (d: string) =>
-  new Date(d).toLocaleString('ko-KR', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function fmt(iso: string | null) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleString();
+}
+
+function safeStatus(s: SupportStatus | null | undefined): SupportStatus {
+  if (s === 'open' || s === 'pending' || s === 'closed') return s;
+  return 'open';
+}
 
 function statusLabel(s: SupportStatus) {
   if (s === 'open') return '답변중';
@@ -39,418 +45,704 @@ function statusLabel(s: SupportStatus) {
   return '완료';
 }
 
-function statusBadgeClass(s: SupportStatus) {
-  if (s === 'open') return 'bg-pink-500/25 text-pink-200 border-pink-300/40';
-  if (s === 'pending') return 'bg-sky-500/20 text-sky-200 border-sky-300/40';
-  return 'bg-emerald-500/15 text-emerald-200 border-emerald-300/35';
-}
-
 export default function AdminSupportPage() {
   const router = useRouter();
-  const sp = useSearchParams();
-  const tab = (sp.get('tab') as TabKey) || 'unread';
 
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [rows, setRows] = useState<SupportRow[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [msgs, setMsgs] = useState<MsgRow[]>([]);
 
-  const [list, setList] = useState<SupportRow[]>([]);
-  const [selected, setSelected] = useState<SupportRow | null>(null);
-  const [messages, setMessages] = useState<SupportMessage[]>([]);
-  const [fallbackBody, setFallbackBody] = useState<string>(''); // ✅ body가 없을 때만 사용
+  const [tab, setTab] = useState<TabKey>('all');
+  const [readMode, setReadMode] = useState<ReadMode>('save'); // ✅ 기본: 저장할 때 열람
+
+  const [loadingList, setLoadingList] = useState(true);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [err, setErr] = useState('');
 
   const [reply, setReply] = useState('');
-  const [saving, setSaving] = useState(false);
   const [nextStatus, setNextStatus] = useState<SupportStatus>('open');
 
-  const tickRef = useRef<number | null>(null);
-  const msgTickRef = useRef<number | null>(null);
+  const counts = useMemo(() => {
+    const open = rows.filter((x) => safeStatus(x.status) === 'open').length;
+    const pending = rows.filter((x) => safeStatus(x.status) === 'pending').length;
+    const closed = rows.filter((x) => safeStatus(x.status) === 'closed').length;
+    const unread = rows.filter((x) => x.is_read_admin === false).length;
+    return { open, pending, closed, unread, all: rows.length };
+  }, [rows]);
 
-  async function loadList() {
-    setLoading(true);
-    setErr(null);
+  const filteredRows = useMemo(() => {
+    if (tab === 'all') return rows;
+    if (tab === 'unread') return rows.filter((x) => x.is_read_admin === false);
+    if (tab === 'open') return rows.filter((x) => safeStatus(x.status) === 'open');
+    if (tab === 'pending') return rows.filter((x) => safeStatus(x.status) === 'pending');
+    return rows.filter((x) => safeStatus(x.status) === 'closed');
+  }, [rows, tab]);
 
-    try {
-      let q = supabase
-        .from('supports')
-        .select('id,title,body,category,status,created_at,is_read_admin')
-        .order('created_at', { ascending: false });
+  const selected = useMemo(
+    () => rows.find((r) => r.id === selectedId) ?? null,
+    [rows, selectedId]
+  );
 
-      if (tab === 'unread') q = q.eq('is_read_admin', false);
-      if (tab !== 'unread' && tab !== 'all') q = q.eq('status', tab);
+  useEffect(() => {
+    void fetchList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-      const { data, error } = await q;
-      if (error) throw error;
-
-      setList((data as SupportRow[]) ?? []);
-    } catch (e: any) {
-      setErr(e?.message ?? '목록을 불러오지 못했습니다.');
-      setList([]);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (filteredRows.length === 0) {
+      setSelectedId(null);
+      setMsgs([]);
+      return;
     }
+    if (!selectedId) {
+      setSelectedId(filteredRows[0].id);
+      return;
+    }
+    const still = filteredRows.some((x) => x.id === selectedId);
+    if (!still) setSelectedId(filteredRows[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, filteredRows.length]);
+
+  async function fetchList() {
+    setLoadingList(true);
+    setErr('');
+
+    const { data, error } = await supabase
+      .from('supports')
+      .select('id,user_id,title,category,body,status,created_at,is_read_admin')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      setRows([]);
+      setErr(`${error.code ?? 'ERR'}: ${error.message}`);
+      setLoadingList(false);
+      return;
+    }
+
+    const safe = (data ?? []) as SupportRow[];
+    setRows(safe);
+    if (!selectedId && safe.length > 0) setSelectedId(safe[0].id);
+    setLoadingList(false);
   }
 
-  async function loadMessages(supportId: string) {
+  useEffect(() => {
+    if (!selectedId) return;
+    const row = rows.find((x) => x.id === selectedId);
+    setNextStatus(safeStatus(row?.status));
+    void fetchMsgs(selectedId);
+
+    // ✅ 클릭모드일 때만 “선택=열람 처리”
+    if (readMode === 'click') void markReadAdmin(selectedId);
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, readMode]);
+
+  async function fetchMsgs(id: string) {
+    setLoadingDetail(true);
+
     const { data, error } = await supabase
       .from('support_messages')
       .select('id,support_id,sender,message,created_at')
-      .eq('support_id', supportId)
+      .eq('support_id', id)
       .order('created_at', { ascending: true });
 
-    if (error) throw error;
+    if (error) {
+      setMsgs([]);
+      setLoadingDetail(false);
+      return;
+    }
 
-    const rows = (data as SupportMessage[]) ?? [];
-    setMessages(rows);
-
-    // ✅ fallback: 첫 고객 메시지
-    const firstUser = rows.find((m) => m.sender === 'user');
-    setFallbackBody(firstUser?.message ?? '');
+    setMsgs((data ?? []) as MsgRow[]);
+    setLoadingDetail(false);
   }
 
-  async function openItem(row: SupportRow) {
-    setSelected(row);
-    setReply('');
-    setNextStatus(row.status);
-    setFallbackBody('');
-
-    // ✅ 읽음 처리
-    if (row.is_read_admin === false) {
-      await supabase.from('supports').update({ is_read_admin: true }).eq('id', row.id);
-      setList((prev) =>
-        prev
-          .map((x) => (x.id === row.id ? { ...x, is_read_admin: true } : x))
-          .filter((x) => (tab === 'unread' ? x.id !== row.id : true)),
-      );
-    }
-
+  async function markReadAdmin(id: string) {
     try {
-      await loadMessages(row.id);
-    } catch (e: any) {
-      alert(e?.message ?? '메시지를 불러오지 못했습니다.');
+      await supabase.from('supports').update({ is_read_admin: true }).eq('id', id);
+      setRows((prev) => prev.map((x) => (x.id === id ? { ...x, is_read_admin: true } : x)));
+    } catch {}
+  }
+
+  async function applyStatusOnly() {
+    if (!selectedId) return;
+
+    setSending(true);
+    setErr('');
+
+    const patch: any = { status: nextStatus };
+    if (readMode === 'save') patch.is_read_admin = true;
+
+    const { error } = await supabase.from('supports').update(patch).eq('id', selectedId);
+
+    if (error) {
+      setErr(`${error.code ?? 'ERR'}: ${error.message}`);
+      setSending(false);
+      return;
     }
+
+    setRows((prev) =>
+      prev.map((x) =>
+        x.id === selectedId
+          ? { ...x, status: nextStatus, is_read_admin: readMode === 'save' ? true : x.is_read_admin }
+          : x
+      )
+    );
+
+    await fetchList();
+    if (readMode === 'save') await markReadAdmin(selectedId);
+
+    setSending(false);
   }
 
   async function sendReply() {
-    if (!selected) return;
+    if (!selectedId) return;
     const text = reply.trim();
     if (!text) return;
 
-    setSaving(true);
-    try {
-      const { error: insErr } = await supabase.from('support_messages').insert({
-        support_id: selected.id,
-        sender: 'admin',
-        message: text,
-      });
-      if (insErr) throw insErr;
+    setSending(true);
+    setErr('');
 
-      const { error: upErr } = await supabase
-        .from('supports')
-        .update({ status: nextStatus })
-        .eq('id', selected.id);
-      if (upErr) throw upErr;
+    const { data: sessionData, error: sessErr } = await supabase.auth.getSession();
+    const adminUid = sessionData?.session?.user?.id ?? null;
 
-      setReply('');
-      setSelected((prev) => (prev ? { ...prev, status: nextStatus } : prev));
-
-      await loadMessages(selected.id);
-      await loadList();
-    } catch (e: any) {
-      alert(e?.message ?? '답변 전송 중 오류가 발생했습니다.');
-    } finally {
-      setSaving(false);
+    if (sessErr || !adminUid) {
+      setErr('AUTH: 관리자 세션이 없습니다. 다시 로그인 후 시도하세요.');
+      setSending(false);
+      return;
     }
+
+    const { error: insErr } = await supabase.from('support_messages').insert({
+      support_id: selectedId,
+      user_id: adminUid, // ✅ NOT NULL 만족
+      sender: 'admin',
+      message: text,
+    });
+
+    if (insErr) {
+      setErr(`${insErr.code ?? 'ERR'}: ${insErr.message}`);
+      setSending(false);
+      return;
+    }
+
+    // ✅ 답변 전송은 무조건 열람 처리 + 상태도 함께 저장
+    const { error: upErr } = await supabase
+      .from('supports')
+      .update({ status: nextStatus, is_read_admin: true })
+      .eq('id', selectedId);
+
+    if (upErr) {
+      setErr(`${upErr.code ?? 'ERR'}: ${upErr.message}`);
+    } else {
+      setRows((prev) =>
+        prev.map((x) => (x.id === selectedId ? { ...x, status: nextStatus, is_read_admin: true } : x))
+      );
+    }
+
+    setReply('');
+    await fetchMsgs(selectedId);
+    await fetchList();
+    setSending(false);
   }
 
-  useEffect(() => {
-    loadList();
-    setSelected(null);
-    setMessages([]);
-    setReply('');
-    setFallbackBody('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
-
-  // ✅ supports 실시간 목록
-  useEffect(() => {
-    const ch = supabase
-      .channel('admin-supports-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'supports' }, () => {
-        if (tickRef.current) window.clearTimeout(tickRef.current);
-        tickRef.current = window.setTimeout(() => {
-          loadList();
-          tickRef.current = null;
-        }, 350);
-      })
-      .subscribe();
-
-    return () => {
-      if (tickRef.current) window.clearTimeout(tickRef.current);
-      supabase.removeChannel(ch);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
-
-  // ✅ 선택된 문의 메시지 실시간
-  useEffect(() => {
-    if (!selected) return;
-
-    const ch = supabase
-      .channel(`admin-support-messages-${selected.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'support_messages', filter: `support_id=eq.${selected.id}` },
-        () => {
-          if (msgTickRef.current) window.clearTimeout(msgTickRef.current);
-          msgTickRef.current = window.setTimeout(() => {
-            loadMessages(selected.id).catch(() => {});
-            msgTickRef.current = null;
-          }, 250);
-        },
-      )
-      .subscribe();
-
-    return () => {
-      if (msgTickRef.current) window.clearTimeout(msgTickRef.current);
-      supabase.removeChannel(ch);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.id]);
-
-  const displayBody = (selected?.body && selected.body.trim()) ? selected.body : fallbackBody;
-
   return (
-    <main className="min-h-screen bg-[#B982FF] p-6 text-white">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-[30px] font-black">문의 관리</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={() => router.push('/admin')}
-            className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-[14px] font-extrabold text-white hover:bg-white/15"
-          >
-            ← 대시보드
-          </button>
-          <button
-            onClick={loadList}
-            className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-[14px] font-extrabold text-white hover:bg-white/15"
-          >
-            ⟳ 새로고침
-          </button>
+    <div
+      style={{
+        minHeight: '100vh',
+        padding: 22,
+        background:
+          'radial-gradient(1200px 800px at 20% 0%, rgba(255,79,216,.14), transparent 60%), radial-gradient(1000px 700px at 80% 10%, rgba(185,130,255,.18), transparent 55%), #f7f4ff',
+        color: '#0f1020',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+        <button
+          onClick={() => router.push('/admin')}
+          style={{
+            padding: '10px 12px',
+            borderRadius: 12,
+            border: '1px solid rgba(20,20,30,.18)',
+            background: '#fff',
+            fontWeight: 950,
+            cursor: 'pointer',
+          }}
+        >
+          ← 관리자 홈
+        </button>
+        <button
+          onClick={fetchList}
+          disabled={loadingList}
+          style={{
+            padding: '10px 12px',
+            borderRadius: 12,
+            border: '1px solid rgba(20,20,30,.18)',
+            background: 'linear-gradient(135deg, rgba(255,79,216,.22), rgba(185,130,255,.12))',
+            fontWeight: 950,
+            cursor: loadingList ? 'not-allowed' : 'pointer',
+            opacity: loadingList ? 0.6 : 1,
+          }}
+        >
+          새로고침
+        </button>
+      </div>
+
+      <div style={{ fontSize: 38, fontWeight: 1000, letterSpacing: -0.6, marginBottom: 10, color: '#111' }}>
+        문의 관리
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <ChipButton active={tab === 'unread'} onClick={() => setTab('unread')} label={`미열람 ${counts.unread}`} tone="warn" />
+        <ChipButton active={tab === 'open'} onClick={() => setTab('open')} label={`답변중 ${counts.open}`} tone="pink" />
+        <ChipButton active={tab === 'pending'} onClick={() => setTab('pending')} label={`진행중 ${counts.pending}`} tone="sky" />
+        <ChipButton active={tab === 'closed'} onClick={() => setTab('closed')} label={`완료 ${counts.closed}`} tone="mint" />
+        <ChipButton active={tab === 'all'} onClick={() => setTab('all')} label={`전체 ${counts.all}`} tone="white" />
+      </div>
+
+      {/* ✅ 열람 처리 방식 토글 */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 10,
+          alignItems: 'center',
+          marginBottom: 14,
+          padding: 10,
+          borderRadius: 14,
+          border: '1px solid rgba(20,20,30,.12)',
+          background: '#fff',
+          boxShadow: '0 10px 24px rgba(0,0,0,.05)',
+        }}
+      >
+        <div style={{ fontWeight: 1000, fontSize: 15, color: '#111' }}>열람 처리:</div>
+
+        <button
+          onClick={() => setReadMode('save')}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 999,
+            border: readMode === 'save' ? '2px solid rgba(255,79,216,.70)' : '1px solid rgba(20,20,30,.16)',
+            background: readMode === 'save' ? 'rgba(255,240,251,1)' : '#fff',
+            fontWeight: 1000,
+            cursor: 'pointer',
+          }}
+        >
+          저장/전송 시 열람
+        </button>
+
+        <button
+          onClick={() => setReadMode('click')}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 999,
+            border: readMode === 'click' ? '2px solid rgba(255,79,216,.70)' : '1px solid rgba(20,20,30,.16)',
+            background: readMode === 'click' ? 'rgba(255,240,251,1)' : '#fff',
+            fontWeight: 1000,
+            cursor: 'pointer',
+          }}
+        >
+          클릭 즉시 열람
+        </button>
+
+        <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 900, color: '#333' }}>
+          {readMode === 'save' ? '✅ 클릭만으로는 미열람 유지' : '✅ 클릭하면 바로 열람'}
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-3">
-        {[
-          ['unread', '미열람'],
-          ['open', '답변중'],
-          ['pending', '진행중'],
-          ['closed', '완료'],
-          ['all', '전체'],
-        ].map(([k, label]) => {
-          const active = tab === k;
-          return (
-            <button
-              key={k}
-              onClick={() => router.push(`/admin/support?tab=${k}`)}
-              className={[
-                'px-6 py-3 rounded-full text-[16px] font-black transition border',
-                active ? 'bg-pink-500 border-pink-200/40' : 'bg-white/15 border-white/25 hover:bg-white/20',
-              ].join(' ')}
+      {err && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: 12,
+            borderRadius: 14,
+            border: '1px solid rgba(255, 80, 120, .28)',
+            background: 'rgba(255, 80, 120, .12)',
+            color: '#7a0f2a',
+            fontWeight: 1000,
+            fontSize: 16,
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          ⚠️ ERROR: {err}
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.15fr', gap: 14 }}>
+        {/* LEFT */}
+        <section
+          style={{
+            background: '#fff',
+            border: '1px solid rgba(20,20,30,.12)',
+            borderRadius: 18,
+            padding: 14,
+            boxShadow: '0 10px 30px rgba(0,0,0,.06)',
+          }}
+        >
+          <div style={{ fontSize: 22, fontWeight: 1000, marginBottom: 10, color: '#111' }}>문의 목록</div>
+
+          {loadingList && <div style={{ fontWeight: 900, fontSize: 16, color: '#111' }}>불러오는 중…</div>}
+
+          {!loadingList && filteredRows.length === 0 && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: 18,
+                borderRadius: 14,
+                border: '1px solid rgba(20,20,30,.12)',
+                background: '#fff',
+                fontSize: 18,
+                fontWeight: 1000,
+                color: '#111',
+                textAlign: 'center',
+              }}
             >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 목록 */}
-        <section className="bg-white/10 rounded-3xl p-6 border border-white/20">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[22px] font-black">
-              문의 목록 <span className="text-pink-200">({list.length})</span>
-            </h2>
-            {loading ? <span className="text-[14px] font-extrabold text-white/75">불러오는 중...</span> : null}
-          </div>
-
-          {err ? (
-            <div className="mt-4 rounded-2xl border border-pink-200/40 bg-pink-500/15 px-4 py-3 text-[15px] font-extrabold text-white">
-              ⚠️ {err}
+              해당 탭에 문의가 없습니다.
             </div>
-          ) : null}
+          )}
 
-          {list.length === 0 && !loading ? (
-            <div className="mt-5 rounded-2xl border border-white/15 bg-white/8 px-4 py-4 text-[17px] font-extrabold text-white/75">
-              표시할 문의가 없습니다.
-            </div>
-          ) : null}
+          {!loadingList && filteredRows.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {filteredRows.map((r) => {
+                const active = r.id === selectedId;
+                const st = safeStatus(r.status);
+                const unread = r.is_read_admin === false;
 
-          <div className="mt-5 space-y-3">
-            {list.map((it) => {
-              const isActive = selected?.id === it.id;
-              const isNew = it.is_read_admin === false;
-
-              return (
-                <button
-                  key={it.id}
-                  onClick={() => openItem(it)}
-                  className={[
-                    'w-full text-left rounded-2xl p-5 border transition',
-                    isActive ? 'bg-white/18 border-white/35' : 'bg-white/10 border-white/18 hover:bg-white/15 hover:border-white/28',
-                  ].join(' ')}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        {isNew ? (
-                          <span className="text-[12px] font-black bg-pink-500 px-2 py-1 rounded-full border border-pink-200/40">
-                            NEW
-                          </span>
-                        ) : null}
-                        <span className={['text-[13px] font-black px-3 py-1 rounded-full border', statusBadgeClass(it.status)].join(' ')}>
-                          {statusLabel(it.status)}
-                        </span>
-                        <span className="text-[13px] font-extrabold text-white/75">{fmtDate(it.created_at)}</span>
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => setSelectedId(r.id)}
+                    style={{
+                      textAlign: 'left',
+                      border: active
+                        ? '2px solid rgba(255,79,216,.65)'
+                        : unread
+                        ? '2px solid rgba(255,160,0,.65)'
+                        : '1px solid rgba(20,20,30,.14)',
+                      borderRadius: 16,
+                      padding: 14,
+                      background: unread ? 'rgba(255,200,90,.10)' : '#fff',
+                      cursor: 'pointer',
+                      boxShadow: active ? '0 10px 24px rgba(0,0,0,.08)' : 'none',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <Badge status={st} />
+                      {unread ? <NewBadge text="미열람" /> : <ReadBadge />}
+                      <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 900, color: '#222' }}>
+                        {fmt(r.created_at)}
                       </div>
-
-                      <div className="mt-2 text-[20px] font-black truncate">{it.title || '(제목 없음)'}</div>
-                      {it.category ? (
-                        <div className="mt-1 text-[13px] font-extrabold text-white/70">카테고리: {it.category}</div>
-                      ) : null}
                     </div>
 
-                    <div className="shrink-0 text-[18px] font-black text-white/90">›</div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-6 rounded-2xl border border-white/15 bg-white/8 px-4 py-3 text-[14px] font-extrabold text-white/75">
-            💡 TIP: 새 문의/상태 변경은 자동 반영됩니다.
-          </div>
+                    <div style={{ fontSize: 19, fontWeight: 1000, color: '#111' }}>{r.title || '제목 없음'}</div>
+                    <div style={{ marginTop: 8, fontSize: 13, fontWeight: 900, color: '#444' }}>
+                      #{r.id.slice(0, 8)}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </section>
 
-        {/* 상세 */}
-        <section className="bg-white/10 rounded-3xl p-6 border border-white/20">
-          {!selected ? (
-            <div className="rounded-2xl border border-white/15 bg-white/8 px-5 py-5 text-[18px] font-extrabold text-white/75">
+        {/* RIGHT */}
+        <section
+          style={{
+            background: '#fff',
+            border: '1px solid rgba(20,20,30,.12)',
+            borderRadius: 18,
+            padding: 14,
+            boxShadow: '0 10px 30px rgba(0,0,0,.06)',
+          }}
+        >
+          <div style={{ fontSize: 22, fontWeight: 1000, marginBottom: 10, color: '#111' }}>문의 상세</div>
+
+          {!selected && (
+            <div style={{ fontSize: 16, fontWeight: 900, color: '#111', opacity: 0.85 }}>
               왼쪽에서 문의를 선택하세요.
             </div>
-          ) : (
-            <>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className={['text-[14px] font-black px-3 py-1 rounded-full border', statusBadgeClass(selected.status)].join(' ')}>
-                      {statusLabel(selected.status)}
-                    </span>
-                    <span className="text-[14px] font-extrabold text-white/75">{fmtDate(selected.created_at)}</span>
-                  </div>
+          )}
 
-                  <h2 className="mt-2 text-[24px] font-black truncate">{selected.title || '(제목 없음)'}</h2>
+          {selected && (
+            <>
+              <div style={{ border: '1px solid rgba(20,20,30,.12)', borderRadius: 16, padding: 14, marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <div style={{ fontSize: 20, fontWeight: 1000, color: '#111' }}>
+                    {selected.title || '제목 없음'}
+                  </div>
+                  <div style={{ marginLeft: 'auto' }}>
+                    <Badge status={safeStatus(selected.status)} />
+                  </div>
                 </div>
 
-                <button
-                  onClick={() => {
-                    setSelected(null);
-                    setMessages([]);
-                    setReply('');
-                    setFallbackBody('');
+                <div style={{ fontSize: 14, fontWeight: 900, color: '#222', marginBottom: 10 }}>
+                  작성일: {fmt(selected.created_at)}
+                </div>
+
+                <div
+                  style={{
+                    padding: 12,
+                    borderRadius: 14,
+                    background: '#f7f7ff',
+                    border: '1px solid rgba(20,20,30,.10)',
+                    fontSize: 16,
+                    fontWeight: 900,
+                    color: '#111',
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: 1.55,
                   }}
-                  className="rounded-full border border-white/25 bg-white/10 px-4 py-2 text-[14px] font-extrabold text-white hover:bg-white/15"
                 >
-                  닫기
-                </button>
+                  {selected.body?.trim() ? selected.body : '문의 내용이 없습니다.'}
+                </div>
               </div>
 
-              <div className="mt-4 rounded-2xl border border-white/15 bg-white/8 px-5 py-4 text-[17px] font-semibold leading-relaxed text-white/90">
-                {displayBody ? displayBody : <span className="text-white/60">문의 내용이 없습니다.</span>}
-              </div>
+              <div style={{ fontSize: 18, fontWeight: 1000, marginBottom: 8, color: '#111' }}>대화</div>
 
-              <div className="mt-5 rounded-2xl border border-white/15 bg-white/8 p-4">
-                <div className="text-[16px] font-black text-white/90">대화</div>
+              <div
+                style={{
+                  border: '1px solid rgba(20,20,30,.12)',
+                  borderRadius: 16,
+                  padding: 12,
+                  height: 260,
+                  overflow: 'auto',
+                  background: 'linear-gradient(180deg, rgba(255,255,255,1), rgba(250,249,255,1))',
+                }}
+              >
+                {loadingDetail && <div style={{ fontWeight: 900, color: '#111' }}>불러오는 중…</div>}
+                {!loadingDetail && msgs.length === 0 && (
+                  <div style={{ fontWeight: 900, color: '#111', opacity: 0.8 }}>대화가 없습니다.</div>
+                )}
 
-                {messages.length === 0 ? (
-                  <div className="mt-3 rounded-xl border border-white/12 bg-white/8 px-4 py-3 text-[15px] font-extrabold text-white/70">
-                    메시지가 없습니다.
-                  </div>
-                ) : (
-                  <div className="mt-3 max-h-[340px] overflow-auto space-y-3 pr-1">
-                    {messages.map((m) => (
+                {!loadingDetail &&
+                  msgs.map((m) => {
+                    const mine = m.sender === 'admin';
+                    return (
                       <div
                         key={m.id}
-                        className={[
-                          'rounded-2xl border p-4',
-                          m.sender === 'admin' ? 'border-pink-200/35 bg-pink-500/15' : 'border-white/12 bg-white/10',
-                        ].join(' ')}
+                        style={{
+                          display: 'flex',
+                          justifyContent: mine ? 'flex-end' : 'flex-start',
+                          marginBottom: 10,
+                        }}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="text-[14px] font-black text-white/85">{m.sender === 'admin' ? '관리자' : '고객'}</div>
-                          <div className="text-[13px] font-extrabold text-white/60">{fmtDate(m.created_at)}</div>
-                        </div>
-                        <div className="mt-2 whitespace-pre-wrap text-[17px] font-semibold leading-relaxed text-white/92">
-                          {m.message}
+                        <div
+                          style={{
+                            maxWidth: '85%',
+                            padding: 12,
+                            borderRadius: 16,
+                            border: '1px solid rgba(20,20,30,.12)',
+                            background: mine ? 'rgba(255,240,251,1)' : 'rgba(247,247,255,1)',
+                          }}
+                        >
+                          <div style={{ fontSize: 12, fontWeight: 1000, color: '#222' }}>
+                            {mine ? '관리자' : '사용자'}
+                          </div>
+                          <div
+                            style={{
+                              marginTop: 6,
+                              fontSize: 16,
+                              fontWeight: 900,
+                              color: '#111',
+                              whiteSpace: 'pre-wrap',
+                              lineHeight: 1.55,
+                            }}
+                          >
+                            {m.message}
+                          </div>
+                          <div style={{ marginTop: 8, fontSize: 12, fontWeight: 900, color: '#333', textAlign: 'right' }}>
+                            {fmt(m.created_at)}
+                          </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    );
+                  })}
               </div>
 
-              <div className="mt-5 grid grid-cols-1 gap-3">
-                <div className="rounded-2xl border border-white/15 bg-white/8 p-4">
-                  <div className="text-[16px] font-black text-white/90">상태 선택 (전송 시 적용)</div>
-
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    {(['open', 'pending', 'closed'] as SupportStatus[]).map((s) => {
-                      const active = nextStatus === s;
-                      return (
-                        <button
-                          key={s}
-                          onClick={() => setNextStatus(s)}
-                          className={[
-                            'rounded-xl border px-3 py-3 text-[15px] font-black transition',
-                            active
-                              ? (s === 'open'
-                                  ? 'border-pink-200/45 bg-pink-500/25 text-pink-100'
-                                  : s === 'pending'
-                                  ? 'border-sky-200/45 bg-sky-500/20 text-sky-100'
-                                  : 'border-emerald-200/40 bg-emerald-500/15 text-emerald-100')
-                              : 'border-white/18 bg-white/10 text-white/80 hover:bg-white/14',
-                          ].join(' ')}
-                        >
-                          {statusLabel(s)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <textarea
-                  value={reply}
-                  onChange={(e) => setReply(e.target.value)}
-                  placeholder="관리자 답변을 입력하세요"
-                  className="w-full h-32 rounded-2xl p-5 text-black text-[17px] font-semibold"
-                />
-
-                <button
-                  onClick={sendReply}
-                  disabled={saving || !reply.trim()}
-                  className={[
-                    'w-full py-4 rounded-2xl text-[19px] font-black transition border',
-                    saving || !reply.trim()
-                      ? 'bg-white/10 border-white/15 text-white/60'
-                      : 'bg-pink-500 hover:bg-pink-600 border-pink-200/40 text-white',
-                  ].join(' ')}
-                >
-                  {saving ? '전송 중...' : '답변 전송'}
-                </button>
+              <div style={{ marginTop: 12, fontSize: 16, fontWeight: 1000, color: '#111' }}>
+                상태 선택 (저장/전송 시 적용)
               </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                <StatusBtn active={nextStatus === 'open'} onClick={() => setNextStatus('open')} label="답변중" />
+                <StatusBtn active={nextStatus === 'pending'} onClick={() => setNextStatus('pending')} label="진행중" />
+                <StatusBtn active={nextStatus === 'closed'} onClick={() => setNextStatus('closed')} label="완료" />
+              </div>
+
+              <button
+                onClick={applyStatusOnly}
+                disabled={sending || !selectedId}
+                style={{
+                  marginTop: 10,
+                  width: '100%',
+                  padding: '12px 14px',
+                  borderRadius: 14,
+                  border: '1px solid rgba(20,20,30,.16)',
+                  fontSize: 18,
+                  fontWeight: 1000,
+                  cursor: sending || !selectedId ? 'not-allowed' : 'pointer',
+                  background: 'linear-gradient(135deg, rgba(73,183,255,.22), rgba(157,255,106,.12))',
+                  color: '#111',
+                  opacity: sending || !selectedId ? 0.55 : 1,
+                }}
+              >
+                {sending ? '저장 중…' : '상태만 저장'}
+              </button>
+
+              <textarea
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                placeholder="관리자 답변을 입력하세요"
+                style={{
+                  marginTop: 10,
+                  width: '100%',
+                  minHeight: 120,
+                  borderRadius: 16,
+                  border: '1px solid rgba(20,20,30,.16)',
+                  padding: 12,
+                  fontSize: 16,
+                  fontWeight: 900,
+                  color: '#111',
+                  outline: 'none',
+                  resize: 'vertical',
+                  background: '#fff',
+                }}
+              />
+
+              <button
+                onClick={sendReply}
+                disabled={sending || !reply.trim()}
+                style={{
+                  marginTop: 10,
+                  width: '100%',
+                  padding: '12px 14px',
+                  borderRadius: 16,
+                  border: '1px solid rgba(20,20,30,.16)',
+                  fontSize: 18,
+                  fontWeight: 1000,
+                  cursor: sending || !reply.trim() ? 'not-allowed' : 'pointer',
+                  background: 'linear-gradient(135deg, rgba(255,79,216,.34), rgba(185,130,255,.16))',
+                  color: '#111',
+                  opacity: sending || !reply.trim() ? 0.55 : 1,
+                }}
+              >
+                {sending ? '전송 중…' : '답변 전송'}
+              </button>
             </>
           )}
         </section>
       </div>
-    </main>
+    </div>
+  );
+}
+
+function ChipButton({
+  label,
+  tone,
+  active,
+  onClick,
+}: {
+  label: string;
+  tone: 'warn' | 'pink' | 'sky' | 'mint' | 'white';
+  active: boolean;
+  onClick: () => void;
+}) {
+  const bg =
+    tone === 'warn'
+      ? 'linear-gradient(135deg, rgba(255,200,90,.65), rgba(255,120,0,.18))'
+      : tone === 'pink'
+      ? 'linear-gradient(135deg, rgba(255,79,216,.38), rgba(255,155,232,.16))'
+      : tone === 'sky'
+      ? 'linear-gradient(135deg, rgba(73,183,255,.30), rgba(143,215,255,.16))'
+      : tone === 'mint'
+      ? 'linear-gradient(135deg, rgba(157,255,106,.24), rgba(199,255,173,.12))'
+      : 'rgba(255,255,255,.95)';
+
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '10px 14px',
+        borderRadius: 999,
+        border: active ? '2px solid rgba(255,79,216,.70)' : '1px solid rgba(20,20,30,.16)',
+        background: bg,
+        fontWeight: 1000,
+        color: '#111',
+        fontSize: 15,
+        cursor: 'pointer',
+        boxShadow: active ? '0 10px 22px rgba(0,0,0,.10)' : 'none',
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function Badge({ status }: { status: SupportStatus }) {
+  const bg = status === 'closed' ? '#16a34a' : status === 'pending' ? '#2563eb' : '#f59e0b';
+  return (
+    <span
+      style={{
+        padding: '6px 12px',
+        borderRadius: 999,
+        background: bg,
+        color: '#fff',
+        fontWeight: 1000,
+        fontSize: 13,
+      }}
+    >
+      {statusLabel(status)}
+    </span>
+  );
+}
+
+function NewBadge({ text }: { text: string }) {
+  return (
+    <span
+      style={{
+        padding: '6px 10px',
+        borderRadius: 999,
+        background: 'linear-gradient(135deg, rgba(255,200,90,.75), rgba(255,120,0,.18))',
+        border: '1px solid rgba(255,200,90,.30)',
+        fontWeight: 1000,
+        fontSize: 12,
+        color: '#111',
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
+function ReadBadge() {
+  return (
+    <span
+      style={{
+        padding: '6px 10px',
+        borderRadius: 999,
+        background: 'rgba(60,60,80,.10)',
+        border: '1px solid rgba(60,60,80,.14)',
+        fontWeight: 1000,
+        fontSize: 12,
+        color: '#111',
+      }}
+    >
+      열람
+    </span>
+  );
+}
+
+function StatusBtn({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '10px 14px',
+        borderRadius: 999,
+        border: active ? '2px solid rgba(255,79,216,.70)' : '1px solid rgba(20,20,30,.16)',
+        background: active ? 'rgba(255,240,251,1)' : '#fff',
+        fontWeight: 1000,
+        color: '#111',
+        cursor: 'pointer',
+      }}
+    >
+      {label}
+    </button>
   );
 }

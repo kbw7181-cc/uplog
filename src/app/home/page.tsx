@@ -6,6 +6,15 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient'; // ✅ 경로 통일
 import UpzzuHeaderCoach from '../components/UpzzuHeaderCoach';
 import AdminHeaderUnread from '../components/AdminHeaderUnread';
+import NicknameWithBadge from '../components/NicknameWithBadge';
+
+
+
+
+
+
+
+
 
 // 마스코트 감성 슬라이드 문구
 const EMO_QUOTES: string[] = [
@@ -630,13 +639,24 @@ export default function HomePage() {
                   <div className="profile-avatar">
                     {profileImage ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={profileImage} alt="프로필" />
+                      <img
+  src={profileImage}
+  className="avatar"
+/>
+
                     ) : (
                       avatarInitial
                     )}
                   </div>
                   <div>
-                    <div className="profile-name">{nickname}</div>
+                 <NicknameWithBadge
+  nickname={name ?? ''} // 대표님이 가입때 만든 닉네임 변수
+  motto="다음달엔 영업왕"
+/>
+
+
+
+
                     <AdminHeaderUnread />
 
                     {email && <div className="profile-email">{email}</div>}
@@ -1023,6 +1043,7 @@ export default function HomePage() {
                     selectedFriend.name[0]
                   )}
                 </div>
+              
 
                 <div className="friend-modal-title">
                   <div className="friend-modal-name-row">
@@ -1098,6 +1119,18 @@ const styles = `
   --uplog-accent-pink: #f472b6;
   --uplog-accent-purple: #a855f7;
 }
+<img
+  src={profileImage}
+  alt="프로필"
+  style={{
+    width: 96,
+    height: 96,
+    borderRadius: 26,
+    objectFit: 'cover',
+    boxShadow: '0 6px 18px rgba(180, 76, 255, 0.35)',
+  }}
+/>
+
 
 :global(html),
 :global(body) {
