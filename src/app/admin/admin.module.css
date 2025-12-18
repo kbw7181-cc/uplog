@@ -87,3 +87,33 @@
   background: rgba(176,132,255,0.14);
   border: 1px solid rgba(176,132,255,0.22);
 }
+/* ✅ ADMIN 공통 가독성 업그레이드 */
+.adminPage{
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 28px 18px 70px;
+  font-size: 18px;         /* ✅ 전체 글씨 크게 */
+  line-height: 1.45;
+  color: #2a1236;
+}
+
+.adminCard{
+  border-radius: 22px;      /* ✅ 라운드 크게 */
+  background: rgba(255,255,255,0.95);
+  border: 2px solid rgba(167, 139, 250, 0.55);  /* ✅ 보라 테두리 */
+  box-shadow: 0 16px 30px rgba(0,0,0,0.12);
+  padding: 16px 18px;
+}
+
+.adminH1{
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.4px;
+}
+
+.adminSub{
+  margin-top: 6px;
+  font-size: 16px;
+  font-weight: 800;
+  opacity: 0.9;
+}

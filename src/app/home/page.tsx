@@ -675,7 +675,12 @@ export default function HomePage() {
                           { code: 'attendance_month_mvp', name: '출석 MVP' },
                         ]
                     ).map((b, i) => (
-                      <span key={`${b.code}-${i}`} className="badge-icon" title={b.name}>
+                      <span
+  key={`${b.code}-${i}`}
+  className={`badge-icon badge-${(b.code || 'etc').toLowerCase()}`}
+  title={b.name}
+>
+
                         {badgeIcon(b.code)}
                       </span>
                     ))}
@@ -1356,6 +1361,7 @@ const styles = `
   padding: 6px 0 2px;
   flex-wrap: wrap;
 }
+/* ✅ 배지 아이콘: 기본은 ‘불 켜짐’ 베이스 */
 .badge-icon{
   width: 34px;
   height: 34px;
@@ -1364,15 +1370,146 @@ const styles = `
   align-items: center;
   justify-content: center;
   background: #ffffff;
-  border: 1px solid #eadcff;
-  box-shadow: 0 10px 18px rgba(0,0,0,0.08);
+  border: 2px solid rgba(180, 160, 255, 0.55);
   font-size: 16px;
+
+  /* ✅ 은은한 기본 글로우 */
+  box-shadow:
+    0 10px 18px rgba(0,0,0,0.08),
+    0 0 0 2px rgba(255,255,255,0.55),
+    0 0 18px rgba(168, 85, 247, 0.28);
+
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
-.profile-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+/* ✅ 살짝 “숨쉬는 불빛” */
+.badge-icon{
+  animation: badgeGlow 2.8s ease-in-out infinite;
+}
+@keyframes badgeGlow{
+  0%   { filter: brightness(1); }
+  50%  { filter: brightness(1.10); }
+  100% { filter: brightness(1); }
+}
+
+/* ✅ 호버 시 더 밝게 */
+.badge-icon:hover{
+  transform: translateY(-1px);
+}
+
+/* =========================
+   코드별 네온 테두리/글로우
+   ========================= */
+
+/* 👑 월간 1등: 골드 */
+.badge-monthly_top,
+.badge-weekly_top{
+  border-color: rgba(245, 158, 11, 0.95);
+  box-shadow:
+    0 10px 18px rgba(0,0,0,0.08),
+    0 0 0 2px rgba(255,255,255,0.55),
+    0 0 22px rgba(245, 158, 11, 0.45),
+    0 0 42px rgba(245, 158, 11, 0.20);
+}
+
+/* 🔥 연속/스트릭: 핑크-레드 */
+.badge-streak_month_king,
+.badge-streak_week_king,
+.badge-streak{
+  border-color: rgba(244, 63, 94, 0.95);
+  box-shadow:
+    0 10px 18px rgba(0,0,0,0.08),
+    0 0 0 2px rgba(255,255,255,0.55),
+    0 0 22px rgba(244, 63, 94, 0.40),
+    0 0 42px rgba(244, 63, 94, 0.18);
+}
+
+/* 💖 좋아요/응원: 핫핑크 */
+.badge-most_likes_month,
+.badge-most_likes_week,
+.badge-likes{
+  border-color: rgba(236, 72, 153, 0.95);
+  box-shadow:
+    0 10px 18px rgba(0,0,0,0.08),
+    0 0 0 2px rgba(255,255,255,0.55),
+    0 0 22px rgba(236, 72, 153, 0.42),
+    0 0 42px rgba(236, 72, 153, 0.18);
+}
+
+/* 🏆 MVP(건수): 보라 */
+.badge-mvp_count_month,
+.badge-mvp_count_week,
+.badge-mvp{
+  border-color: rgba(168, 85, 247, 0.95);
+  box-shadow:
+    0 10px 18px rgba(0,0,0,0.08),
+    0 0 0 2px rgba(255,255,255,0.55),
+    0 0 22px rgba(168, 85, 247, 0.42),
+    0 0 42px rgba(168, 85, 247, 0.20);
+}
+
+/* 💎 MVP(금액): 블루-퍼플 */
+.badge-mvp_amount_month,
+.badge-mvp_amount_week,
+.badge-amount{
+  border-color: rgba(59, 130, 246, 0.95);
+  box-shadow:
+    0 10px 18px rgba(0,0,0,0.08),
+    0 0 0 2px rgba(255,255,255,0.55),
+    0 0 22px rgba(59, 130, 246, 0.40),
+    0 0 42px rgba(59, 130, 246, 0.18);
+}
+
+/* 📅 출석: 민트 */
+.badge-attendance_month_mvp,
+.badge-attendance_week_mvp,
+.badge-attendance{
+  border-color: rgba(34, 197, 94, 0.95);
+  box-shadow:
+    0 10px 18px rgba(0,0,0,0.08),
+    0 0 0 2px rgba(255,255,255,0.55),
+    0 0 22px rgba(34, 197, 94, 0.35),
+    0 0 42px rgba(34, 197, 94, 0.16);
+}
+
+/* 📝 게시글: 오렌지 */
+.badge-most_posts_month,
+.badge-most_posts_week,
+.badge-posts{
+  border-color: rgba(249, 115, 22, 0.95);
+  box-shadow:
+    0 10px 18px rgba(0,0,0,0.08),
+    0 0 0 2px rgba(255,255,255,0.55),
+    0 0 22px rgba(249, 115, 22, 0.35),
+    0 0 42px rgba(249, 115, 22, 0.16);
+}
+
+/* 기타 기본 */
+.badge-etc{
+  border-color: rgba(180, 160, 255, 0.65);
+}
+
+
+.profile-meta{
+  display:flex;
+  flex-wrap:wrap;
+  gap: 10px;           /* ✅ 간격 더 벌림 */
+  row-gap: 10px;       /* ✅ 줄바꿈 시 위아래 간격 */
+  margin-top: 8px;     /* ✅ 배지 아이콘과 거리 */
+  font-size: 12px;
+}
+
 .profile-pill { font-size: 12px; padding: 4px 9px; border-radius: 999px; background: #f3efff; color: #352153; }
 
-.profile-stats { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.profile-stats{
+  display:flex;
+  flex-wrap:wrap;
+  gap: 10px;           /* ✅ 새 채팅/피드백/스케줄 간격 */
+  row-gap: 10px;
+  margin-top: 6px;     /* ✅ 메타(pill)와 거리 */
+  font-size: 12px;
+}
+
 .profile-stat-pill {
   font-size: 12px;
   padding: 4px 11px;
