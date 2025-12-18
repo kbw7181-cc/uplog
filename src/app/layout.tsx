@@ -1,18 +1,20 @@
 import type { Metadata } from 'next';
-import type { ReactNode } from 'react';
 import './globals.css';
-import ClientShell from './ClientShell';
 
 export const metadata: Metadata = {
   title: 'UPLOG',
   description: '오늘도 나를 UP 시키다',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="ko">
-      <body className="min-h-screen bg-[#F7F2FF]">
-        <ClientShell>{children}</ClientShell>
+      <body>
+        {children}
       </body>
     </html>
   );

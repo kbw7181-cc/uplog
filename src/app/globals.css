@@ -1,52 +1,34 @@
-/* =====================================================
-   ✅ [UPLOG GLOBAL FIX - SAFE]
-   - 관리자 페이지 배경/카드 스타일을 절대 죽이지 않음
-   - “전체 선택처럼 보이는” 하이라이트만 부드럽게 처리
-   ===================================================== */
+/* ===============================
+   🌸 전체 앱 밝은 배경 강제 적용
+   =============================== */
 
-/* (중복이면 상단에 이미 있어도 OK, 여기서는 안전하게 유지) */
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
-  background: radial-gradient(
-    circle at top left,
-    #6b21a8 0%,
-    #22003a 45%,
-    #0b021b 100%
-  );
-  color: #fdf2ff;
+  min-height: 100%;
+  background: 
+    radial-gradient(1200px 600px at 15% 20%, #ffffff 0%, rgba(255,255,255,0) 60%),
+    radial-gradient(1200px 600px at 80% 25%, #f3e8ff 0%, rgba(255,255,255,0) 60%),
+    linear-gradient(
+      180deg,
+      #f8f4ff 0%,
+      #f5f9ff 50%,
+      #f8f4ff 100%
+    ) !important;
+  color: #2a1236;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, 'Noto Sans KR', 'Apple SD Gothic Neo',
+    'Helvetica Neue', Arial, sans-serif;
 }
 
-/* ✅ 텍스트 선택 색만 부드럽게 */
-::selection {
-  background: rgba(180, 160, 255, 0.25);
+/* 링크 색 튀는 거 방지 */
+a {
   color: inherit;
-}
-*::selection {
-  background: rgba(180, 160, 255, 0.25);
-  color: inherit;
+  text-decoration: none;
 }
 
-/* ✅ UI 컴포넌트(버튼/링크/입력)는 드래그 선택 방지
-   - “전체 선택된 것처럼 보임” 착시를 줄임 */
-button,
-a,
-input,
-textarea,
-select,
-.uplog-tab,
-.uplog-ghost-btn,
-.pill,
-.tab {
-  -webkit-user-select: none;
-  user-select: none;
+/* 버튼 기본 색 안정화 */
+button {
+  font-family: inherit;
 }
-
-/* ✅ 포커스 테두리만 정리(배경 건드리면 절대 안 됨) */
-*:focus {
-  outline: none;
-}
-
-/* ❌ 절대 넣지 말 것:
-   .admin, .admin * { background-color: transparent !important; }
-   이거 넣는 순간 관리자 카드/탭 배경 전부 죽습니다. */

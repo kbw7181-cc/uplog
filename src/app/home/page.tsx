@@ -1,20 +1,12 @@
+// ✅ 파일: src/app/home/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabaseClient'; // ✅ 경로 통일
+import { supabase } from '@/lib/supabaseClient';
 import UpzzuHeaderCoach from '../components/UpzzuHeaderCoach';
 import AdminHeaderUnread from '../components/AdminHeaderUnread';
-import NicknameWithBadge from '../components/NicknameWithBadge';
-
-
-
-
-
-
-
-
 
 // 마스코트 감성 슬라이드 문구
 const EMO_QUOTES: string[] = [
@@ -25,10 +17,7 @@ const EMO_QUOTES: string[] = [
   '오늘 1건의 계약도 내일 10건의 씨앗이 됩니다.',
 ];
 
-type GrowthDay = {
-  date: string; // YYYY-MM-DD
-  contractCount: number; // 하루 계약 건수
-};
+type GrowthDay = { date: string; contractCount: number };
 
 type Friend = {
   id: string;
@@ -48,11 +37,7 @@ type Friend = {
   mood?: string | null;
 };
 
-type WeatherSlot = {
-  time: string;
-  temp: number;
-  desc: string;
-};
+type WeatherSlot = { time: string; temp: number; desc: string };
 
 type ScheduleRow = {
   id: string;
@@ -62,29 +47,13 @@ type ScheduleRow = {
   category?: string | null;
 };
 
-type DaySummary = {
-  date: string;
-  count: number;
-};
+type DaySummary = { date: string; count: number };
 
-type LatestGoals = {
-  day_goal: string | null;
-  week_goal: string | null;
-  month_goal: string | null;
-};
+type LatestGoals = { day_goal: string | null; week_goal: string | null; month_goal: string | null };
 
-type RebuttalSummary = {
-  id: string;
-  category: string | null;
-  content: string | null;
-};
+type RebuttalSummary = { id: string; category: string | null; content: string | null };
 
-type DailyTask = {
-  id: string;
-  content: string;
-  done: boolean;
-  task_date: string;
-};
+type DailyTask = { id: string; content: string; done: boolean; task_date: string };
 
 function formatDate(date: Date): string {
   const y = date.getFullYear();
@@ -115,11 +84,7 @@ function weatherEmoji(desc: string) {
 // 카테고리 메타 정보 (달력 + 리스트 공용)
 // ========================
 type ScheduleCategoryKind = 'work' | 'attendance' | 'etc';
-type ScheduleCategoryMeta = {
-  label: string;
-  badgeClass: string;
-  kind: ScheduleCategoryKind;
-};
+type ScheduleCategoryMeta = { label: string; badgeClass: string; kind: ScheduleCategoryKind };
 
 function getScheduleCategoryMeta(category: string | null | undefined): ScheduleCategoryMeta {
   const c = (category ?? '').toLowerCase();
@@ -224,6 +189,53 @@ export default function HomePage() {
   const todayStr = useMemo(() => formatDate(new Date()), []);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
 
+  // ✅ 배지 패널
+  const [badgeOpen, setBadgeOpen] = useState(false);
+  const [myBadges, setMyBadges] = useState<{ code: string; name: string }[]>([]);
+
+  const badgeIcon = (code: string) => {
+    const c = (code || '').toLowerCase();
+    if (c.includes('top')) return '👑';
+    if (c.includes('streak')) return '🔥';
+    if (c.includes('likes')) return '💖';
+    if (c.includes('mvp')) return '🏆';
+    if (c.includes('amount')) return '💎';
+    if (c.includes('attendance')) return '📅';
+    if (c.includes('posts')) return '📝';
+    return '✨';
+  };
+
+  const loadMyMonthlyBadges = async (uid: string) => {
+    try {
+      const today = formatDate(new Date());
+      const { data, error } = await supabase
+        .from('monthly_badges')
+        .select('badge_code, badge_name, month_start, month_end')
+        .eq('winner_user_id', uid)
+        .lte('month_start', today)
+        .gte('month_end', today);
+
+      if (error) {
+        console.error('monthly_badges error', error);
+        setMyBadges([]);
+        return;
+      }
+
+      const rows = (data ?? []) as any[];
+      setMyBadges(
+        rows
+          .map((r) => ({
+            code: String(r.badge_code ?? ''),
+            name: String(r.badge_name ?? ''),
+          }))
+          .filter((x) => x.code || x.name)
+      );
+    } catch (e) {
+      console.error('loadMyMonthlyBadges fatal', e);
+      setMyBadges([]);
+    }
+  };
+
   // ✅ 하드 로그아웃 (세션 토큰까지 삭제 + /login 강제이동)
   const hardLogout = async () => {
     try {
@@ -321,7 +333,7 @@ export default function HomePage() {
   );
   const newRebuttalCount = useMemo(() => recentRebuttals.length, [recentRebuttals]);
 
-  // ✅ 새 채팅 건수(지금은 테이블 없으니 0 고정, 나중에 메시지/채팅 테이블 붙이면 바꿔주면 됨)
+  // ✅ 새 채팅 건수(테이블 붙이기 전이므로 0)
   const newChatCount = 0;
 
   useEffect(() => {
@@ -365,6 +377,7 @@ export default function HomePage() {
       }
 
       await loadDashboardData(user.id, currentMonth);
+      await loadMyMonthlyBadges(user.id); // ✅ 배지 로딩
       setLoading(false);
     };
 
@@ -604,12 +617,10 @@ export default function HomePage() {
           <div className="home-header-top">
             <div className="home-header-left">
               <div className="home-logo-row">
-                {/* ✅ 로고 이미지: 효과 제거 (대표님 요청) */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/logo.png" alt="UPLOG 로고" className="home-logo" />
 
                 <div className="home-logo-text-wrap">
-                  {/* ✅ 도레미파솔 웨이브: UPLOG 글자만 */}
                   <div className="wave-text" aria-label="UPLOG">
                     {'UPLOG'.split('').map((ch, i) => (
                       <span key={i} style={{ animationDelay: `${i * 0.12}s` }}>
@@ -617,8 +628,6 @@ export default function HomePage() {
                       </span>
                     ))}
                   </div>
-
-                  {/* ✅ 상호/슬로건: 효과 빼고 깔끔하게 */}
                   <div className="home-logo-sub">오늘도 나를 UP시키다</div>
                 </div>
               </div>
@@ -633,73 +642,116 @@ export default function HomePage() {
               </div>
             </div>
 
+            {/* ✅✅✅ 여기만 수정: 닉네임 1개 + 배지 아이콘 + 클릭 패널 */}
             <div className="home-header-profile">
               <div className="profile-box">
-                <div className="profile-main">
-                  <div className="profile-avatar">
-                    {profileImage ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-  src={profileImage}
-  className="avatar"
-/>
+                <button type="button" className="profile-click" onClick={() => setBadgeOpen(true)} aria-label="프로필 열기">
+                  <div className="profile-main">
+                    <div className="profile-avatar">
+                      {profileImage ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={profileImage} alt="프로필" />
+                      ) : (
+                        avatarInitial
+                      )}
+                    </div>
 
-                    ) : (
-                      avatarInitial
-                    )}
+                    <div className="profile-main-text">
+                      <div className="profile-name">{nickname}</div>
+                      <AdminHeaderUnread />
+                      {email && <div className="profile-email">{email}</div>}
+                    </div>
                   </div>
-                  <div>
-                 <NicknameWithBadge
-  nickname={name ?? ''} // 대표님이 가입때 만든 닉네임 변수
-  motto="다음달엔 영업왕"
-/>
 
-
-
-
-                    <AdminHeaderUnread />
-
-                    {email && <div className="profile-email">{email}</div>}
+                  <div className="badge-icons" aria-label="내 배지 아이콘">
+                    {(myBadges.length > 0
+                      ? myBadges.slice(0, 6)
+                      : [
+                          { code: 'monthly_top', name: '월간 1등' },
+                          { code: 'streak_month_king', name: '연속왕' },
+                          { code: 'most_likes_month', name: '좋아요왕' },
+                          { code: 'mvp_count_month', name: '실적건수 MVP' },
+                          { code: 'mvp_amount_month', name: '실적금액 MVP' },
+                          { code: 'attendance_month_mvp', name: '출석 MVP' },
+                        ]
+                    ).map((b, i) => (
+                      <span key={`${b.code}-${i}`} className="badge-icon" title={b.name}>
+                        {badgeIcon(b.code)}
+                      </span>
+                    ))}
                   </div>
-                </div>
 
-                <div className="profile-meta">
-                  <span className="profile-pill">{industry ?? '업종 미설정'}</span>
-                  <span className="profile-pill">{careerCombined}</span>
-                  <span className="profile-pill">{orgCombined}</span>
-                </div>
+                  <div className="profile-meta">
+                    <span className="profile-pill">{industry ?? '업종 미설정'}</span>
+                    <span className="profile-pill">{careerCombined}</span>
+                    <span className="profile-pill">{orgCombined}</span>
+                  </div>
 
-                {/* ✅✅✅ 대표님이 말한 “빼먹은 3개” */}
-                <div className="profile-stats">
-                  <span className="profile-stat-pill">
-                    새 채팅 <strong>{newChatCount}건</strong>
-                  </span>
-                  <span className="profile-stat-pill">
-                    새 피드백 <strong>{newRebuttalCount}건</strong>
-                  </span>
-                  <span className="profile-stat-pill">
-                    오늘 등록 스케줄 <strong>{newScheduleCountToday}건</strong>
-                  </span>
-                </div>
+                  <div className="profile-stats">
+                    <span className="profile-stat-pill">
+                      새 채팅 <strong>{newChatCount}건</strong>
+                    </span>
+                    <span className="profile-stat-pill">
+                      새 피드백 <strong>{newRebuttalCount}건</strong>
+                    </span>
+                    <span className="profile-stat-pill">
+                      오늘 등록 스케줄 <strong>{newScheduleCountToday}건</strong>
+                    </span>
+                  </div>
+                </button>
 
-                {/* ✅ 통일된 버튼 */}
                 <div className="profile-links">
                   <Link href="/profile" className="action-pill action-pill-primary">
                     프로필 설정
                   </Link>
                   <button type="button" className="action-pill action-pill-danger" onClick={hardLogout}>
                     로그아웃
-                    
                   </button>
-                  
                 </div>
+
+                {badgeOpen && (
+                  <div className="mp-backdrop" onClick={() => setBadgeOpen(false)}>
+                    <div className="mp-panel" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" className="mp-close" onClick={() => setBadgeOpen(false)}>
+                        ✕
+                      </button>
+
+                      <div className="mp-title">내 배지</div>
+                      <div className="mp-sub">이번 달 기준으로 보여드려요.</div>
+
+                      {myBadges.length === 0 ? (
+                        <div className="mp-empty">아직 이번 달 수상 배지가 없어요. 그래도 오늘의 기록이 쌓이면 바로 바뀝니다 ✨</div>
+                      ) : (
+                        <ul className="mp-list">
+                          {myBadges.map((b, idx) => (
+                            <li key={`${b.code}-${idx}`} className="mp-item">
+                              <span className="mp-emoji">{badgeIcon(b.code)}</span>
+                              <span className="mp-name">{b.name || b.code}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
-
-          {/* ✅ 말풍선/마스코트: 헤더 안에 고정 (내려가지 않게) */}
+          {/* ✅✅✅ 말풍선 + 마스코트 (스크린샷처럼: 왼쪽 말풍선 패널 + 오른쪽 업쮸 둥둥) */}
           <div className="home-header-bottom">
-            <UpzzuHeaderCoach mascotSrc="/assets/upzzu1.png" text={EMO_QUOTES[emotionIndex] ?? ''} tag="오늘의 U P 한마디" sizePx={160} />
+            <div className="coach-row">
+              <div className="coach-bubble-panel" aria-live="polite">
+                <div className="coach-pill">오늘의 U P 한마디</div>
+                <div className="coach-text">{EMO_QUOTES[emotionIndex] ?? ''}</div>
+              </div>
+
+              <div className="coach-mascot-wrap" aria-hidden="true">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className="coach-mascot-img" src="/assets/upzzu1.png" alt="" />
+                <span className="coach-sparkle s1">✨</span>
+                <span className="coach-sparkle s2">✨</span>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -794,7 +846,11 @@ export default function HomePage() {
                 <ul className="todo-list">
                   {todayTasks.map((task) => (
                     <li key={task.id} className="todo-item">
-                      <button type="button" className={'todo-check ' + (task.done ? 'todo-check-done' : '')} onClick={() => handleToggleTask(task)}>
+                      <button
+                        type="button"
+                        className={'todo-check ' + (task.done ? 'todo-check-done' : '')}
+                        onClick={() => handleToggleTask(task)}
+                      >
                         {task.done ? '✓' : ''}
                       </button>
                       <span className={'todo-text ' + (task.done ? 'todo-text-done' : '')}>{task.content}</span>
@@ -925,7 +981,9 @@ export default function HomePage() {
 
                     <div className="calendar-day-dots">
                       {mainKind && <div className={`calendar-pill ${mainClass}`}>{mainLabel}</div>}
-                      {daySummary && daySummary.count > 0 && <div className="calendar-pill calendar-pill-count">일정/기록 {daySummary.count}개</div>}
+                      {daySummary && daySummary.count > 0 && (
+                        <div className="calendar-pill calendar-pill-count">일정/기록 {daySummary.count}개</div>
+                      )}
                     </div>
                   </button>
                 );
@@ -1043,7 +1101,6 @@ export default function HomePage() {
                     selectedFriend.name[0]
                   )}
                 </div>
-              
 
                 <div className="friend-modal-title">
                   <div className="friend-modal-name-row">
@@ -1119,18 +1176,6 @@ const styles = `
   --uplog-accent-pink: #f472b6;
   --uplog-accent-purple: #a855f7;
 }
-<img
-  src={profileImage}
-  alt="프로필"
-  style={{
-    width: 96,
-    height: 96,
-    borderRadius: 26,
-    objectFit: 'cover',
-    boxShadow: '0 6px 18px rgba(180, 76, 255, 0.35)',
-  }}
-/>
-
 
 :global(html),
 :global(body) {
@@ -1204,15 +1249,6 @@ const styles = `
 .home-header-left { min-width: 0; }
 .home-header-profile { display: flex; justify-content: flex-end; align-items: flex-start; }
 
-/* ✅ 말풍선/마스코트 내려감 방지 */
-.home-header-bottom {
-  height: 200px;
-  overflow: visible;
-  margin-top: -20px;
-  display: flex;
-  align-items: center;
-}
-
 /* 로고 */
 .home-logo-row {
   display: flex;
@@ -1234,23 +1270,14 @@ const styles = `
 .wave-text { display: inline-flex; gap: 2px; }
 .wave-text span {
   display: inline-block;
-  font-size: 40px;            /* ✅ 크게 */
+  font-size: 40px;
   font-weight: 800;
   letter-spacing: 6px;
   color: #ffffff;
-
   animation: uplogBounce 1.6s ease-in-out infinite;
   transform-origin: center bottom;
 }
 
-@keyframes waveBounce {
-  0% { transform: translateY(0); }
-  25% { transform: translateY(-8px); }
-  50% { transform: translateY(0); }
-  100% { transform: translateY(0); }
-}
-
-/* ✅ 슬로건: 깔끔 */
 .home-logo-sub {
   font-size: 18px;
   font-weight: 800;
@@ -1288,11 +1315,22 @@ const styles = `
   color: #211437;
 }
 
+/* ✅ 프로필 클릭(패널 열기) */
+.profile-click{
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
 .profile-main { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.profile-main-text{ min-width: 0; }
 
 .profile-avatar {
-  width: 52px;
-  height: 52px;
+  width: 72px;
+  height: 72px;
   border-radius: 999px;
   background: radial-gradient(circle at top left, #ff9bd6 0, #8f5bff 60%);
   display: flex;
@@ -1302,12 +1340,34 @@ const styles = `
   font-weight: 800;
   font-size: 22px;
   overflow: hidden;
+  flex-shrink: 0;
   box-shadow: 0 0 14px rgba(193, 126, 255, 0.7);
 }
 .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
 
-.profile-name { font-size: 17px; font-weight: 900; color: #211437; }
+/* ✅ 닉네임 1개만 */
+.profile-name { font-size: 18px; font-weight: 900; color: #211437; line-height: 1.15; }
 .profile-email { font-size: 13px; color: #8b7bd4; }
+
+/* ✅ 배지는 아이콘만 */
+.badge-icons{
+  display: flex;
+  gap: 8px;
+  padding: 6px 0 2px;
+  flex-wrap: wrap;
+}
+.badge-icon{
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border: 1px solid #eadcff;
+  box-shadow: 0 10px 18px rgba(0,0,0,0.08);
+  font-size: 16px;
+}
 
 .profile-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
 .profile-pill { font-size: 12px; padding: 4px 9px; border-radius: 999px; background: #f3efff; color: #352153; }
@@ -1357,6 +1417,64 @@ const styles = `
   border-color: rgba(255,255,255,0.55);
 }
 
+/* ✅ 배지 패널 */
+.mp-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+.mp-panel{
+  width: 380px;
+  max-width: 92vw;
+  border-radius: 26px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.45);
+  padding: 18px 18px 16px;
+  position: relative;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+}
+.mp-close{
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: none;
+  background: #f3f4ff;
+  color: #4b2d7a;
+  cursor: pointer;
+  font-size: 14px;
+}
+.mp-title{ font-size: 18px; font-weight: 900; color: #1b1030; }
+.mp-sub{ margin-top: 4px; font-size: 13px; color: #7a69c4; }
+.mp-empty{
+  margin-top: 12px;
+  border-radius: 16px;
+  padding: 12px 12px;
+  background: #faf7ff;
+  border: 1px dashed rgba(165, 148, 230, 0.9);
+  font-size: 14px;
+  color: #7461be;
+  line-height: 1.5;
+}
+.mp-list{ list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mp-item{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 14px;
+  padding: 10px 10px;
+  background: #faf7ff;
+  border: 1px solid rgba(212, 200, 255, 0.9);
+}
+.mp-emoji{ width: 34px; height: 34px; border-radius: 999px; display:flex; align-items:center; justify-content:center; background:#fff; border:1px solid #eadcff; }
+.mp-name{ font-size: 15px; font-weight: 800; color:#2a1236; }
+
 /* 메뉴 버튼 */
 .home-quick-nav { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: nowrap; }
 .quick-card {
@@ -1398,9 +1516,6 @@ const styles = `
 .weather-time { font-weight: 600; margin-bottom: 2px; }
 .weather-temp { font-size: 20px; font-weight: 800; color: #f35fa6; }
 .weather-desc { font-size: 13px; color: #7a68c4; }
-
-/* 이하(메인/달력/친구/모달/플로팅) 스타일은 대표님 원본 그대로 유지: 
-   대표님이 준 긴 CSS가 이미 안정적이라 여기부터는 변경 없이 그대로 동작합니다. */
 
 .home-main { display: flex; flex-direction: column; gap: 14px; }
 .home-section { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
@@ -1542,22 +1657,104 @@ const styles = `
   cursor: pointer;
   z-index: 30;
 }
+
 @keyframes uplogBounce {
-  0% {
-    transform: translateY(0) scale(1);
-  }
-  20% {
-    transform: translateY(-14px) scale(1.15, 0.9); /* 위로 + 통통 */
-  }
-  40% {
-    transform: translateY(0) scale(0.95, 1.05);    /* 눌렸다가 */
-  }
-  60% {
-    transform: translateY(-6px) scale(1.05, 0.95); /* 한 번 더 튐 */
-  }
-  100% {
-    transform: translateY(0) scale(1);
-  }
+  0% { transform: translateY(0) scale(1); }
+  20% { transform: translateY(-14px) scale(1.15, 0.9); }
+  40% { transform: translateY(0) scale(0.95, 1.05); }
+  60% { transform: translateY(-6px) scale(1.05, 0.95); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+/* ✅✅✅ 스크린샷 말풍선/마스코트 스타일 오버라이드 (여기부터가 핵심) */
+.home-header-bottom{
+  height: 160px;
+  margin-top: 6px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  overflow: visible;
+}
+
+.coach-row{
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.coach-bubble-panel{
+  flex: 1;
+  min-width: 0;
+  max-width: 560px;
+  background: rgba(255,255,255,0.98);
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow: 0 14px 26px rgba(0,0,0,0.18);
+  border: 1px solid rgba(235, 225, 255, 0.95);
+  color: #1b1030;
+}
+
+.coach-pill{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: -0.2px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #ff4fd8, #a855f7);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.12);
+}
+
+.coach-text{
+  margin-top: 10px;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #211437;
+}
+
+.coach-mascot-wrap{
+  position: relative;
+  width: 180px;
+  height: 180px;
+  flex: 0 0 180px;
+  margin-right: 2px;
+  animation: coachFloat 3.6s ease-in-out infinite;
+  filter: drop-shadow(0 18px 22px rgba(0,0,0,0.22));
+}
+
+.coach-mascot-img{
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.coach-sparkle{
+  position: absolute;
+  font-size: 18px;
+  filter: drop-shadow(0 8px 12px rgba(0,0,0,0.22));
+  opacity: 0.95;
+  animation: sparklePop 1.8s ease-in-out infinite;
+}
+.coach-sparkle.s1{ right: 18px; top: 20px; animation-delay: 0.2s; }
+.coach-sparkle.s2{ right: 52px; top: 6px; animation-delay: 0.9s; }
+
+@keyframes sparklePop{
+  0%{ transform: translateY(0) scale(1); opacity: 0.85; }
+  50%{ transform: translateY(-8px) scale(1.12); opacity: 1; }
+  100%{ transform: translateY(0) scale(1); opacity: 0.85; }
+}
+
+@keyframes coachFloat{
+  0%{ transform: translateY(0px); }
+  50%{ transform: translateY(-14px); }
+  100%{ transform: translateY(0px); }
 }
 
 /* 반응형 */
@@ -1570,11 +1767,26 @@ const styles = `
   .home-quick-nav { flex-wrap: wrap; }
   .home-top-summary { grid-template-columns: 1fr; }
   .friend-card { margin-top: 16px; }
+
+  /* ✅ 모바일/태블릿에서 말풍선 아래로, 마스코트는 오른쪽 아래 유지 */
+  .home-header-bottom{ height: auto; }
+  .coach-row{ flex-direction: row; align-items: flex-end; }
+  .coach-bubble-panel{ max-width: none; }
 }
+
 @media (max-width: 640px) {
   .home-inner { max-width: 100%; }
   .quick-card { flex: 1 1 calc(50% - 4px); }
   .weather-slot { min-width: 88px; }
   .floating-support-btn { right: 16px; bottom: 16px; }
+
+  .coach-row{ flex-direction: column; align-items: stretch; }
+  .coach-mascot-wrap{
+    width: 170px;
+    height: 170px;
+    flex: 0 0 auto;
+    align-self: flex-end;
+    margin-top: 6px;
+  }
 }
 `;
