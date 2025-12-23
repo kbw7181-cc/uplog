@@ -7,19 +7,13 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100%;
-  background: 
-    radial-gradient(1200px 600px at 15% 20%, #ffffff 0%, rgba(255,255,255,0) 60%),
-    radial-gradient(1200px 600px at 80% 25%, #f3e8ff 0%, rgba(255,255,255,0) 60%),
-    linear-gradient(
-      180deg,
-      #f8f4ff 0%,
-      #f5f9ff 50%,
-      #f8f4ff 100%
-    ) !important;
+  /* 배경은 각 페이지에서 제어하거나, 여기서 기본값만 설정. !important는 제거하여 페이지별 오버라이딩 허용 */
+  background: #f8f4ff; 
   color: #2a1236;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
     Roboto, 'Noto Sans KR', 'Apple SD Gothic Neo',
     'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* 링크 색 튀는 거 방지 */
@@ -31,4 +25,213 @@ a {
 /* 버튼 기본 색 안정화 */
 button {
   font-family: inherit;
+}
+
+/* ✅ [긴급] 친구/프로필 모달 버튼 클릭 안 먹는 문제 전역 강제 패치 */
+
+/* 버튼 영역은 무조건 최상단 + 클릭 허용 */
+.friend-modal-actions {
+  position: relative !important;
+  z-index: 999999 !important;
+  pointer-events: auto !important;
+}
+
+.friend-modal-actions * {
+  pointer-events: auto !important;
+}
+
+/* 버튼 자체도 무조건 클릭 허용 + 커서 강제 */
+.friend-modal-btn {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+/* 모달 내부의 "장식/오버레이 레이어"가 버튼 클릭을 가로채는 걸 막는다 */
+.friend-modal-panel .bg,
+.friend-modal-panel .overlay,
+.friend-modal-panel .glow,
+.friend-modal-panel .shine,
+.friend-modal-panel .blur,
+.friend-modal-panel .decor {
+  pointer-events: none !important;
+}
+
+/* 혹시 className이 다르게 되어 있어도, 모달 패널 안의 절대/고정 레이어는 클릭을 먹지 못하게 */
+.friend-modal-panel [style*="position: absolute"],
+.friend-modal-panel [style*="position:absolute"],
+.friend-modal-panel [style*="position: fixed"],
+.friend-modal-panel [style*="position:fixed"] {
+  pointer-events: none !important;
+}
+
+/* 단, 버튼/입력/닫기/링크는 다시 클릭 가능하게 복구 */
+.friend-modal-panel button,
+.friend-modal-panel a,
+.friend-modal-panel input,
+.friend-modal-panel textarea,
+.friend-modal-panel select {
+  pointer-events: auto !important;
+}
+/* =========================
+   UPLOG 공통 가독성(큰 글씨) + 코치 말풍선/업쮸
+   ========================= */
+
+/* 기본 폰트 크기 업(전 페이지) */
+:root{
+  --uplog-fg: #1b1030;
+  --uplog-sub: #7a69c4;
+
+  --uplog-title: 18px;
+  --uplog-subtitle: 14px;
+  --uplog-body: 15px;
+  --uplog-body-strong: 16px;
+
+  --uplog-pill: 13px;
+}
+
+body{
+  color: var(--uplog-fg);
+  font-size: var(--uplog-body);
+}
+
+/* 페이지 공통 제목/설명 스타일 (원하면 각 페이지에서 class만 맞춰주면 됨) */
+.uplog-section-title{
+  font-size: var(--uplog-title);
+  font-weight: 900;
+  color: #6b41ff;
+  letter-spacing: -0.2px;
+}
+.uplog-section-sub{
+  font-size: var(--uplog-subtitle);
+  font-weight: 700;
+  color: var(--uplog-sub);
+}
+
+/* =========================
+   코치 말풍선 + 업쮸(둥둥) 공통
+   ========================= */
+.uplog-coach{
+  width: 100%;
+  margin-top: 6px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  overflow: visible;
+}
+
+.uplog-coach-header{
+  min-height: 160px; /* home 헤더처럼 “자리 고정” 원할 때 */
+}
+
+.uplog-coach-row{
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.uplog-coach-bubble{
+  flex: 1;
+  min-width: 0;
+  background: rgba(255,255,255,0.98);
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow: 0 14px 26px rgba(0,0,0,0.18);
+  border: 1px solid rgba(235, 225, 255, 0.95);
+  color: #1b1030;
+}
+
+.uplog-coach-pill{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: var(--uplog-pill);
+  font-weight: 900;
+  letter-spacing: -0.2px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #ff4fd8, #a855f7);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.12);
+}
+
+.uplog-coach-text{
+  margin-top: 10px;
+  font-size: var(--uplog-body-strong);
+  font-weight: 900;
+  line-height: 1.25;
+  color: #211437;
+}
+
+.uplog-coach-mascot{
+  position: relative;
+  width: 180px;
+  height: 180px;
+  flex: 0 0 180px;
+  margin-right: 2px;
+  animation: uplogCoachFloat 3.6s ease-in-out infinite;
+  filter: drop-shadow(0 18px 22px rgba(0,0,0,0.22));
+}
+
+.uplog-coach-mascot-img{
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.uplog-coach-sparkle{
+  position: absolute;
+  font-size: 18px;
+  filter: drop-shadow(0 8px 12px rgba(0,0,0,0.22));
+  opacity: 0.95;
+  animation: uplogSparklePop 1.8s ease-in-out infinite;
+}
+.uplog-coach-sparkle.s1{ right: 18px; top: 20px; animation-delay: 0.2s; }
+.uplog-coach-sparkle.s2{ right: 52px; top: 6px; animation-delay: 0.9s; }
+
+@keyframes uplogSparklePop{
+  0%{ transform: translateY(0) scale(1); opacity: 0.85; }
+  50%{ transform: translateY(-8px) scale(1.12); opacity: 1; }
+  100%{ transform: translateY(0) scale(1); opacity: 0.85; }
+}
+
+@keyframes uplogCoachFloat{
+  0%{ transform: translateY(0px); }
+  50%{ transform: translateY(-14px); }
+  100%{ transform: translateY(0px); }
+}
+
+/* 반응형 */
+@media (max-width: 1024px){
+  :root{
+    --uplog-title: 19px;
+    --uplog-subtitle: 14px;
+    --uplog-body: 16px;
+    --uplog-body-strong: 17px;
+    --uplog-pill: 13px;
+  }
+
+  .uplog-coach-header{ min-height: unset; }
+  .uplog-coach-row{ flex-direction: row; align-items: flex-end; }
+}
+
+@media (max-width: 640px){
+  :root{
+    --uplog-title: 20px;
+    --uplog-subtitle: 15px;
+    --uplog-body: 16px;
+    --uplog-body-strong: 18px;
+    --uplog-pill: 14px;
+  }
+
+  .uplog-coach-row{ flex-direction: column; align-items: stretch; }
+  .uplog-coach-mascot{
+    width: 170px;
+    height: 170px;
+    flex: 0 0 auto;
+    align-self: flex-end;
+    margin-top: 6px;
+  }
 }

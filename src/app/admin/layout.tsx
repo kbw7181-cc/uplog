@@ -7,7 +7,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <AdminGuard>
       <div style={{ position: 'relative', minHeight: '100vh' }}>
-        {/* ✅ 상단 관리자 헤더(미열람 뱃지) */}
         <AdminHeaderUnread />
         {children}
       </div>

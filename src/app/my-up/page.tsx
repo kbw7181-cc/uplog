@@ -1,1583 +1,885 @@
-// src/app/my-up/page.tsx
+// ✅ 파일: src/app/home/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../lib/supabaseClient';
-import UpzzuHeaderCoach from '../components/UpzzuHeaderCoach';
+import ClientShell from '../components/ClientShell';
+import { supabase } from '@/lib/supabaseClient';
 
-// ===== 타입 =====
-type UpLogRow = {
-  id?: string;
+type Me = {
   user_id: string;
-  log_date: string; // YYYY-MM-DD
-  mood: string | null;
-  day_goal: string | null;
-  week_goal: string | null;
-  month_goal: string | null;
-  mind_note: string | null;
-  good_point: string | null;
-  regret_point: string | null;
-};
-
-type DailyTask = {
-  id?: string;
-  user_id: string;
-  task_date: string; // YYYY-MM-DD
-  content: string;
-  done: boolean;
-};
-
-// 스케줄 카테고리 (DB에 저장되는 상세 카테고리)
-type ScheduleCategory =
-  | 'counsel' // 상담
-  | 'visit' // 방문
-  | 'happycall' // 해피콜
-  | 'gift' // 사은품/선물
-  | 'shipping' // 배송
-  | 'meeting' // 회의
-  | 'edu' // 교육
-  | 'event' // 행사/이벤트
-  | 'late' // 지각
-  | 'early' // 조퇴
-  | 'out' // 외출(외근 포함)
-  | 'absent' // 결근
-  | 'closing' // 마감
-  | 'etc'; // 기타;
-
-// 달력에 보여줄 "통합 카테고리"
-type UnifiedScheduleCategory = 'attendance' | 'work' | 'meeting' | 'etc';
-
-type GrowthDay = {
-  date: string; // YYYY-MM-DD
-  count: number; // 그 날짜에 기록/스케줄 개수
-  mainCategory?: UnifiedScheduleCategory | null; // 그날 대표 통합 카테고리
-  mood?: string | null; // 그날 기분 코드
+  nickname: string | null;
+  name: string | null;
+  role: string | null;
+  avatar_url: string | null;
+  career: string | null;
+  company: string | null;
+  team: string | null;
 };
 
 type ScheduleRow = {
   id: string;
+  user_id: string;
+  date: string;
   title: string;
-  schedule_date: string; // YYYY-MM-DD
-  schedule_time: string | null;
-  category: ScheduleCategory;
+  category: string | null;
+  created_at: string | null;
 };
 
-type MoodOption = {
-  code: string;
-  emoji: string;
-  label: string;
+type UpLogRow = {
+  id: string;
+  user_id: string;
+  log_date: string | null;
+  created_at: string | null;
 };
 
-// ===== 상수 =====
-// 기분 이모지 옵션 (힘든날 ~ 열정가득한날)
-const moodOptions: MoodOption[] = [
-  { code: 'hard', emoji: '🥵', label: '힘든 날' },
-  { code: 'sad', emoji: '😢', label: '슬픈 날' },
-  { code: 'happy', emoji: '😊', label: '기쁜 날' },
-  { code: 'cheer', emoji: '💪', label: '힘이 나는 날' },
-  { code: 'bright', emoji: '🤩', label: '행복한 날' },
-  { code: 'thanks', emoji: '🙏', label: '감사한 날' },
-  { code: 'passion', emoji: '🔥', label: '열정 가득한 날' },
+type MonthlyBadgeRow = {
+  badge_code: string | null;
+  badge_name: string | null;
+  winner_user_id: string | null;
+  month_start: string | null;
+  month_end: string | null;
+};
+
+const EMO_QUOTES: string[] = [
+  '대표님, 오늘은 “빈 날을 줄이는 것” 하나만 해도 이깁니다.',
+  '관리의 차이가 성장률의 차이입니다.',
+  '기록은 배신하지 않습니다. 오늘 1줄이면 충분해요.',
+  '거절은 숫자일 뿐, 대표님의 실력은 계속 쌓이고 있어요.',
+  '오늘 1건의 행동이 내일의 10건을 부릅니다.',
 ];
 
-const SCHEDULE_CATEGORY_META: { id: ScheduleCategory; label: string }[] = [
-  { id: 'counsel', label: '상담' },
-  { id: 'visit', label: '방문' },
-  { id: 'happycall', label: '해피콜' },
-  { id: 'gift', label: '사은품' },
-  { id: 'shipping', label: '배송' },
-  { id: 'meeting', label: '회의' },
-  { id: 'edu', label: '교육' },
-  { id: 'event', label: '행사/이벤트' },
-  { id: 'late', label: '지각' },
-  { id: 'early', label: '조퇴' },
-  { id: 'out', label: '외출/외근' },
-  { id: 'absent', label: '결근' },
-  { id: 'closing', label: '마감' },
-  { id: 'etc', label: '기타' },
-];
+function safeDate(v?: string | null) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
 
-const getScheduleCategoryMeta = (id: string | null | undefined) =>
-  SCHEDULE_CATEGORY_META.find((c) => c.id === id);
+function fmtYMD(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
 
-// 상세 카테고리 → 통합 카테고리(근태/업무/회의·교육/기타) 매핑
-const mapScheduleCategoryToUnified = (
-  cat: ScheduleCategory
-): UnifiedScheduleCategory => {
-  switch (cat) {
-    // 근태: 지각 / 조퇴 / 외출(외근) / 결근
-    case 'late':
-    case 'early':
-    case 'out':
-    case 'absent':
-      return 'attendance';
+function fmtKoreanDate(d: Date) {
+  return d.toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+}
 
-    // 업무내용: 상담 / 방문 / 사은품 / 해피콜 / 배송 / 행사 / 마감 등
-    case 'counsel':
-    case 'visit':
-    case 'gift':
-    case 'happycall':
-    case 'shipping':
-    case 'event':
-    case 'closing':
-      return 'work';
+function pickName(me?: Me | null) {
+  if (!me) return '대표님';
+  return me.nickname || me.name || '대표님';
+}
 
-    // 회의·교육
-    case 'meeting':
-    case 'edu':
-      return 'meeting';
+// ✅ avatar_url: http(s)이면 그대로, 아니면 storage publicUrl 변환, 실패하면 로고로 fallback
+function getAvatarSrc(me?: Me | null) {
+  const a = (me?.avatar_url || '').trim();
+  if (a.startsWith('http://') || a.startsWith('https://')) return a;
 
-    // 나머지는 기타
-    default:
-      return 'etc';
+  if (a) {
+    try {
+      const { data } = supabase.storage.from('avatars').getPublicUrl(a);
+      if (data?.publicUrl) return data.publicUrl;
+    } catch {}
   }
-};
-
-// 날짜 포맷
-function formatDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = `${date.getMonth() + 1}`.padStart(2, '0');
-  const d = `${date.getDate()}`.padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return '/assets/images/logo2.png';
 }
 
-function prettyKoreanDate(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('ko-KR', {
-    month: 'long',
-    day: 'numeric',
-    weekday: 'long',
-  });
+function startOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function endOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0);
+}
+function startOfCalendarGrid(d: Date) {
+  const first = startOfMonth(d);
+  const dow = first.getDay();
+  const s = new Date(first);
+  s.setDate(first.getDate() - dow);
+  return s;
+}
+function addDays(d: Date, n: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function sameYMD(a: Date, b: Date) {
+  return fmtYMD(a) === fmtYMD(b);
+}
+function dotColor(cat?: string | null) {
+  const c = (cat || '').toLowerCase();
+  if (c.includes('회의')) return '#6d28d9';
+  if (c.includes('개인')) return '#0ea5e9';
+  if (c.includes('상담')) return '#f97316';
+  if (c.includes('방문')) return '#22c55e';
+  return '#ec4899';
 }
 
-// ===== 컴포넌트 =====
-export default function MyUpPage() {
+async function loadSchedulesAuto(uid: string, monthCursor: Date) {
+  const candidates = ['date', 'day', 'schedule_date', 'ymd'] as const;
+
+  const ms = fmtYMD(startOfMonth(monthCursor));
+  const me = fmtYMD(endOfMonth(monthCursor));
+
+  for (const col of candidates) {
+    const { data, error } = await supabase
+      .from('schedules')
+      .select(`id, user_id, ${col}, title, category, created_at`)
+      .eq('user_id', uid)
+      .gte(col as any, ms as any)
+      .lte(col as any, me as any)
+      .order(col as any, { ascending: true });
+
+    if (!error) {
+      const rows = (data || []) as any[];
+      const mapped: ScheduleRow[] = rows
+        .map((r) => ({
+          id: String(r.id),
+          user_id: String(r.user_id),
+          date: String(r[col] || '').slice(0, 10),
+          title: String(r.title || ''),
+          category: r.category ?? null,
+          created_at: r.created_at ?? null,
+        }))
+        .filter((r) => r.date && r.title);
+
+      return { rows: mapped, usedCol: col, error: null as any };
+    }
+  }
+
+  return { rows: [] as ScheduleRow[], usedCol: null as any, error: 'schedules 테이블 날짜 컬럼을 찾지 못했습니다.' };
+}
+
+export default function HomePage() {
   const router = useRouter();
 
+  const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [nickname, setNickname] = useState<string>('영업인');
 
-  // 선택 날짜
-  const [selectedDate, setSelectedDate] = useState<string>(() =>
-    formatDate(new Date())
-  );
-  const todayStr = useMemo(() => formatDate(new Date()), []);
-
-  // 상단 요약용 (이번 달)
-  const [currentMonth, setCurrentMonth] = useState<Date>(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
-  const [growthDays, setGrowthDays] = useState<GrowthDay[]>([]);
-
-  // 선택 날짜의 U P 기록
-  const [logRow, setLogRow] = useState<UpLogRow | null>(null);
-  // 선택한 날짜에 이미 up_logs 행이 있는지 여부
-  const [hasCurrentLog, setHasCurrentLog] = useState(false);
-
-  // 선택 날짜의 오늘 할 일 리스트
-  const [tasks, setTasks] = useState<DailyTask[]>([]);
-  const [savingTasks, setSavingTasks] = useState(false);
-
-  // 선택 날짜의 스케줄
+  const [monthCursor, setMonthCursor] = useState(() => new Date());
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [scheduleTitle, setScheduleTitle] = useState('');
+  const [scheduleCat, setScheduleCat] = useState<'업무' | '회의' | '개인' | '상담' | '방문'>('업무');
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
-  const [scheduleTimeInput, setScheduleTimeInput] = useState('');
-  const [scheduleTitleInput, setScheduleTitleInput] = useState('');
-  const [scheduleCategoryInput, setScheduleCategoryInput] =
-    useState<ScheduleCategory>('counsel');
-  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [scheduleErr, setScheduleErr] = useState<string | null>(null);
 
-  // ===== 초기화 =====
+  const [monthCounts, setMonthCounts] = useState<{ date: string; count: number }[]>([]);
+  const [upErr, setUpErr] = useState<string | null>(null);
+
+  const [myBadges, setMyBadges] = useState<{ code: string; name: string }[]>([]);
+  const [badgeErr, setBadgeErr] = useState<string | null>(null);
+
+  const today = useMemo(() => new Date(), []);
+  const todayLabel = useMemo(() => fmtKoreanDate(new Date()), []);
+  const selectedYMD = useMemo(() => fmtYMD(selectedDate), [selectedDate]);
+
+  // ✅ 오늘 날짜 기반 “고정 코치 문구”(새로고침해도 같은 날엔 같은 문구)
+  const coachLine = useMemo(() => {
+    const d = new Date();
+    const key = Number(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`);
+    return EMO_QUOTES[key % EMO_QUOTES.length];
+  }, []);
+
+  const gridDays = useMemo(() => {
+    const start = startOfCalendarGrid(monthCursor);
+    return Array.from({ length: 42 }).map((_, i) => addDays(start, i));
+  }, [monthCursor]);
+
+  const monthLabel = useMemo(() => {
+    const y = monthCursor.getFullYear();
+    const m = monthCursor.getMonth() + 1;
+    return `${y}년 ${m}월`;
+  }, [monthCursor]);
+
+  const scheduleCountToday = useMemo(() => {
+    const ymd = fmtYMD(new Date());
+    return schedules.filter((s) => s.date === ymd).length;
+  }, [schedules]);
+
+  const schedulesOfSelected = useMemo(() => schedules.filter((s) => s.date === selectedYMD), [schedules, selectedYMD]);
+
+  const dotsByDay = useMemo(() => {
+    const map: Record<string, ScheduleRow[]> = {};
+    for (const s of schedules) {
+      if (!map[s.date]) map[s.date] = [];
+      map[s.date].push(s);
+    }
+    return map;
+  }, [schedules]);
+
+  const maxMonth = useMemo(() => Math.max(1, ...monthCounts.map((x) => x.count)), [monthCounts]);
+
   useEffect(() => {
-    const init = async () => {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
+    let alive = true;
 
-      if (error || !user) {
+    async function boot() {
+      setLoading(true);
+      setScheduleErr(null);
+      setUpErr(null);
+      setBadgeErr(null);
+
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (!alive) return;
+
+      if (userErr || !userData?.user) {
         router.replace('/login');
         return;
       }
 
-      setUserId(user.id);
+      const uid = userData.user.id;
 
-      // ✅ 프로필에서 닉네임(name) 가져오기
-      const { data: profile, error: profileError } = await supabase
+      const { data: p } = await supabase
         .from('profiles')
-        .select('name')
-        .eq('id', user.id)
+        .select('user_id, nickname, name, role, avatar_url, career, company, team')
+        .eq('user_id', uid)
         .maybeSingle();
 
-      if (profileError) {
-        console.error('profile load error', profileError);
-      }
+      if (!alive) return;
 
-      if (profile && profile.name) {
-        setNickname(profile.name);
+      setMe({
+        user_id: uid,
+        nickname: (p as any)?.nickname ?? null,
+        name: (p as any)?.name ?? null,
+        role: (p as any)?.role ?? null,
+        avatar_url: (p as any)?.avatar_url ?? null,
+        career: (p as any)?.career ?? null,
+        company: (p as any)?.company ?? null,
+        team: (p as any)?.team ?? null,
+      });
+
+      const schRes = await loadSchedulesAuto(uid, monthCursor);
+      if (!alive) return;
+
+      if (schRes.error) {
+        setSchedules([]);
+        setScheduleErr(`달력 스케줄 로드 실패: ${schRes.error}`);
       } else {
-        setNickname('영업인');
+        setSchedules(schRes.rows);
+        setScheduleErr(null);
       }
 
-      await Promise.all([
-        loadMonthlyGrowth(user.id, currentMonth),
-        loadDayData(user.id, selectedDate),
-      ]);
+      const ms = fmtYMD(startOfMonth(monthCursor));
+      const me2 = fmtYMD(endOfMonth(monthCursor));
+
+      const { data: ups, error: upE } = await supabase
+        .from('up_logs')
+        .select('id, user_id, log_date, created_at')
+        .eq('user_id', uid)
+        .gte('log_date', ms)
+        .lte('log_date', me2);
+
+      if (!alive) return;
+
+      const daysInMonth = endOfMonth(monthCursor).getDate();
+      const dayKeys = Array.from({ length: daysInMonth }).map((_, i) => {
+        const d = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), i + 1);
+        return fmtYMD(d);
+      });
+
+      if (upE) {
+        setMonthCounts(dayKeys.map((d) => ({ date: d, count: 0 })));
+        setUpErr(`월간 성장 그래프 로드 실패: ${upE.message}`);
+      } else {
+        const rows = (ups || []) as UpLogRow[];
+        const map: Record<string, number> = {};
+        for (const k of dayKeys) map[k] = 0;
+
+        for (const r of rows) {
+          const d0 = r.log_date ? String(r.log_date).slice(0, 10) : r.created_at ? String(r.created_at).slice(0, 10) : '';
+          if (d0 && map[d0] !== undefined) map[d0] += 1;
+        }
+
+        setMonthCounts(dayKeys.map((k) => ({ date: k, count: map[k] ?? 0 })));
+        setUpErr(null);
+      }
+
+      const { data: mb, error: mbErr } = await supabase
+        .from('monthly_badges')
+        .select('badge_code, badge_name, winner_user_id, month_start, month_end')
+        .eq('winner_user_id', uid);
+
+      if (!alive) return;
+
+      if (mbErr) {
+        setMyBadges([]);
+        setBadgeErr(`배지 로드 실패: ${mbErr.message}`);
+      } else {
+        const list = ((mb || []) as MonthlyBadgeRow[])
+          .map((r) => ({
+            code: String(r.badge_code || ''),
+            name: String(r.badge_name || r.badge_code || ''),
+          }))
+          .filter((x) => x.code || x.name);
+
+        const seen = new Set<string>();
+        const uniq = list.filter((x) => {
+          const k = `${x.code}|${x.name}`;
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+
+        setMyBadges(uniq);
+        setBadgeErr(null);
+      }
 
       setLoading(false);
+    }
+
+    boot();
+    return () => {
+      alive = false;
+    };
+  }, [router, monthCursor]);
+
+  async function addSchedule() {
+    if (!me?.user_id) return;
+    const title = scheduleTitle.trim();
+    if (!title) return;
+
+    setScheduleErr(null);
+
+    const payload: any = {
+      user_id: me.user_id,
+      date: selectedYMD,
+      title,
+      category: scheduleCat,
     };
 
-    init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]);
-
-  // 월 변경되면 성장/달력 요약 다시
-  useEffect(() => {
-    if (!userId) return;
-    loadMonthlyGrowth(userId, currentMonth);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, currentMonth]);
-
-  // 날짜 선택 바뀌면 데이터 다시
-  useEffect(() => {
-    if (!userId) return;
-    loadDayData(userId, selectedDate);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, selectedDate]);
-
-  // ===== 데이터 로드 =====
-  const loadMonthlyGrowth = async (uid: string, baseMonth: Date) => {
-    const monthStart = new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1);
-    const monthEnd = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 0);
-
-    const from = formatDate(monthStart);
-    const to = formatDate(monthEnd);
-
-    const { data: logRows, error: logError } = await supabase
-      .from('up_logs')
-      .select('log_date, mood')
-      .eq('user_id', uid)
-      .gte('log_date', from)
-      .lte('log_date', to);
-
-    if (logError) console.error('up_logs monthly error', logError);
-
-    const { data: scheduleRows, error: scheduleError } = await supabase
+    const { data, error } = await supabase
       .from('schedules')
-      .select('schedule_date, category')
-      .eq('user_id', uid)
-      .gte('schedule_date', from)
-      .lte('schedule_date', to);
-
-    if (scheduleError) console.error('schedules monthly error', scheduleError);
-
-    type Meta = { count: number; mood: string | null; catCounts: Record<string, number> };
-    const map: Record<string, Meta> = {};
-
-    (logRows ?? []).forEach((row: any) => {
-      const raw = row.log_date;
-      const str = typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
-      if (!map[str]) map[str] = { count: 0, mood: row.mood ?? null, catCounts: {} };
-      map[str].count += 1;
-      if (!map[str].mood && row.mood) map[str].mood = row.mood;
-    });
-
-    (scheduleRows ?? []).forEach((row: any) => {
-      const raw = row.schedule_date;
-      const str = typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
-      if (!map[str]) map[str] = { count: 0, mood: null, catCounts: {} };
-      map[str].count += 1;
-      const cat: string = row.category ?? 'etc';
-      if (!map[str].catCounts[cat]) map[str].catCounts[cat] = 0;
-      map[str].catCounts[cat] += 1;
-    });
-
-    const days: GrowthDay[] = [];
-    for (let d = 1; d <= monthEnd.getDate(); d++) {
-      const cur = new Date(monthStart.getFullYear(), monthStart.getMonth(), d);
-      const str = formatDate(cur);
-      const meta = map[str];
-
-      let mainCategory: UnifiedScheduleCategory | null = null;
-
-      if (meta && Object.keys(meta.catCounts).length > 0) {
-        const groupCounts: Record<UnifiedScheduleCategory, number> = {
-          attendance: 0,
-          work: 0,
-          meeting: 0,
-          etc: 0,
-        };
-
-        Object.entries(meta.catCounts).forEach(([cat, cnt]) => {
-          const unified = mapScheduleCategoryToUnified((cat as ScheduleCategory) || 'etc');
-          groupCounts[unified] += cnt as number;
-        });
-
-        const sorted = Object.entries(groupCounts).sort((a, b) => b[1] - a[1]);
-        if (sorted[0][1] > 0) mainCategory = sorted[0][0] as UnifiedScheduleCategory;
-      }
-
-      days.push({
-        date: str,
-        count: meta?.count ?? 0,
-        mainCategory,
-        mood: meta?.mood ?? null,
-      });
-    }
-    setGrowthDays(days);
-  };
-
-  const loadDayData = async (uid: string, dateStr: string) => {
-    const { data: upRow, error: upError } = await supabase
-      .from('up_logs')
-      .select(
-        'id, user_id, log_date, mood, day_goal, week_goal, month_goal, mind_note, good_point, regret_point'
-      )
-      .eq('user_id', uid)
-      .eq('log_date', dateStr)
+      .insert(payload)
+      .select('id, user_id, date, title, category, created_at')
       .maybeSingle();
 
-    if (upError && upError.code !== 'PGRST116') {
-      console.error('up_logs day error', upError);
-    }
-
-    if (upRow) {
-      setHasCurrentLog(true);
-      setLogRow(upRow as UpLogRow);
-    } else {
-      const { data: prevRows, error: prevError } = await supabase
-        .from('up_logs')
-        .select('mood, day_goal, week_goal, month_goal')
-        .eq('user_id', uid)
-        .lt('log_date', dateStr)
-        .order('log_date', { ascending: false })
-        .limit(1);
-
-      if (prevError && prevError.code !== 'PGRST116') {
-        console.error('up_logs previous error', prevError);
-      }
-
-      if (prevRows && prevRows.length > 0) {
-        const prev = prevRows[0] as {
-          mood: string | null;
-          day_goal: string | null;
-          week_goal: string | null;
-          month_goal: string | null;
-        };
-
-        setLogRow({
-          user_id: uid,
-          log_date: dateStr,
-          mood: prev.mood ?? null,
-          day_goal: prev.day_goal ?? null,
-          week_goal: prev.week_goal ?? null,
-          month_goal: prev.month_goal ?? null,
-          mind_note: null,
-          good_point: null,
-          regret_point: null,
-        });
-      } else {
-        setLogRow({
-          user_id: uid,
-          log_date: dateStr,
-          mood: null,
-          day_goal: null,
-          week_goal: null,
-          month_goal: null,
-          mind_note: null,
-          good_point: null,
-          regret_point: null,
-        });
-      }
-
-      setHasCurrentLog(false);
-    }
-
-    const { data: taskRows, error: taskError } = await supabase
-      .from('daily_tasks')
-      .select('id, user_id, task_date, content, done')
-      .eq('user_id', uid)
-      .eq('task_date', dateStr)
-      .order('id', { ascending: true });
-
-    if (taskError) {
-      console.error('daily_tasks error', taskError);
-      setTasks([]);
-    } else {
-      setTasks(
-        (taskRows ?? []).map((t: any) => ({
-          id: t.id,
-          user_id: t.user_id,
-          task_date: t.task_date,
-          content: t.content ?? '',
-          done: !!t.done,
-        }))
-      );
-    }
-
-    const { data: scheduleRows, error: scheduleError } = await supabase
-      .from('schedules')
-      .select('id, title, schedule_date, schedule_time, category')
-      .eq('user_id', uid)
-      .eq('schedule_date', dateStr)
-      .order('id', { ascending: true });
-
-    if (scheduleError) {
-      console.error('schedules error', scheduleError);
-      setSchedules([]);
-    } else {
-      setSchedules(
-        (scheduleRows ?? []).map((s: any) => ({
-          id: s.id,
-          title: s.title,
-          schedule_date: s.schedule_date,
-          schedule_time: s.schedule_time,
-          category: (s.category ?? 'etc') as ScheduleCategory,
-        }))
-      );
-    }
-  };
-
-  // ===== 이벤트 핸들러 =====
-  const moveMonth = (offset: number) => {
-    setCurrentMonth((prev) => {
-      const next = new Date(prev);
-      next.setMonth(prev.getMonth() + offset);
-      return new Date(next.getFullYear(), next.getMonth(), 1);
-    });
-  };
-
-  const handleChangeMood = (code: string) => {
-    if (!logRow) return;
-    setLogRow({ ...logRow, mood: code });
-  };
-
-  const handleLogChange = (field: keyof UpLogRow, value: string) => {
-    if (!logRow) return;
-    setLogRow({ ...logRow, [field]: value });
-  };
-
-  const handleSaveLog = async () => {
-    if (!logRow || !userId) return;
-
-    const payload = {
-      user_id: userId,
-      log_date: selectedDate,
-      mood: logRow.mood,
-      day_goal: logRow.day_goal,
-      week_goal: logRow.week_goal,
-      month_goal: logRow.month_goal,
-      mind_note: logRow.mind_note,
-      good_point: logRow.good_point,
-      regret_point: logRow.regret_point,
-    };
-
-    let error = null;
-
-    if (hasCurrentLog) {
-      const { error: updateError } = await supabase
-        .from('up_logs')
-        .update(payload)
-        .eq('user_id', userId)
-        .eq('log_date', selectedDate);
-      error = updateError;
-    } else {
-      const { error: insertError } = await supabase.from('up_logs').insert(payload);
-      error = insertError;
-    }
-
     if (error) {
-      console.error('up_logs save error', error);
-      alert('기록 저장 중 오류가 발생했어요.\n잠시 후 다시 시도해 주세요.');
+      setScheduleErr(`스케줄 저장 실패: ${error.message}  (권장: schedules 테이블에 date/title/category 컬럼 추가)`);
       return;
     }
 
-    setHasCurrentLog(true);
-    await loadMonthlyGrowth(userId, currentMonth);
-    await loadDayData(userId, selectedDate);
-
-    alert('선택한 날짜의 기록이 저장되었습니다.');
-  };
-
-  const handleAddTask = async () => {
-    if (!userId) return;
-    setSavingTasks(true);
-    const { data, error } = await supabase
-      .from('daily_tasks')
-      .insert({
-        user_id: userId,
-        task_date: selectedDate,
-        content: '',
-        done: false,
-      })
-      .select('id, user_id, task_date, content, done')
-      .single();
-
-    if (error) {
-      console.error('add task error', error);
-      alert('할 일을 추가하는 중 오류가 발생했어요.');
-      setSavingTasks(false);
-      return;
-    }
-
-    setSavingTasks(false);
-
-    setTasks((prev) => [
-      ...prev,
-      {
-        id: data.id,
-        user_id: data.user_id,
-        task_date: data.task_date,
-        content: data.content ?? '',
-        done: !!data.done,
-      },
-    ]);
-  };
-
-  const handleTaskContentChange = (id: string | undefined, value: string) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, content: value } : t)));
-  };
-
-  const handleTaskBlur = async (task: DailyTask) => {
-    if (!task.id) return;
-    const { error } = await supabase.from('daily_tasks').update({ content: task.content }).eq('id', task.id);
-    if (error) console.error('update task error', error);
-  };
-
-  const toggleTaskDone = async (task: DailyTask) => {
-    if (!task.id) return;
-    const nextDone = !task.done;
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t)));
-    const { error } = await supabase.from('daily_tasks').update({ done: nextDone }).eq('id', task.id);
-    if (error) console.error('toggle task error', error);
-  };
-
-  const handleScheduleSave = async () => {
-    if (!userId) return;
-    if (!scheduleTitleInput.trim()) {
-      alert('일정 내용을 입력해 주세요.');
-      return;
-    }
-
-    setSavingSchedule(true);
-    const { error } = await supabase.from('schedules').insert({
-      user_id: userId,
-      schedule_date: selectedDate,
-      schedule_time: scheduleTimeInput || null,
-      title: scheduleTitleInput.trim(),
-      category: scheduleCategoryInput,
-    });
-    setSavingSchedule(false);
-
-    if (error) {
-      console.error('insert schedule error', error);
-      alert('일정 저장 중 오류가 발생했어요.');
-      return;
-    }
-
-    setScheduleTimeInput('');
-    setScheduleTitleInput('');
-    setScheduleCategoryInput('counsel');
-
-    await loadDayData(userId, selectedDate);
-    await loadMonthlyGrowth(userId, currentMonth);
-  };
-
-  const daysInMonth = useMemo(() => {
-    const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-    const lastDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
-
-    const days: Date[] = [];
-    const startWeekday = firstDay.getDay();
-
-    for (let i = 0; i < startWeekday; i++) {
-      days.push(
-        new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate() - (startWeekday - i))
-      );
-    }
-
-    for (let d = 1; d <= lastDay.getDate(); d++) {
-      days.push(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), d));
-    }
-
-    while (days.length % 7 !== 0) {
-      const last = days[days.length - 1];
-      days.push(new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1));
-    }
-
-    return days;
-  }, [currentMonth]);
-
-  // 월 통계
-  const recordedDaysInMonth = useMemo(() => growthDays.filter((g) => g.count > 0).length, [growthDays]);
-  const totalRecordsInMonth = useMemo(() => growthDays.reduce((acc, g) => acc + g.count, 0), [growthDays]);
-  const completedTasks = tasks.filter((t) => t.done).length;
-
-  const upzzuLine = `이번 달에 기록한 날 ${recordedDaysInMonth}일, 일정·기록 ${totalRecordsInMonth}개가 쌓였어요. 오늘 남긴 한 줄이 다음 달 계약 그래프를 바꿔요.`;
-
-  if (loading || !logRow) {
-    return (
-      <div className="myup-root">
-        <div className="myup-inner">
-          <div className="myup-loading">나의 U P 기록장을 불러오는 중입니다…</div>
-        </div>
-        <style jsx>{styles}</style>
-      </div>
-    );
+    setSchedules((prev) => [...prev, data as any].sort((a, b) => (a.date > b.date ? 1 : -1)));
+    setScheduleTitle('');
   }
 
-  const selectedGrowthMeta = growthDays.find((g) => g.date === selectedDate) ?? null;
-  const selectedGrowth = selectedGrowthMeta?.count ?? 0;
+  const S: any = {
+    page: { maxWidth: 1040, margin: '0 auto', padding: '18px 14px 120px' },
+    top: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, marginBottom: 12 },
+    date: { fontSize: 14, fontWeight: 900, opacity: 0.8, color: '#3b2350' },
+    titleWrap: { display: 'flex', flexDirection: 'column', gap: 2 },
+    name: { fontSize: 24, fontWeight: 950, letterSpacing: -0.5, color: '#2a0f3a' },
+    sub: { fontSize: 13, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' },
+    topBtns: { display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
+    btn: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '10px 14px',
+      borderRadius: 999,
+      fontWeight: 950,
+      fontSize: 14,
+      textDecoration: 'none',
+      border: '1px solid rgba(55,20,80,0.14)',
+      background: 'rgba(255,255,255,0.9)',
+      color: '#2a0f3a',
+      boxShadow: '0 10px 22px rgba(35,10,60,0.08)',
+      whiteSpace: 'nowrap',
+      cursor: 'pointer',
+    },
+    danger: {
+      background: 'linear-gradient(180deg, rgba(255,120,178,0.95), rgba(255,78,147,0.95))',
+      borderColor: 'rgba(255,60,120,0.35)',
+      color: '#fff',
+    },
+    card: {
+      borderRadius: 22,
+      background: 'rgba(255,255,255,0.92)',
+      border: '1px solid rgba(60,30,90,0.12)',
+      boxShadow: '0 18px 40px rgba(40,10,70,0.10)',
+      overflow: 'hidden',
+    },
+    profile: { padding: 14 },
+    row: { display: 'flex', gap: 12, alignItems: 'flex-start' },
+    avatar: {
+      width: 72,
+      height: 72,
+      borderRadius: 18,
+      objectFit: 'cover',
+      flex: '0 0 72px',
+      boxShadow: '0 10px 18px rgba(180,76,255,0.25)',
+      border: '1px solid rgba(160,80,255,0.25)',
+      background: '#fff',
+    },
+    pName: { fontSize: 20, fontWeight: 950, letterSpacing: -0.4, color: '#2a0f3a' },
+    meta: { marginTop: 4, fontSize: 13, fontWeight: 900, color: '#2a0f3a', opacity: 0.78 },
+    tags: { marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 },
+    tag: {
+      padding: '6px 10px',
+      borderRadius: 999,
+      border: '1px solid rgba(90,30,120,0.14)',
+      background: 'rgba(246,240,255,0.7)',
+      color: '#3a1850',
+      fontWeight: 950,
+      fontSize: 12,
+    },
+    pills: { marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 },
+    pill: {
+      padding: '8px 12px',
+      borderRadius: 999,
+      border: '1px solid rgba(255,90,200,0.22)',
+      background: 'linear-gradient(180deg, rgba(255,246,252,0.95), rgba(246,240,255,0.9))',
+      color: '#2a0f3a',
+      fontWeight: 950,
+      fontSize: 13,
+      boxShadow: '0 10px 20px rgba(255,120,190,0.12)',
+      whiteSpace: 'nowrap',
+      cursor: 'pointer',
+      textDecoration: 'none',
+    },
+    sectionTitle: { fontSize: 16, fontWeight: 950, color: '#2a0f3a', letterSpacing: -0.3 },
+    sectionSub: { marginTop: 4, fontSize: 12, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' },
+    warn: {
+      marginTop: 10,
+      padding: '10px 12px',
+      borderRadius: 14,
+      background: 'rgba(255,235,245,0.9)',
+      border: '1px solid rgba(255,80,160,0.18)',
+      color: '#6a1140',
+      fontWeight: 950,
+      fontSize: 13,
+    },
+
+    // ✅ 말풍선 + 마스코트 영역 스타일(검색 키워드용 className도 같이 붙여서 아래 JSX에 둡니다)
+    coachWrap: { marginTop: 12 },
+    coachRow: { display: 'flex', gap: 10, alignItems: 'flex-end' },
+    bubble: {
+      flex: 1,
+      padding: '12px 14px',
+      borderRadius: 18,
+      border: '1px solid rgba(255,90,200,0.20)',
+      background: 'linear-gradient(180deg, rgba(255,246,252,0.95), rgba(246,240,255,0.90))',
+      color: '#2a0f3a',
+      fontWeight: 950,
+      boxShadow: '0 14px 30px rgba(255,120,190,0.14)',
+      lineHeight: 1.35,
+      position: 'relative',
+    },
+    bubbleTail: {
+      position: 'absolute',
+      right: 16,
+      bottom: -7,
+      width: 14,
+      height: 14,
+      transform: 'rotate(45deg)',
+      background: 'rgba(246,240,255,0.90)',
+      borderRight: '1px solid rgba(255,90,200,0.20)',
+      borderBottom: '1px solid rgba(255,90,200,0.20)',
+    },
+    bubbleSub: { marginTop: 6, fontSize: 12, opacity: 0.78, fontWeight: 900 },
+
+    mascot: {
+      width: 96,
+      height: 96,
+      borderRadius: 26,
+      objectFit: 'contain',
+      background: 'transparent',
+      filter: 'drop-shadow(0 14px 22px rgba(180,76,255,0.26))',
+      flex: '0 0 auto',
+      animation: 'floaty 3.8s ease-in-out infinite',
+    },
+
+    chartWrap: { padding: 14 },
+    bars: { marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10 },
+    barCol: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 },
+    bar: {
+      width: '100%',
+      height: 54,
+      borderRadius: 14,
+      border: '1px solid rgba(60,30,90,0.10)',
+      background: 'rgba(255,255,255,0.85)',
+      display: 'flex',
+      alignItems: 'flex-end',
+      overflow: 'hidden',
+      boxShadow: '0 10px 18px rgba(40,10,70,0.06)',
+    },
+    fill: { width: '100%', borderRadius: 14, background: 'linear-gradient(180deg, rgba(109,40,217,0.95), rgba(236,72,153,0.92))' },
+    barLabel: { fontSize: 11, fontWeight: 950, opacity: 0.78, color: '#2a0f3a' },
+    barNum: { fontSize: 11, fontWeight: 950, opacity: 0.85, color: '#2a0f3a' },
+
+    calTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: 14 },
+    calBtn: {
+      padding: '8px 12px',
+      borderRadius: 999,
+      border: '1px solid rgba(90,30,120,0.14)',
+      background: 'rgba(246,240,255,0.7)',
+      color: '#3a1850',
+      fontWeight: 950,
+      fontSize: 13,
+      cursor: 'pointer',
+    },
+    calGridWrap: { padding: '0 14px 14px' },
+    weekHead: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 8 },
+    weekHeadCell: { fontSize: 12, fontWeight: 950, opacity: 0.75, color: '#2a0f3a', textAlign: 'center' },
+    daysGrid: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 },
+    dayCell: {
+      borderRadius: 14,
+      border: '1px solid rgba(60,30,90,0.10)',
+      background: 'rgba(255,255,255,0.85)',
+      padding: '10px 8px',
+      minHeight: 58,
+      cursor: 'pointer',
+      boxShadow: '0 10px 20px rgba(40,10,70,0.06)',
+      userSelect: 'none',
+    },
+    dayCellSelected: {
+      borderColor: 'rgba(255,80,170,0.55)',
+      boxShadow: '0 16px 28px rgba(255,80,170,0.18)',
+      background: 'linear-gradient(180deg, rgba(255,246,252,0.95), rgba(246,240,255,0.9))',
+    },
+    dayCellToday: { borderColor: 'rgba(109,40,217,0.35)' },
+    dayNum: { fontSize: 13, fontWeight: 950, color: '#2a0f3a' },
+    dotRow: { marginTop: 6, display: 'flex', gap: 4, flexWrap: 'wrap' },
+    dot: { width: 6, height: 6, borderRadius: 999 },
+
+    sel: { padding: 14, borderTop: '1px solid rgba(60,30,90,0.08)' },
+    inputRow: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 },
+    input: {
+      flex: '1 1 220px',
+      padding: '10px 12px',
+      borderRadius: 14,
+      border: '1px solid rgba(60,30,90,0.12)',
+      background: 'rgba(255,255,255,0.92)',
+      fontWeight: 900,
+      fontSize: 14,
+      color: '#2a0f3a',
+      outline: 'none',
+    },
+    select: {
+      padding: '10px 12px',
+      borderRadius: 14,
+      border: '1px solid rgba(60,30,90,0.12)',
+      background: 'rgba(255,255,255,0.92)',
+      fontWeight: 950,
+      fontSize: 14,
+      color: '#2a0f3a',
+      outline: 'none',
+    },
+    saveBtn: {
+      padding: '10px 14px',
+      borderRadius: 14,
+      border: '1px solid rgba(255,60,130,0.25)',
+      background: 'linear-gradient(180deg, rgba(255,120,178,0.95), rgba(255,78,147,0.95))',
+      color: '#fff',
+      fontWeight: 950,
+      fontSize: 14,
+      cursor: 'pointer',
+      boxShadow: '0 14px 26px rgba(255,60,130,0.18)',
+    },
+    item: {
+      marginTop: 10,
+      padding: '10px 12px',
+      borderRadius: 14,
+      border: '1px solid rgba(60,30,90,0.10)',
+      background: 'rgba(255,255,255,0.85)',
+      color: '#2a0f3a',
+      fontWeight: 900,
+      fontSize: 13,
+      display: 'flex',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    cat: { opacity: 0.7, fontWeight: 950 },
+
+    bottomCTA: { position: 'fixed', left: 0, right: 0, bottom: 16, padding: '0 14px', zIndex: 30, pointerEvents: 'none' },
+    ctaInner: { maxWidth: 1040, margin: '0 auto', display: 'flex', gap: 10, pointerEvents: 'auto' },
+    ctaBtn: {
+      flex: 1,
+      padding: '14px 14px',
+      borderRadius: 18,
+      border: '1px solid rgba(255,60,130,0.22)',
+      background: 'linear-gradient(180deg, rgba(255,120,178,0.98), rgba(255,78,147,0.96))',
+      color: '#fff',
+      fontWeight: 950,
+      fontSize: 15,
+      cursor: 'pointer',
+      boxShadow: '0 18px 34px rgba(255,60,130,0.22)',
+      textDecoration: 'none',
+      textAlign: 'center',
+      whiteSpace: 'nowrap',
+    },
+    ctaGhost: {
+      flex: '0 0 auto',
+      padding: '14px 14px',
+      borderRadius: 18,
+      border: '1px solid rgba(60,30,90,0.12)',
+      background: 'rgba(255,255,255,0.92)',
+      color: '#2a0f3a',
+      fontWeight: 950,
+      fontSize: 15,
+      cursor: 'pointer',
+      boxShadow: '0 14px 26px rgba(40,10,70,0.10)',
+      textDecoration: 'none',
+      textAlign: 'center',
+      whiteSpace: 'nowrap',
+    },
+  };
+
+  const monthLast28 = useMemo(() => monthCounts.slice(-28), [monthCounts]);
 
   return (
-    <div className="myup-root">
-      <div className="myup-inner">
-        {/* ===== 헤더 ===== */}
-        <header className="myup-header">
-          <div className="myup-header-inner">
-            <div className="myup-header-text">
-              <div className="myup-header-tag">UPLOG · MYUP</div>
-              <h1 className="myup-header-title">나의 U P 관리</h1>
-              
-            </div>
-
-            {/* ✅ 업쮸 코치 (말풍선 + 점프) */}
-            <div className="myup-coach-line">
-              <UpzzuHeaderCoach
-                mascotSrc="/assets/upzzu6.png"
-                text={upzzuLine}
-                tag="오늘의 U P 한마디"
-                sizePx={150}
-              />
-            </div>
+    <ClientShell>
+      <div style={S.page}>
+        <div style={S.top}>
+          <div style={S.titleWrap}>
+            <div style={S.date}>{todayLabel}</div>
+            <div style={S.name}>{pickName(me)} 님</div>
+            <div style={S.sub}>오늘도 나를 UP시키는 기록, UPLOG</div>
           </div>
-        </header>
 
-        {/* ===== 이번 달 요약 카드 ===== */}
-        <section className="myup-month-card">
-          <div className="myup-month-left">
-            <div className="myup-month-title">이번 달 요약</div>
-
+          <div style={S.topBtns}>
+            <Link href="/my-up" style={S.btn}>나의 U P</Link>
+            <button type="button" style={S.btn} onClick={() => router.push('/customers')}>고객관리</button>
+            <Link href="/community" style={S.btn}>커뮤니티</Link>
+            <Link href="/sms-helper" style={S.btn}>문자도우미</Link>
+            <button type="button" style={{ ...S.btn, ...S.danger }} onClick={() => router.push('/logout')}>로그아웃</button>
           </div>
-          <div className="myup-month-meta">
-            <div className="myup-month-row">
-              <div className="myup-month-label">이번 달 기록한 날</div>
-              <div className="myup-month-value">{recordedDaysInMonth}일</div>
-            </div>
-            <div className="myup-month-row">
-              <div className="myup-month-label">이번 달 일정·기록 개수</div>
-              <div className="myup-month-value">{totalRecordsInMonth}개</div>
-            </div>
-            <div className="myup-month-row">
-              <div className="myup-month-label">오늘 할 일 달성</div>
-              <div className="myup-month-value">
-                {completedTasks}/{tasks.length}개
+        </div>
+
+        <div style={{ ...S.card, ...S.profile }}>
+          <div style={S.row}>
+            <img
+              src={getAvatarSrc(me)}
+              onError={(e: any) => { e.currentTarget.src = '/assets/images/logo2.png'; }}
+              alt="avatar"
+              style={S.avatar}
+            />
+
+            <div style={{ flex: 1 }}>
+              <div style={S.pName}>{pickName(me)}</div>
+
+              <div style={S.meta}>
+                {(me?.career || me?.company || me?.team)
+                  ? [me?.career, me?.company, me?.team].filter(Boolean).join(' · ')
+                  : '프로필에서 경력/회사/팀을 설정하면 여기에 표시됩니다.'}
               </div>
-            </div>
-          </div>
-        </section>
 
-        {/* ===== 오늘 할 일 + 기분 ===== */}
-        <section className="myup-todo-section">
-          <div className="todo-header">
-            <h2 className="section-title">오늘 할 일 리스트</h2>
-            <div className="todo-sub">
-              <span>{prettyKoreanDate(selectedDate)}</span>
-              <span className="todo-dot">•</span>
-              <span>선택한 날짜 기준으로 매일 새로 관리돼요.</span>
-            </div>
-          </div>
-
-          <div className="detail-row todo-mood-row">
-            <div className="detail-label">오늘의 기분 이모지</div>
-            <div className="mood-chips">
-              {moodOptions.map((m) => (
-                <button
-                  key={m.code}
-                  type="button"
-                  className={'mood-chip ' + (logRow.mood === m.code ? 'mood-chip-active' : '')}
-                  onClick={() => handleChangeMood(m.code)}
-                >
-                  <span className="mood-emoji">{m.emoji}</span>
-                  <span className="mood-label">{m.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="todo-card">
-            {tasks.length === 0 && (
-              <p className="todo-empty">
-                아직 등록된 할 일이 없어요.
-                <br />
-                아래 <strong>할 일 추가</strong> 버튼을 눌러서 오늘의 체크항목을 만들어 주세요.
-              </p>
-            )}
-
-            {tasks.length > 0 && (
-              <ul className="todo-list">
-                {tasks.map((t) => (
-                  <li key={t.id} className="todo-item">
-                    <button
-                      type="button"
-                      className={'todo-check-btn ' + (t.done ? 'todo-check-btn-on' : '')}
-                      onClick={() => toggleTaskDone(t)}
-                    >
-                      {t.done ? '✓' : ''}
-                    </button>
-                    <input
-                      className={'todo-input ' + (t.done ? 'todo-input-done' : '')}
-                      value={t.content}
-                      placeholder="오늘 꼭 지키고 싶은 일을 적어 보세요."
-                      onChange={(e) => handleTaskContentChange(t.id as string, e.target.value)}
-                      onBlur={() => handleTaskBlur(t)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <button type="button" className="todo-add-btn" onClick={handleAddTask} disabled={savingTasks}>
-              + 할 일 추가
-            </button>
-          </div>
-        </section>
-
-        {/* ===== CALENDAR & PERFORMANCE + 스케줄 입력 ===== */}
-        <section className="myup-calendar-section">
-          <div className="calendar-header-row">
-            <div>
-              <h2 className="section-title">CALENDAR & PERFORMANCE</h2>
-              <p className="calendar-caption">
-                달력에서 기록과 스케줄 카테고리를 색상으로 보고,
-                <strong> 선택한 날짜의 일정</strong>을 아래에서 입력·관리할 수 있어요.
-              </p>
-            </div>
-            <div className="month-nav">
-              <button type="button" className="nav-btn" onClick={() => moveMonth(-1)}>
-                ◀
-              </button>
-              <div className="month-label">
-                {currentMonth.getFullYear()}년 {currentMonth.getMonth() + 1}월
+              <div style={S.tags}>
+                <span style={S.tag}>오늘 일정 {scheduleCountToday}건</span>
+                <span style={S.tag}>이번달 배지 {myBadges.length}개</span>
+                {me?.role === 'admin' ? <span style={{ ...S.tag, background: 'rgba(255,235,245,0.95)' }}>관리자</span> : null}
               </div>
-              <button type="button" className="nav-btn" onClick={() => moveMonth(1)}>
-                ▶
-              </button>
-            </div>
-          </div>
 
-          <div className="calendar-grid">
-            {['일', '월', '화', '수', '목', '금', '토'].map((w) => (
-              <div key={w} className="calendar-weekday">
-                {w}
+              <div style={S.pills}>
+                <button type="button" style={S.pill} onClick={() => router.push('/calendar')}>일정 추가</button>
+                <button type="button" style={S.pill} onClick={() => router.push('/my-up')}>목표관리 전체보기</button>
+                <button type="button" style={S.pill} onClick={() => router.push('/chats')}>U P 채팅방 열기</button>
+                {me?.role === 'admin' ? <Link href="/admin" style={S.pill}>관리자</Link> : null}
               </div>
-            ))}
 
-            {daysInMonth.map((d) => {
-              const dStr = formatDate(d);
-              const isCurrentMonth = d.getMonth() === currentMonth.getMonth();
-              const isToday = dStr === todayStr;
-              const isSelected = dStr === selectedDate;
-
-              const meta = growthDays.find((g) => g.date === dStr) ?? null;
-              const growth = meta?.count ?? 0;
-              const hasRecord = growth > 0;
-
-              const moodEmoji = meta?.mood ? moodOptions.find((m) => m.code === meta.mood)?.emoji : null;
-              const unified = meta?.mainCategory ?? null;
-
-              const classNames = [
-                'calendar-day',
-                !isCurrentMonth ? 'calendar-day-out' : '',
-                isToday ? 'calendar-day-today' : '',
-                isSelected ? 'calendar-day-selected' : '',
-              ]
-                .filter(Boolean)
-                .join(' ');
-
-              return (
-                <button key={dStr} type="button" className={classNames} onClick={() => setSelectedDate(dStr)}>
-                  <div className="calendar-day-number-row">
-                    <div className="calendar-day-number">{d.getDate()}</div>
-                    {moodEmoji && <div className="calendar-day-mood">{moodEmoji}</div>}
+              {/* ✅✅✅ 말풍선 + 마스코트 (대표님이 찾던 블록) */}
+              <div className="home-header-bottom" style={S.coachWrap}>
+                <div style={S.coachRow}>
+                  <div style={S.bubble}>
+                    {coachLine}
+                    <div style={S.bubbleTail} />
+                    <div style={S.bubbleSub}>
+                      (날씨/목표/체크리스트는 DB 스키마 확정 후 한 번에 붙입니다)
+                    </div>
                   </div>
 
-                  {unified && (
-                    <div className={'calendar-day-cat-pill calendar-unified-' + unified}>
-                      {unified === 'attendance'
-                        ? '근태'
-                        : unified === 'work'
-                        ? '업무내용'
-                        : unified === 'meeting'
-                        ? '회의·교육'
-                        : '기타'}
-                    </div>
-                  )}
-
-                  {hasRecord && <div className="calendar-day-dot">일정/기록 {growth}개</div>}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="schedule-card">
-            <div className="schedule-header">
-              <div>
-                <div className="section-title">선택한 날짜의 스케줄</div>
-                <div className="schedule-sub">
-                  {prettyKoreanDate(selectedDate)} ·{' '}
-                  {schedules.length === 0 ? '등록된 일정이 없습니다.' : `${schedules.length}개 일정`}
+                  {/* ✅ mp4 안씀: png만 / 경로는 images로 */}
+                  <img
+                    src="/assets/images/upzzu1.png"
+                    onError={(e: any) => { e.currentTarget.src = '/assets/images/logo2.png'; }}
+                    alt="upzzu"
+                    style={S.mascot}
+                  />
                 </div>
               </div>
-            </div>
 
-            <div className="schedule-input-row">
-              <div className="schedule-time-wrap">
-                <span className="schedule-time-label">시간</span>
-                <input
-                  type="time"
-                  value={scheduleTimeInput}
-                  onChange={(e) => setScheduleTimeInput(e.target.value)}
-                  className="schedule-time-input"
-                />
+              {scheduleErr ? <div style={S.warn}>{scheduleErr}</div> : null}
+              {upErr ? <div style={S.warn}>{upErr}</div> : null}
+              {badgeErr ? <div style={S.warn}>{badgeErr}</div> : null}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ ...S.card, marginTop: 12 }}>
+          <div style={S.chartWrap}>
+            <div style={S.sectionTitle}>이번달 배지 목록</div>
+            <div style={S.sectionSub}>받은 배지는 대표님 자산입니다.</div>
+
+            {myBadges.length === 0 ? (
+              <div style={{ marginTop: 10, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>
+                아직 수상 배지가 없어요. 이번달 첫 기록부터 쌓아봐요.
               </div>
-
-              <select
-                className="schedule-category-select"
-                value={scheduleCategoryInput}
-                onChange={(e) => setScheduleCategoryInput(e.target.value as ScheduleCategory)}
-              >
-                {SCHEDULE_CATEGORY_META.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="text"
-                placeholder="일정 내용 (예: 00고객 상담, 교육, 회의 등)"
-                value={scheduleTitleInput}
-                onChange={(e) => setScheduleTitleInput(e.target.value)}
-                className="schedule-title-input"
-              />
-
-              <button type="button" className="schedule-save-btn" onClick={handleScheduleSave} disabled={savingSchedule}>
-                {savingSchedule ? '저장 중…' : '일정 등록'}
-              </button>
-            </div>
-
-            {schedules.length === 0 ? (
-              <p className="schedule-empty">
-                위에서 시간·카테고리·내용을 입력한 뒤 <strong>일정 등록</strong>을 눌러 주세요.
-              </p>
             ) : (
-              <ul className="schedule-list">
-                {schedules.map((s) => {
-                  const meta = getScheduleCategoryMeta(s.category);
-                  return (
-                    <li key={s.id} className="schedule-item">
-                      <div className="schedule-time">{s.schedule_time ? s.schedule_time.slice(0, 5) : '시간 미정'}</div>
-                      <div className="schedule-title">
-                        {meta && <span className={'schedule-cat-pill schedule-cat-' + meta.id}>{meta.label}</span>}
-                        <span>{s.title}</span>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+              <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {myBadges.map((b) => (
+                  <span key={`${b.code}-${b.name}`} style={S.tag}>
+                    {b.name || b.code}
+                  </span>
+                ))}
+              </div>
             )}
           </div>
-        </section>
+        </div>
 
-        {/* ===== 선택한 날짜의 상세 기록 ===== */}
-        <section className="myup-detail-section">
-          <h2 className="section-title">선택한 날짜의 기록</h2>
-          <p className="detail-caption">
-            기분, 목표, 오늘 잘한 점과 아쉬운 점, 스케줄까지 남겨두면 한 달 뒤에 “성장 로그”가 됩니다.
-          </p>
+        <div style={{ ...S.card, marginTop: 12 }}>
+          <div style={S.chartWrap}>
+            <div style={S.sectionTitle}>이번달 성장 그래프</div>
+            <div style={S.sectionSub}>중요한 건 빈 날을 줄여가는 것입니다.</div>
 
-          <div className="detail-card">
-            <div className="detail-inner">
-              <div className="detail-grid three">
-                <div className="detail-field">
-                  <div className="detail-label">오늘의 U P 목표</div>
-                  <input
-                    className="detail-input"
-                    placeholder="오늘 꼭 달성하고 싶은 한 가지 목표를 적어 보세요."
-                    value={logRow.day_goal ?? ''}
-                    onChange={(e) => handleLogChange('day_goal', e.target.value)}
-                  />
-                </div>
-                <div className="detail-field">
-                  <div className="detail-label">이번 주 목표</div>
-                  <input
-                    className="detail-input"
-                    placeholder="이번 주에 꼭 이루고 싶은 목표를 적어 보세요."
-                    value={logRow.week_goal ?? ''}
-                    onChange={(e) => handleLogChange('week_goal', e.target.value)}
-                  />
-                </div>
-                <div className="detail-field">
-                  <div className="detail-label">이번 달 목표</div>
-                  <input
-                    className="detail-input"
-                    placeholder="이번 달의 최종 목표를 적어 보세요."
-                    value={logRow.month_goal ?? ''}
-                    onChange={(e) => handleLogChange('month_goal', e.target.value)}
-                  />
-                </div>
-              </div>
+            <div style={S.bars}>
+              {monthLast28.map((w) => {
+                const d = safeDate(w.date) || new Date(w.date);
+                const label = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+                const h = Math.max(6, Math.round((54 * w.count) / maxMonth));
 
-              <div className="detail-grid two">
-                <div className="detail-field">
-                  <div className="detail-label">마인드 노트</div>
-                  <textarea
-                    className="detail-textarea"
-                    placeholder="지치지 않고 한결같이 가기 위한 나만의 다짐을 적어 보세요."
-                    rows={3}
-                    value={logRow.mind_note ?? ''}
-                    onChange={(e) => handleLogChange('mind_note', e.target.value)}
-                  />
-                </div>
-                <div className="detail-field">
-                  <div className="detail-label">오늘 잘한 점</div>
-                  <textarea
-                    className="detail-textarea"
-                    placeholder="작은 것이라도 좋으니 칭찬할 점을 적어 주세요."
-                    rows={3}
-                    value={logRow.good_point ?? ''}
-                    onChange={(e) => handleLogChange('good_point', e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="detail-grid one">
-                <div className="detail-field">
-                  <div className="detail-label">오늘 아쉬운 점</div>
-                  <textarea
-                    className="detail-textarea"
-                    placeholder="내일은 이렇게 해보고 싶다는 점을 적어 주세요."
-                    rows={3}
-                    value={logRow.regret_point ?? ''}
-                    onChange={(e) => handleLogChange('regret_point', e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="detail-save-row">
-                <button type="button" className="detail-save-btn" onClick={handleSaveLog}>
-                  오늘 기록 저장하기
-                </button>
-              </div>
+                return (
+                  <div key={w.date} style={S.barCol}>
+                    <div style={S.bar}>
+                      <div style={{ ...S.fill, height: h }} />
+                    </div>
+                    <div style={S.barNum}>{w.count}</div>
+                    <div style={S.barLabel}>{label}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        </section>
-      </div>
+        </div>
 
-      <style jsx>{styles}</style>
-    </div>
+        <div style={{ ...S.card, marginTop: 12 }}>
+          <div style={S.calTop}>
+            <button
+              type="button"
+              style={S.calBtn}
+              onClick={() => {
+                const d = new Date(monthCursor);
+                d.setMonth(d.getMonth() - 1);
+                setMonthCursor(d);
+              }}
+            >
+              ◀
+            </button>
+
+            <div style={{ fontSize: 16, fontWeight: 950, color: '#2a0f3a' }}>{monthLabel}</div>
+
+            <button
+              type="button"
+              style={S.calBtn}
+              onClick={() => {
+                const d = new Date(monthCursor);
+                d.setMonth(d.getMonth() + 1);
+                setMonthCursor(d);
+              }}
+            >
+              ▶
+            </button>
+          </div>
+
+          <div style={S.calGridWrap}>
+            <div style={S.weekHead}>
+              {['일', '월', '화', '수', '목', '금', '토'].map((w) => (
+                <div key={w} style={S.weekHeadCell}>{w}</div>
+              ))}
+            </div>
+
+            <div style={S.daysGrid}>
+              {gridDays.map((d) => {
+                const ymd = fmtYMD(d);
+                const inMonth = d.getMonth() === monthCursor.getMonth();
+                const selected = sameYMD(d, selectedDate);
+                const isToday = sameYMD(d, today);
+
+                const daySchedules = dotsByDay[ymd] || [];
+                const topDots = daySchedules.slice(0, 5);
+
+                const style = {
+                  ...S.dayCell,
+                  ...(selected ? S.dayCellSelected : null),
+                  ...(isToday ? S.dayCellToday : null),
+                  opacity: inMonth ? 1 : 0.35,
+                } as any;
+
+                return (
+                  <div key={ymd} style={style} onClick={() => setSelectedDate(d)} title={ymd}>
+                    <div style={S.dayNum}>{d.getDate()}</div>
+                    <div style={S.dotRow}>
+                      {topDots.map((s, i) => (
+                        <span key={`${s.id}_${i}`} style={{ ...S.dot, background: dotColor(s.category) }} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={S.sel}>
+            <div style={S.sectionTitle}>선택한 날짜: {fmtKoreanDate(selectedDate)}</div>
+            <div style={S.sectionSub}>가벼운 한 줄만 적어도, 기록은 쌓입니다.</div>
+
+            <div style={S.inputRow}>
+              <input
+                style={S.input}
+                value={scheduleTitle}
+                placeholder="스케줄(예: 해피콜 3명, 미팅, 교육...)"
+                onChange={(e) => setScheduleTitle(e.target.value)}
+              />
+
+              <select style={S.select} value={scheduleCat} onChange={(e) => setScheduleCat(e.target.value as any)}>
+                <option value="업무">업무</option>
+                <option value="회의">회의</option>
+                <option value="개인">개인</option>
+                <option value="상담">상담</option>
+                <option value="방문">방문</option>
+              </select>
+
+              <button type="button" style={S.saveBtn} onClick={addSchedule}>저장</button>
+            </div>
+
+            {schedulesOfSelected.length === 0 ? (
+              <div style={{ marginTop: 12, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>
+                이 날짜엔 아직 스케줄이 없어요.
+              </div>
+            ) : (
+              <div>
+                {schedulesOfSelected.map((s) => (
+                  <div key={s.id} style={S.item}>
+                    <div>
+                      <div style={{ fontWeight: 950 }}>{s.title}</div>
+                      <div style={S.cat}>{s.category || '업무'}</div>
+                    </div>
+                    <div style={{ fontWeight: 950, opacity: 0.7 }}>{s.date}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={S.bottomCTA}>
+          <div style={S.ctaInner}>
+            <Link href="/my-up" style={S.ctaBtn}>오늘의 U P 기록하러 가기</Link>
+            <button type="button" style={S.ctaGhost} onClick={() => router.push('/chats')}>채팅</button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div style={{ marginTop: 14, fontWeight: 950, opacity: 0.7, color: '#2a0f3a' }}>불러오는 중...</div>
+        ) : null}
+
+        <style jsx>{`
+          @keyframes floaty {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+            100% { transform: translateY(0px); }
+          }
+        `}</style>
+      </div>
+    </ClientShell>
   );
 }
-
-const styles = `
-.myup-root {
-  min-height: 100vh;
-  padding: 24px;
-  box-sizing: border-box;
-  background: linear-gradient(180deg, #ffe6f7 0%, #f5f0ff 45%, #e8f6ff 100%);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #1b1030;
-}
-
-.myup-inner {
-  max-width: 1160px;
-  margin: 0 auto 80px;
-}
-
-/* 공통 타이틀 */
-.section-title {
-  font-size: 18px;
-  font-weight: 800;
-  color: #6b41ff;
-}
-
-.myup-loading {
-  margin-top: 120px;
-  text-align: center;
-  font-size: 18px;
-}
-
-/* ===== 헤더 ===== */
-
-.myup-header {
-  border-radius: 40px;
-  background: radial-gradient(circle at top left, #ff8ac8 0, #a855f7 40%, #5b21ff 100%);
-  box-shadow: 0 28px 60px rgba(0,0,0,0.45);
-  color: #fff;
-  padding: 48px 52px 56px;
-  margin-bottom: 28px;
-}
-
-.myup-header-inner {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-
-.myup-header-text {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.myup-header-tag {
-  font-size: 14px;
-  letter-spacing: 0.18em;
-  font-weight: 700;
-}
-
-.myup-header-title {
-  font-size: 34px;
-  font-weight: 900;
-}
-
-.myup-header-sub {
-  margin-top: 8px;
-  font-size: 16px;
-  line-height: 1.6;
-  opacity: 0.96;
-}
-
-.myup-header-date {
-  margin-top: 10px;
-  font-size: 15px;
-  font-weight: 800;
-}
-
-/* ✅ 업쮸 코치 라인: 상단 여유로 화살표 안 잘리게 */
-.myup-coach-line{
-  margin-top: 10px;
-  padding-top: 10px;   /* 화살표/점프 여유 */
-  overflow: visible;
-}
-
-/* ===== 이번 달 요약 카드 ===== */
-
-.myup-month-card {
-  margin-top: 14px;
-  margin-bottom: 24px;
-  padding: 18px 22px;
-  border-radius: 26px;
-  background: #ffffff;
-  border: 1px solid #e5ddff;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.12);
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-}
-
-.myup-month-left {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.myup-month-title {
-  font-size: 22px;              /* ✅ 크게 */
-  font-weight: 950;             /* ✅ 더 굵게 */
-  color: #ffffff;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #ff8ac8 0%, #a855f7 55%, #5b21ff 100%);
-  box-shadow: 0 14px 26px rgba(0,0,0,0.18);
-  letter-spacing: 0.02em;
-}
-
-/* 날짜 줄은 삭제했으니 스타일도 필요 없으면 지워도 됨 */
-.myup-month-date { display: none; }
-
-
-.myup-month-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.myup-month-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 40px;
-  font-size: 14px;
-}
-
-.myup-month-label {
-  color: #433155;
-}
-
-.myup-month-value {
-  font-weight: 800;
-  color: #6b41ff;
-}
-
-/* 오늘 할 일 섹션 */
-
-.myup-todo-section {
-  margin-bottom: 24px;
-}
-
-.todo-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 10px;
-}
-
-.todo-sub {
-  font-size: 14px;
-  color: #7e6fd6;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.todo-dot {
-  font-size: 8px;
-}
-
-/* 기분 이모지 행 */
-.todo-mood-row {
-  margin-bottom: 10px;
-}
-
-.todo-card {
-  border-radius: 24px;
-  padding: 18px 20px 16px;
-  background: #ffffff;
-  border: 1px solid #e5ddff;
-  box-shadow: 0 16px 30px rgba(0,0,0,0.12);
-}
-
-.todo-empty {
-  font-size: 14px;
-  color: #7a69c4;
-  line-height: 1.6;
-}
-
-.todo-list {
-  list-style: none;
-  margin: 0;
-  margin-bottom: 12px;
-  padding: 0;
-}
-
-.todo-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 0;
-}
-
-.todo-check-btn {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  border: 2px solid #f153aa;
-  background: #fff;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.todo-check-btn-on {
-  background: linear-gradient(135deg, #f153aa, #a36dff);
-  box-shadow: 0 0 12px rgba(228, 116, 214, 0.7);
-}
-
-.todo-input {
-  flex: 1;
-  border-radius: 999px;
-  border: 1px solid #d6c7ff;
-  padding: 8px 13px;
-  font-size: 15px;
-  background: #faf7ff;
-  color: #241336;
-}
-
-.todo-input::placeholder {
-  color: #aa97e0;
-}
-
-.todo-input-done {
-  text-decoration: line-through;
-  color: #a9a0d8;
-  background: #f2ecff;
-}
-
-.todo-add-btn {
-  border-radius: 999px;
-  border: none;
-  padding: 9px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  background: linear-gradient(135deg, #ff8fba, #a36dff);
-  color: #fff;
-  cursor: pointer;
-  box-shadow: 0 12px 22px rgba(0,0,0,0.25);
-}
-
-/* 캘린더 & 스케줄 */
-
-.myup-calendar-section {
-  margin-bottom: 26px;
-}
-
-.calendar-header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 12px;
-}
-
-.calendar-caption {
-  margin-top: 4px;
-  font-size: 14px;
-  color: #7a69c4;
-}
-
-.month-nav {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.nav-btn {
-  border-radius: 999px;
-  border: none;
-  padding: 6px 10px;
-  font-size: 12px;
-  background: #f0e8ff;
-  color: #5a3cb2;
-  cursor: pointer;
-}
-
-.month-label {
-  font-size: 15px;
-  font-weight: 700;
-  color: #372153;
-}
-
-.calendar-grid {
-  border-radius: 26px;
-  padding: 18px;
-  background: #ffffff;
-  border: 1px solid #e5ddff;
-  box-shadow: 0 18px 32px rgba(0,0,0,0.12);
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.calendar-weekday {
-  text-align: center;
-  font-size: 13px;
-  font-weight: 700;
-  color: #7f6bd5;
-}
-
-.calendar-day {
-  border-radius: 16px;
-  border: none;
-  background: #faf7ff;
-  padding: 9px 8px;
-  min-height: 110px;
-  font-size: 13px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  cursor: pointer;
-  color: #241336;
-}
-
-.calendar-day-out { opacity: 0.35; }
-
-.calendar-day-today { box-shadow: 0 0 0 2px #f153aa; }
-
-.calendar-day-selected {
-  box-shadow: 0 0 0 3px #a45bff;
-  background: linear-gradient(135deg, #f5e6ff, #ffe1f1);
-}
-
-.calendar-day-number-row {
-  display: flex;
-  justify-content: space-between;
-  width: 100%;
-}
-
-.calendar-day-number { font-size: 16px; font-weight: 800; }
-.calendar-day-mood { font-size: 18px; }
-
-.calendar-day-dot {
-  margin-top: 6px;
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: #f153aa;
-  color: #fff;
-  font-weight: 700;
-}
-
-.calendar-day-cat-pill {
-  margin-top: 6px;
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-weight: 600;
-}
-
-.calendar-unified-attendance { background: #fee2e2; color: #b91c1c; }
-.calendar-unified-work { background: #fce7f3; color: #9d174d; }
-.calendar-unified-meeting { background: #e0f2fe; color: #0369a1; }
-.calendar-unified-etc { background: #e2e8f0; color: #475569; }
-
-/* 스케줄 카드 */
-.schedule-card {
-  margin-top: 14px;
-  border-radius: 24px;
-  background: #ffffff;
-  border: 1px solid #e5ddff;
-  box-shadow: 0 16px 30px rgba(0,0,0,0.12);
-  padding: 16px 18px;
-}
-
-.schedule-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 10px;
-}
-
-.schedule-sub { margin-top: 4px; font-size: 14px; color: #7e6fd6; }
-
-.schedule-input-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.schedule-time-wrap { display: flex; align-items: center; gap: 4px; }
-.schedule-time-label { font-size: 13px; color: #4b335f; }
-
-.schedule-time-input {
-  border-radius: 999px;
-  border: 1px solid #c2b1ff;
-  padding: 5px 8px;
-  font-size: 13px;
-  background: #f9f6ff;
-  color: #241336;
-}
-
-.schedule-category-select {
-  border-radius: 999px;
-  border: 1px solid #c2b1ff;
-  padding: 7px 10px;
-  font-size: 13px;
-  background: #faf7ff;
-  color: #241336;
-}
-
-.schedule-title-input {
-  flex: 1;
-  border-radius: 999px;
-  border: 1px solid #c2b1ff;
-  padding: 8px 12px;
-  font-size: 14px;
-  background: #faf7ff;
-  color: #241336;
-}
-
-.schedule-title-input::placeholder { color: #a18ad2; }
-
-.schedule-save-btn {
-  border-radius: 999px;
-  border: none;
-  padding: 8px 14px;
-  font-size: 14px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #ff8fba, #a36dff);
-  color: #fff;
-  cursor: pointer;
-  box-shadow: 0 12px 22px rgba(0,0,0,0.25);
-}
-
-.schedule-empty { font-size: 13px; color: #7a69c4; }
-
-.schedule-list { list-style: none; margin: 6px 0 0; padding: 0; }
-
-.schedule-item {
-  display: grid;
-  grid-template-columns: 70px minmax(0,1fr);
-  gap: 6px;
-  font-size: 13px;
-  padding: 6px 0;
-  border-bottom: 1px dashed #e0d4ff;
-}
-.schedule-item:last-child { border-bottom: none; }
-
-.schedule-time { color: #f153aa; font-weight: 700; }
-.schedule-title { color: #241336; }
-
-.schedule-cat-pill {
-  display: inline-flex;
-  align-items: center;
-  margin-right: 6px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.schedule-cat-counsel { background: #fee2e2; color: #b91c1c; }
-.schedule-cat-visit { background: #dbeafe; color: #1d4ed8; }
-.schedule-cat-happycall { background: #fef3c7; color: #92400e; }
-.schedule-cat-gift { background: #f5e1ff; color: #7e22ce; }
-.schedule-cat-shipping { background: #dcfce7; color: #15803d; }
-.schedule-cat-meeting { background: #e0f2fe; color: #0369a1; }
-.schedule-cat-edu { background: #fef9c3; color: #854d0e; }
-.schedule-cat-event { background: #ffe4e6; color: #be123c; }
-.schedule-cat-late { background: #fee2e2; color: #b91c1c; }
-.schedule-cat-early { background: #e0f2fe; color: #0369a1; }
-.schedule-cat-out { background: #f1f5f9; color: #0f172a; }
-.schedule-cat-absent { background: #fee2e2; color: #7f1d1d; }
-.schedule-cat-closing { background: #ede9fe; color: #4c1d95; }
-.schedule-cat-etc { background: #f1f5f9; color: #475569; }
-
-/* 상세 기록 섹션 */
-.myup-detail-section { margin-top: 26px; margin-bottom: 40px; width: 100%; }
-
-.detail-caption {
-  margin-top: 6px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #7a69c4;
-}
-
-.detail-card {
-  margin-top: 12px;
-  width: 100%;
-  border-radius: 26px;
-  background: #ffffff;
-  border: 1px solid #e5ddff;
-  box-shadow: 0 18px 32px rgba(0,0,0,0.12);
-  padding: 18px 20px 20px;
-  box-sizing: border-box;
-}
-
-.detail-inner { width: 100%; max-width: 100%; margin: 0; padding: 4px 4px 10px; box-sizing: border-box; }
-.detail-row { margin-bottom: 18px; }
-
-.detail-row input,
-.detail-row textarea { width: 100%; box-sizing: border-box; }
-
-.detail-label {
-  font-size: 15px;
-  font-weight: 800;
-  color: #5a3cb2;
-  margin-bottom: 7px;
-}
-
-.mood-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-
-.mood-chip {
-  border-radius: 999px;
-  border: 1px solid #e1d5ff;
-  padding: 7px 12px;
-  background: #faf7ff;
-  font-size: 14px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  color: #2b143f;
-}
-
-.mood-chip-active {
-  background: linear-gradient(135deg, #ff9ed8, #a36dff);
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 10px 20px rgba(0,0,0,0.25);
-}
-
-.mood-emoji { font-size: 18px; }
-.mood-label { font-size: 13px; }
-
-.detail-grid { display: grid; gap: 14px; margin-bottom: 14px; }
-.detail-grid.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
-.detail-grid.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
-.detail-grid.one { grid-template-columns: minmax(0,1fr); }
-
-.detail-input {
-  width: 100%;
-  border-radius: 999px;
-  border: 1px solid #d6c7ff;
-  padding: 9px 14px;
-  font-size: 15px;
-  font-weight: 500;
-  background: #faf7ff;
-  color: #241336;
-  box-sizing: border-box;
-}
-
-.detail-input::placeholder,
-.detail-textarea::placeholder { color: #aa97e0; }
-
-.detail-textarea {
-  width: 100%;
-  border-radius: 18px;
-  border: 1px solid #d6c7ff;
-  padding: 10px 12px;
-  font-size: 15px;
-  font-weight: 500;
-  resize: vertical;
-  background: #faf7ff;
-  color: #241336;
-  line-height: 1.7;
-  box-sizing: border-box;
-}
-
-.detail-save-row { margin-top: 12px; display: flex; justify-content: flex-end; }
-
-.detail-save-btn {
-  border-radius: 999px;
-  border: none;
-  padding: 9px 22px;
-  font-size: 14px;
-  font-weight: 800;
-  background: radial-gradient(circle at top left, #ff9ed5 0, #a35dff 70%);
-  color: #fff;
-  cursor: pointer;
-  box-shadow: 0 16px 30px rgba(0,0,0,0.32);
-}
-
-/* 반응형 */
-@media (max-width: 960px) {
-  .myup-root { padding: 16px; }
-  .myup-header { padding: 32px 24px 36px; }
-  .myup-month-card { flex-direction: column; align-items: flex-start; }
-  .calendar-grid { padding: 12px; }
-  .detail-grid.three,
-  .detail-grid.two { grid-template-columns: 1fr; }
-}
-`;

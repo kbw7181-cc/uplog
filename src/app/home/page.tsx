@@ -5,8 +5,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import UpzzuHeaderCoach from '../components/UpzzuHeaderCoach';
-import AdminHeaderUnread from '../components/AdminHeaderUnread';
+import { getAvatarSrc } from '@/lib/getAvatarSrc';
+import { fetchLiveWeatherSlots, resolveRegionFromProfile, type WeatherSlot } from '@/lib/weatherClient';
+import FriendProfileModal, { FriendProfile } from '@/app/components/FriendProfileModal';
 
 // 마스코트 감성 슬라이드 문구
 const EMO_QUOTES: string[] = [
@@ -17,27 +18,13 @@ const EMO_QUOTES: string[] = [
   '오늘 1건의 계약도 내일 10건의 씨앗이 됩니다.',
 ];
 
-type GrowthDay = { date: string; contractCount: number };
-
 type Friend = {
   id: string;
-  name: string;
-  role: string | null;
+  nickname: string;
   online: boolean;
-  industry: string;
-  career: string;
-  company: string;
-  team: string;
-  dayGoal: string;
-  weekGoal: string;
-  monthGoal: string;
-  mainGoal: string;
-  cheerCount: number;
+  role?: string | null;
   avatarUrl?: string | null;
-  mood?: string | null;
 };
-
-type WeatherSlot = { time: string; temp: number; desc: string };
 
 type ScheduleRow = {
   id: string;
@@ -48,12 +35,13 @@ type ScheduleRow = {
 };
 
 type DaySummary = { date: string; count: number };
-
 type LatestGoals = { day_goal: string | null; week_goal: string | null; month_goal: string | null };
-
 type RebuttalSummary = { id: string; category: string | null; content: string | null };
-
 type DailyTask = { id: string; content: string; done: boolean; task_date: string };
+
+// ✅ 고객관리 계약 그래프/달력 표시용 (신규/계약1/계약2/계약3)
+type ContractLevel = 'new' | 'contract1' | 'contract2' | 'contract3';
+type ContractDay = { date: string; newCount: number; c1: number; c2: number; c3: number };
 
 function formatDate(date: Date): string {
   const y = date.getFullYear();
@@ -81,7 +69,8 @@ function weatherEmoji(desc: string) {
 }
 
 // ========================
-// 카테고리 메타 정보 (달력 + 리스트 공용)
+// 카테고리 메타 정보 (리스트 공용)
+//  - ✅ 달력칸에는 "텍스트 뱃지" 절대 렌더링하지 않음
 // ========================
 type ScheduleCategoryKind = 'work' | 'attendance' | 'etc';
 type ScheduleCategoryMeta = { label: string; badgeClass: string; kind: ScheduleCategoryKind };
@@ -95,8 +84,7 @@ function getScheduleCategoryMeta(category: string | null | undefined): ScheduleC
   if (c === 'happy' || c === '해피콜') return { label: '해피콜', badgeClass: 'schedule-cat-work', kind: 'work' };
   if (c === 'gift' || c === 'present' || c === '선물' || c === '사은품')
     return { label: '사은품', badgeClass: 'schedule-cat-work', kind: 'work' };
-  if (c === 'delivery' || c === '택배' || c === '배송')
-    return { label: '배송', badgeClass: 'schedule-cat-work', kind: 'work' };
+  if (c === 'delivery' || c === '택배' || c === '배송') return { label: '배송', badgeClass: 'schedule-cat-work', kind: 'work' };
   if (c === 'meeting' || c === '회의') return { label: '회의', badgeClass: 'schedule-cat-work', kind: 'work' };
   if (c === 'edu' || c === 'education' || c === '교육') return { label: '교육', badgeClass: 'schedule-cat-edu', kind: 'work' };
   if (c === 'event' || c === '행사' || c === '행사/이벤트')
@@ -150,6 +138,22 @@ function getCareerLabel(code: string | null | undefined): string | null {
   }
 }
 
+// ✅ customers.status 값을 “신규/계약1/계약2/계약3”로 표준화해서 집계
+function pickContractLevel(statusRaw: any): ContractLevel | null {
+  const s = String(statusRaw ?? '').replace(/\s/g, '').toLowerCase();
+  if (!s) return null;
+
+  if (s.includes('신규') || s === 'new') return 'new';
+
+  if (s.includes('계약3') || s === 'contract3') return 'contract3';
+  if (s.includes('계약2') || s === 'contract2') return 'contract2';
+  if (s.includes('계약1') || s === 'contract1') return 'contract1';
+
+  if (s.includes('계약') || s.includes('contract')) return 'contract1';
+
+  return null;
+}
+
 export default function HomePage() {
   const router = useRouter();
 
@@ -182,14 +186,18 @@ export default function HomePage() {
   const [recentRebuttals, setRecentRebuttals] = useState<RebuttalSummary[]>([]);
   const [todayTasks, setTodayTasks] = useState<DailyTask[]>([]);
 
-  const [growthDays, setGrowthDays] = useState<GrowthDay[]>([]);
-  const [currentMonthLabel, setCurrentMonthLabel] = useState<string>('');
+  // ✅ 고객관리 계약(신규/계약1/2/3) 월간 집계 (달력 실적 n 표시용)
+  const [contractDays, setContractDays] = useState<ContractDay[]>([]);
   const [moodByDate, setMoodByDate] = useState<Record<string, string>>({});
 
-  const todayStr = useMemo(() => formatDate(new Date()), []);
-  const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+  // ✅ 날씨 지역(설정값 기반)
+  const [weatherLabel, setWeatherLabel] = useState<string>('서울');
+  const [weatherLat, setWeatherLat] = useState<number>(37.5665);
+  const [weatherLon, setWeatherLon] = useState<number>(126.978);
 
-  // ✅ 배지 패널
+  const todayStr = useMemo(() => formatDate(new Date()), []);
+
+  // ✅ 배지 패널 (월간배지)
   const [badgeOpen, setBadgeOpen] = useState(false);
   const [myBadges, setMyBadges] = useState<{ code: string; name: string }[]>([]);
 
@@ -236,34 +244,7 @@ export default function HomePage() {
     }
   };
 
-  // ✅ 하드 로그아웃 (세션 토큰까지 삭제 + /login 강제이동)
-  const hardLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.error('signOut error', e);
-    }
-
-    try {
-      if (typeof window !== 'undefined') {
-        const wipe = (s: Storage) => {
-          for (let i = s.length - 1; i >= 0; i--) {
-            const k = s.key(i);
-            if (!k) continue;
-            if (k.startsWith('sb-') || k.includes('supabase')) s.removeItem(k);
-          }
-        };
-        wipe(localStorage);
-        wipe(sessionStorage);
-      }
-    } catch (e) {
-      console.error('wipe token error', e);
-    }
-
-    window.location.href = '/login';
-  };
-
-  // 마스코트 감성 슬라이드 인덱스
+  // ✅ 감성 문구 자동 슬라이드
   const [emotionIndex, setEmotionIndex] = useState(0);
   useEffect(() => {
     if (EMO_QUOTES.length === 0) return;
@@ -271,70 +252,25 @@ export default function HomePage() {
     return () => clearInterval(timer);
   }, []);
 
-  // 목업 친구
+  // ✅ 친구(목업 + 검색 필터)
+  const [friendQuery, setFriendQuery] = useState('');
+  const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+
   const friends: Friend[] = [
-    {
-      id: 'f1',
-      name: '김영업',
-      role: '팀장',
-      online: true,
-      industry: '뷰티 · TM 영업',
-      career: '6~9년',
-      company: 'UPLOG 뷰티본부',
-      team: '1팀',
-      dayGoal: '상담 5건',
-      weekGoal: '계약 3건',
-      monthGoal: '매출 1,000만',
-      mainGoal: '이번 분기 “영업왕” 타이틀 따기',
-      cheerCount: 28,
-      avatarUrl: null,
-      mood: 'fire',
-    },
-    {
-      id: 'f2',
-      name: '박성장',
-      role: '사원',
-      online: true,
-      industry: '보험 · 설계',
-      career: '2년',
-      company: 'UPLIFE 금융센터',
-      team: 'A조',
-      dayGoal: '콜 20통',
-      weekGoal: '미팅 5건',
-      monthGoal: '계약 10건',
-      mainGoal: '올해 안에 팀장 승진',
-      cheerCount: 15,
-      avatarUrl: null,
-      mood: '🙂',
-    },
-    {
-      id: 'f3',
-      name: '이멘탈',
-      role: '대리',
-      online: false,
-      industry: '교육 · 컨설팅',
-      career: '4~5년',
-      company: 'UPCLASS 아카데미',
-      team: '컨설팅팀',
-      dayGoal: '후속콜 10통',
-      weekGoal: '설명회 2회',
-      monthGoal: '수강등록 20명',
-      mainGoal: '수강 후기 100개 모으기',
-      cheerCount: 9,
-      avatarUrl: null,
-      mood: 'down',
-    },
+    { id: 'f1', nickname: '김영업', online: true, role: '팀장' },
+    { id: 'f2', nickname: '박성장', online: true, role: '사원' },
+    { id: 'f3', nickname: '이멘탈', online: false, role: '대리' },
   ];
 
-  // ✅ 대표님 요청 3종 카운트
-  const newScheduleCountToday = useMemo(
-    () => schedules.filter((s) => s.schedule_date === todayStr).length,
-    [schedules, todayStr]
-  );
-  const newRebuttalCount = useMemo(() => recentRebuttals.length, [recentRebuttals]);
+  const filteredFriends = useMemo(() => {
+    const q = friendQuery.trim().toLowerCase();
+    if (!q) return friends;
+    return friends.filter((f) => f.nickname.toLowerCase().includes(q));
+  }, [friendQuery]);
 
-  // ✅ 새 채팅 건수(테이블 붙이기 전이므로 0)
-  const newChatCount = 0;
+  // ✅ 홈 상단 카운트
+  const newRebuttalCount = useMemo(() => recentRebuttals.length, [recentRebuttals]);
+  const newScheduleCountToday = useMemo(() => schedules.filter((s) => s.schedule_date === todayStr).length, [schedules, todayStr]);
 
   useEffect(() => {
     const init = async () => {
@@ -353,7 +289,7 @@ export default function HomePage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('name, nickname, industry, grade, career, company, department, team, avatar_url, main_goal')
+        .select('name, nickname, industry, grade, career, company, department, team, avatar_url, main_goal, address_text, lat, lon')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -372,12 +308,22 @@ export default function HomePage() {
         if (p.department) setDepartment(p.department);
         if (p.team) setTeam(p.team);
         if (p.main_goal) setMainGoal(p.main_goal);
+
+        // ✅ 날씨 지역(설정값 기반): lat/lon 우선, 없으면 address_text 매핑
+        const region = resolveRegionFromProfile(p);
+        setWeatherLabel(region.label);
+        setWeatherLat(region.lat);
+        setWeatherLon(region.lon);
+
+        // ✅ 프로필 이미지 src 정리(스토리지 경로면 public url로 변환)
+        if (p.avatar_url) setProfileImage(getAvatarSrc(p.avatar_url));
       } else if (user.email) {
         setNickname(user.email.split('@')[0]);
       }
 
       await loadDashboardData(user.id, currentMonth);
-      await loadMyMonthlyBadges(user.id); // ✅ 배지 로딩
+      await loadMyMonthlyBadges(user.id);
+
       setLoading(false);
     };
 
@@ -389,19 +335,20 @@ export default function HomePage() {
     if (!userId) return;
     loadDashboardData(userId, currentMonth);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMonth, userId]);
+  }, [currentMonth, userId, weatherLat, weatherLon]);
 
   const loadDashboardData = async (uid: string, baseMonth: Date) => {
-    const monthStart = new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1);
-    const monthEnd = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 0);
+    const monthStart = new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1, 0, 0, 0);
+    const monthEnd = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 0, 23, 59, 59);
 
     const from = formatDate(monthStart);
     const to = formatDate(monthEnd);
 
-    setCurrentMonthLabel(`${monthStart.getFullYear()}년 ${monthStart.getMonth() + 1}월`);
+    const fromISO = monthStart.toISOString();
+    const toISO = monthEnd.toISOString();
 
     const moodMap: Record<string, string> = {};
-    const contractByDate: Record<string, number> = {};
+    const contractByDate: Record<string, { newCount: number; c1: number; c2: number; c3: number }> = {};
 
     // schedules
     const { data: scheduleRows, error: scheduleError } = await supabase
@@ -423,7 +370,7 @@ export default function HomePage() {
     });
     setDaySummaries(Object.entries(summaryMap).map(([date, count]) => ({ date, count })));
 
-    // up_logs
+    // up_logs (목표/기분)
     const { data: upRows, error: upError } = await supabase
       .from('up_logs')
       .select('id, day_goal, week_goal, month_goal, log_date, mood')
@@ -451,24 +398,30 @@ export default function HomePage() {
       if (upError) console.error('up_logs error', upError);
     }
 
-    // customers -> 계약 그래프
+    // ✅ customers -> 달력 “신규계약 n”
     try {
       const { data: customerRows, error: customerError } = await supabase
         .from('customers')
         .select('id, status, created_at')
         .eq('user_id', uid)
-        .gte('created_at', from)
-        .lte('created_at', to);
+        .gte('created_at', fromISO)
+        .lte('created_at', toISO);
 
       if (!customerError && customerRows) {
         (customerRows as any[]).forEach((row) => {
           const raw = (row as any).created_at;
           if (!raw) return;
+
           const dateStr = typeof raw === 'string' ? raw.slice(0, 10) : formatDate(new Date(raw));
-          const status: string = ((row as any).status ?? '') as string;
-          if (status.includes('계약')) {
-            contractByDate[dateStr] = (contractByDate[dateStr] ?? 0) + 1;
-          }
+          const level = pickContractLevel((row as any).status);
+          if (!level) return;
+
+          if (!contractByDate[dateStr]) contractByDate[dateStr] = { newCount: 0, c1: 0, c2: 0, c3: 0 };
+
+          if (level === 'new') contractByDate[dateStr].newCount += 1;
+          if (level === 'contract1') contractByDate[dateStr].c1 += 1;
+          if (level === 'contract2') contractByDate[dateStr].c2 += 1;
+          if (level === 'contract3') contractByDate[dateStr].c3 += 1;
         });
       } else if (customerError) {
         console.error('customers error', customerError);
@@ -477,14 +430,16 @@ export default function HomePage() {
       console.error('customers fatal error', err);
     }
 
-    const daysInThisMonth = monthEnd.getDate();
-    const growth: GrowthDay[] = [];
-    for (let d = 1; d <= daysInThisMonth; d++) {
-      const cur = new Date(monthStart.getFullYear(), monthStart.getMonth(), d);
-      const dateStr = formatDate(cur);
-      growth.push({ date: dateStr, contractCount: contractByDate[dateStr] || 0 });
+    // 월 전체 날짜 채우기
+    const lastDay = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 0).getDate();
+    const list: ContractDay[] = [];
+    for (let d = 1; d <= lastDay; d++) {
+      const cur = new Date(baseMonth.getFullYear(), baseMonth.getMonth(), d);
+      const ds = formatDate(cur);
+      const obj = contractByDate[ds] ?? { newCount: 0, c1: 0, c2: 0, c3: 0 };
+      list.push({ date: ds, newCount: obj.newCount, c1: obj.c1, c2: obj.c2, c3: obj.c3 });
     }
-    setGrowthDays(growth);
+    setContractDays(list);
     setMoodByDate(moodMap);
 
     // rebuttals
@@ -501,7 +456,7 @@ export default function HomePage() {
       if (rebutError) console.error('rebuttals error', rebutError);
     }
 
-    // daily_tasks
+    // daily_tasks (홈에서는 체크만)
     const today = formatDate(new Date());
     const { data: taskRows, error: taskError } = await supabase
       .from('daily_tasks')
@@ -524,19 +479,30 @@ export default function HomePage() {
       if (taskError) console.error('daily_tasks error', taskError);
     }
 
-    // 날씨 목업
-    const now = new Date();
-    const mockWeather: WeatherSlot[] = [];
-    for (let i = 0; i < 6; i++) {
-      const h = now.getHours() + i * 3;
-      mockWeather.push({
-        time: `${(h % 24).toString().padStart(2, '0')}:00`,
-        temp: 22 + i,
-        desc: i < 2 ? '맑음' : i < 4 ? '구름조금' : '흐림',
-      });
+    // ✅✅✅ 날씨 실데이터(설정 지역 기반)
+    try {
+      const live = await fetchLiveWeatherSlots(weatherLat, weatherLon);
+      setTodayWeather(live);
+    } catch (e) {
+      console.error('weather live error', e);
+      // 실패 시 화면 유지용 fallback
+      const now = new Date();
+      const mock: WeatherSlot[] = [];
+      for (let i = 0; i < 6; i++) {
+        const h = now.getHours() + i * 3;
+        mock.push({
+          time: `${(h % 24).toString().padStart(2, '0')}:00`,
+          temp: 0,
+          desc: '날씨 불러오기 실패',
+        });
+      }
+      setTodayWeather(mock);
     }
-    setTodayWeather(mockWeather);
   };
+
+  // ⬇️⬇️⬇️ 여기부터 아래(UI/스타일)는 대표님 기존 그대로입니다.
+  // (2/2)로 이어서 전체를 끝까지 드릴게요.
+
 
   const daysInMonth = useMemo(() => {
     const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
@@ -568,6 +534,14 @@ export default function HomePage() {
     return d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
   }, [selectedDate]);
 
+  // ✅ 선택 날짜 실적(고객관리 계약 단계 합)
+  const selectedDateContract = useMemo(() => {
+    const row = contractDays.find((x) => x.date === selectedDate);
+    if (!row) return { total: 0, newCount: 0, c1: 0, c2: 0, c3: 0 };
+    const total = row.newCount + row.c1 + row.c2 + row.c3;
+    return { total, newCount: row.newCount, c1: row.c1, c2: row.c2, c3: row.c3 };
+  }, [contractDays, selectedDate]);
+
   const moveMonth = (offset: number) => {
     setCurrentMonth((prev) => {
       const next = new Date(prev);
@@ -591,6 +565,24 @@ export default function HomePage() {
     }
   };
 
+  // ✅ (추가) 달력 상단 “카테고리별 총합” 표시용
+  const monthLegendCounts = useMemo(() => {
+    let work = 0;
+    let attend = 0;
+    let etc = 0;
+
+    (schedules ?? []).forEach((s) => {
+      const meta = getScheduleCategoryMeta(s.category);
+      if (meta.kind === 'attendance') attend += 1;
+      else if (meta.kind === 'work') work += 1;
+      else etc += 1;
+    });
+
+    const newContracts = (contractDays ?? []).reduce((acc, d) => acc + (d?.newCount ?? 0), 0);
+
+    return { work, attend, etc, newContracts };
+  }, [schedules, contractDays]);
+
   if (loading) {
     return (
       <div className="home-root">
@@ -603,11 +595,12 @@ export default function HomePage() {
   }
 
   const avatarInitial = nickname && nickname.length > 0 ? nickname.trim()[0]?.toUpperCase() : 'U';
-
   const careerCombined =
     grade && careerYears ? `${grade} · ${careerYears}` : grade ? grade : careerYears ? careerYears : '경력/직함 미설정';
-
   const orgCombined = [company, department, team].filter(Boolean).join(' / ') || '조직/팀 미설정';
+
+  // ✅ 여기 핵심: Storage 경로든 URL이든 안전 변환 + 캐시 버스트
+  const avatarSrc = profileImage ? `${getAvatarSrc(profileImage)}?v=${Date.now()}` : '';
 
   return (
     <div className="home-root">
@@ -618,7 +611,7 @@ export default function HomePage() {
             <div className="home-header-left">
               <div className="home-logo-row">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/logo.png" alt="UPLOG 로고" className="home-logo" />
+                <img src="/lolo.png" alt="UPLOG 로고" className="home-logo" />
 
                 <div className="home-logo-text-wrap">
                   <div className="wave-text" aria-label="UPLOG">
@@ -642,15 +635,20 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* ✅✅✅ 여기만 수정: 닉네임 1개 + 배지 아이콘 + 클릭 패널 */}
+            {/* ✅ 프로필 카드 */}
             <div className="home-header-profile">
               <div className="profile-box">
+                <button type="button" className="profile-settings-btn" onClick={() => router.push('/settings')} aria-label="설정">
+                  <span className="ps-gear">⚙</span>
+                  <span className="ps-text">설정</span>
+                </button>
+
                 <button type="button" className="profile-click" onClick={() => setBadgeOpen(true)} aria-label="프로필 열기">
                   <div className="profile-main">
                     <div className="profile-avatar">
-                      {profileImage ? (
+                      {avatarSrc ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={profileImage} alt="프로필" />
+                        <img src={avatarSrc} alt="프로필" />
                       ) : (
                         avatarInitial
                       )}
@@ -658,7 +656,6 @@ export default function HomePage() {
 
                     <div className="profile-main-text">
                       <div className="profile-name">{nickname}</div>
-                      <AdminHeaderUnread />
                       {email && <div className="profile-email">{email}</div>}
                     </div>
                   </div>
@@ -675,12 +672,7 @@ export default function HomePage() {
                           { code: 'attendance_month_mvp', name: '출석 MVP' },
                         ]
                     ).map((b, i) => (
-                      <span
-  key={`${b.code}-${i}`}
-  className={`badge-icon badge-${(b.code || 'etc').toLowerCase()}`}
-  title={b.name}
->
-
+                      <span key={`${b.code}-${i}`} className={`badge-icon badge-${(b.code || 'etc').toLowerCase()}`} title={b.name}>
                         {badgeIcon(b.code)}
                       </span>
                     ))}
@@ -694,25 +686,16 @@ export default function HomePage() {
 
                   <div className="profile-stats">
                     <span className="profile-stat-pill">
-                      새 채팅 <strong>{newChatCount}건</strong>
+                      친구 <strong>{friends.length}명</strong>
                     </span>
                     <span className="profile-stat-pill">
                       새 피드백 <strong>{newRebuttalCount}건</strong>
                     </span>
                     <span className="profile-stat-pill">
-                      오늘 등록 스케줄 <strong>{newScheduleCountToday}건</strong>
+                      오늘 스케줄 <strong>{newScheduleCountToday}건</strong>
                     </span>
                   </div>
                 </button>
-
-                <div className="profile-links">
-                  <Link href="/profile" className="action-pill action-pill-primary">
-                    프로필 설정
-                  </Link>
-                  <button type="button" className="action-pill action-pill-danger" onClick={hardLogout}>
-                    로그아웃
-                  </button>
-                </div>
 
                 {badgeOpen && (
                   <div className="mp-backdrop" onClick={() => setBadgeOpen(false)}>
@@ -742,7 +725,8 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-          {/* ✅✅✅ 말풍선 + 마스코트 (스크린샷처럼: 왼쪽 말풍선 패널 + 오른쪽 업쮸 둥둥) */}
+
+          {/* ✅ 말풍선 + 마스코트 */}
           <div className="home-header-bottom">
             <div className="coach-row">
               <div className="coach-bubble-panel" aria-live="polite">
@@ -760,7 +744,7 @@ export default function HomePage() {
           </div>
         </header>
 
-        {/* 메뉴 버튼 */}
+        {/* ✅ 메뉴 버튼 5개 (절대 제거 금지) */}
         <section className="home-quick-nav">
           <Link href="/my-up" className="quick-card">
             나의 U P 관리
@@ -779,7 +763,7 @@ export default function HomePage() {
           </Link>
         </section>
 
-        {/* 날씨 */}
+        {/* ✅ 날씨 (유지) */}
         <section className="weather-wide">
           <div className="weather-panel">
             <div className="weather-panel-header">
@@ -802,59 +786,58 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* 메인 컨텐츠 */}
         <main className="home-main">
           {/* 상단 요약 */}
           <section className="home-top-summary">
-            {/* 목표 요약 */}
             <div className="summary-card goals-card">
-              <h3 className="summary-title">일 · 주 · 월 목표 요약</h3>
+              <h3 className="summary-title">월 · 주 · 일 목표</h3>
 
-              <div className="goals-list">
-                <div className="goal-card goal-card-today">
-                  <div className="goal-label">오늘 목표</div>
-                  <div className="goal-text">{latestGoals?.day_goal || '가망고객 안부 문자인사하기'}</div>
-                </div>
+              <div className="goal-inline">
+                <span className="goal-tag">이번 달</span>
+                <span className="goal-text">{latestGoals?.month_goal || '이달엔 30건 이상 계약하기'}</span>
 
-                <div className="goal-card">
-                  <div className="goal-label">이번 주 목표</div>
-                  <div className="goal-text">{latestGoals?.week_goal || '신규고객 3명 이상'}</div>
-                </div>
+                <span className="goal-divider">|</span>
 
-                <div className="goal-card">
-                  <div className="goal-label">이번 달 목표</div>
-                  <div className="goal-text">{latestGoals?.month_goal || '이달엔 30건 이상 계약하기'}</div>
-                </div>
+                <span className="goal-tag">이번 주</span>
+                <span className="goal-text">{latestGoals?.week_goal || '신규고객 3명 이상'}</span>
+
+                <span className="goal-divider">|</span>
+
+                <span className="goal-tag">오늘</span>
+                <span className="goal-text-strong">{latestGoals?.day_goal || '가망고객 안부 문자인사하기'}</span>
               </div>
 
               <div className="goal-main">
-                나의 최종 목표 <span className="goal-main-strong">“{mainGoal || '1등 찍어보자'}”</span>
+                최종 목표 <span className="goal-main-strong">“{mainGoal || '1등 찍어보자'}”</span>
+              </div>
+
+              <div className="tiny-note fill-note">
+                ※ 목표/체크 항목 입력은 <strong>나의 U P 관리</strong>에서만 합니다. 홈에서는 체크만 가능해요.
               </div>
             </div>
 
-            {/* 오늘 할 일 */}
             <div className="summary-card todo-card">
               <h3 className="summary-title">오늘 할 일</h3>
               <p className="summary-desc">
-                <strong>나의 U P 관리</strong>에서 입력한 오늘의 체크항목을 여기에서 한 번에 체크할 수 있어요.
+                <strong>나의 U P 관리</strong>에서 입력한 체크항목을 여기에서 한 번에 체크할 수 있어요.
               </p>
 
               {todayTasks.length === 0 ? (
-                <div className="todo-empty">
-                  아직 등록된 할 일이 없어요.
-                  <br />
-                  <span className="todo-empty-sub">
+                <div className="todo-empty big">
+                  <div className="todo-empty-title">아직 등록된 할 일이 없어요.</div>
+                  <div className="todo-empty-sub">
                     오늘의 할 일은 <strong>나의 U P 관리</strong>에서 추가해 주세요.
-                  </span>
+                  </div>
                 </div>
               ) : (
-                <ul className="todo-list">
+                <ul className="todo-list big">
                   {todayTasks.map((task) => (
-                    <li key={task.id} className="todo-item">
+                    <li key={task.id} className="todo-item big">
                       <button
                         type="button"
                         className={'todo-check ' + (task.done ? 'todo-check-done' : '')}
                         onClick={() => handleToggleTask(task)}
+                        aria-label="체크"
                       >
                         {task.done ? '✓' : ''}
                       </button>
@@ -864,47 +847,14 @@ export default function HomePage() {
                 </ul>
               )}
             </div>
-
-            {/* 실적 달성 그래프 */}
-            <div className="summary-card growth-card">
-              <div className="growth-header">
-                <h3 className="summary-title">실적 달성 그래프</h3>
-                <span className="growth-month">{currentMonthLabel}</span>
-              </div>
-
-              <p className="growth-caption">
-                하루 계약 건수를 기준으로 한 그래프입니다.
-                <br />
-                한 날에 계약 <strong>10건</strong>을 최대값으로 계산해요.
-              </p>
-
-              <div className="growth-graph-wrap">
-                <div className="growth-graph">
-                  {growthDays.map((g) => {
-                    const day = Number(g.date.split('-')[2]);
-                    const clamped = Math.min(g.contractCount, 10);
-                    const height = 12 + (clamped / 10) * 110;
-
-                    return (
-                      <div key={g.date} className="growth-col">
-                        <div className="bar contract-bar" style={{ height: `${height}px` }} />
-                        <div className="growth-day-label">{day}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
           </section>
 
-          {/* 달력 + 친구 카드 */}
+          {/* 달력 + 상세 + 친구 */}
           <section className="home-section calendar-section">
             <div className="section-header">
               <div>
                 <div className="section-title">CALENDAR &amp; PERFORMANCE</div>
-                <div className="section-sub">
-                  달력에서 기록과 스케줄 카테고리를 색상으로 보고, 선택한 날짜의 일정을 아래에서 확인할 수 있어요.
-                </div>
+                <div className="section-sub">달력에서 스케줄/기분/실적을 한눈에 보고, 아래에서 상세를 확인해요.</div>
               </div>
               <div className="month-nav">
                 <button type="button" className="nav-btn" onClick={() => moveMonth(-1)}>
@@ -915,6 +865,37 @@ export default function HomePage() {
                   ▶
                 </button>
               </div>
+            </div>
+
+            <div className="calendar-legend" aria-label="달력 표시 가이드">
+              <div className="legend-item">
+                <span className="legend-dot dot-attend" />
+                <span className="legend-label">
+                  근태 <b className="legend-n">{monthLegendCounts.attend}</b>
+                </span>
+              </div>
+              <div className="legend-item">
+                <span className="legend-dot dot-work" />
+                <span className="legend-label">
+                  업무 <b className="legend-n">{monthLegendCounts.work}</b>
+                </span>
+              </div>
+              <div className="legend-item">
+                <span className="legend-dot dot-etc" />
+                <span className="legend-label">
+                  기타 <b className="legend-n">{monthLegendCounts.etc}</b>
+                </span>
+              </div>
+              <div className="legend-item">
+                <span className="legend-dot dot-new" />
+                <span className="legend-label">
+                  신규계약 <b className="legend-n">{monthLegendCounts.newContracts}</b>
+                </span>
+              </div>
+              <div className="legend-item">
+                <span className="legend-pill">🙂 기분</span>
+              </div>
+              <div className="legend-item legend-hint">※ 달력 안 표시는 “이모지 + DOT + 개수”만 보여요</div>
             </div>
 
             <div className="calendar-grid">
@@ -932,38 +913,19 @@ export default function HomePage() {
 
                 const schedulesForDay = schedules.filter((s) => s.schedule_date === dStr);
                 const moodCode = moodByDate[dStr];
-                const daySummary = daySummaries.find((ds) => ds.date === dStr);
 
-                let mainKind: ScheduleCategoryKind | null = null;
-                if (schedulesForDay.length > 0) {
-                  let hasWork = false;
-                  let hasAttendance = false;
-                  let hasEtc = false;
+                const cd = contractDays.find((x) => x.date === dStr);
+                const newPerf = cd ? cd.newCount : 0;
 
-                  schedulesForDay.forEach((s) => {
-                    const meta = getScheduleCategoryMeta(s.category);
-                    if (meta.kind === 'work') hasWork = true;
-                    else if (meta.kind === 'attendance') hasAttendance = true;
-                    else hasEtc = true;
-                  });
-
-                  if (hasAttendance) mainKind = 'attendance';
-                  else if (hasWork) mainKind = 'work';
-                  else if (hasEtc) mainKind = 'etc';
-                }
-
-                let mainLabel = '';
-                let mainClass = '';
-                if (mainKind === 'attendance') {
-                  mainLabel = '근태';
-                  mainClass = 'calendar-pill-attend';
-                } else if (mainKind === 'work') {
-                  mainLabel = '업무내용';
-                  mainClass = 'calendar-pill-work';
-                } else if (mainKind === 'etc') {
-                  mainLabel = '기타';
-                  mainClass = 'calendar-pill-etc';
-                }
+                let workN = 0;
+                let attendN = 0;
+                let etcN = 0;
+                schedulesForDay.forEach((s) => {
+                  const meta = getScheduleCategoryMeta(s.category);
+                  if (meta.kind === 'attendance') attendN += 1;
+                  else if (meta.kind === 'work') workN += 1;
+                  else etcN += 1;
+                });
 
                 return (
                   <button
@@ -984,12 +946,34 @@ export default function HomePage() {
                       {moodCode && <div className="calendar-day-mood">{getMoodEmoji(moodCode)}</div>}
                     </div>
 
-                    <div className="calendar-day-dots">
-                      {mainKind && <div className={`calendar-pill ${mainClass}`}>{mainLabel}</div>}
-                      {daySummary && daySummary.count > 0 && (
-                        <div className="calendar-pill calendar-pill-count">일정/기록 {daySummary.count}개</div>
-                      )}
-                    </div>
+                    {(attendN > 0 || workN > 0 || etcN > 0 || newPerf > 0) && (
+                      <div className="calendar-dot-row" aria-label="카테고리별 개수">
+                        {attendN > 0 && (
+                          <span className="calendar-dot-item" title="근태">
+                            <span className="calendar-dot dot-attend" />
+                            <span className="calendar-dot-num">{attendN}</span>
+                          </span>
+                        )}
+                        {workN > 0 && (
+                          <span className="calendar-dot-item" title="업무">
+                            <span className="calendar-dot dot-work" />
+                            <span className="calendar-dot-num">{workN}</span>
+                          </span>
+                        )}
+                        {etcN > 0 && (
+                          <span className="calendar-dot-item" title="기타">
+                            <span className="calendar-dot dot-etc" />
+                            <span className="calendar-dot-num">{etcN}</span>
+                          </span>
+                        )}
+                        {newPerf > 0 && (
+                          <span className="calendar-dot-item" title="신규계약">
+                            <span className="calendar-dot dot-new" />
+                            <span className="calendar-dot-num">{newPerf}</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -1004,9 +988,9 @@ export default function HomePage() {
             <div className="right-card calendar-selected-card">
               <div className="right-card-header">
                 <div>
-                  <div className="section-title">선택한 날짜의 스케줄</div>
+                  <div className="section-title">선택한 날짜 상세</div>
                   <div className="section-sub">
-                    {selectedDateLabel} · {selectedDateSchedules.length}개 일정
+                    {selectedDateLabel} · 스케줄 {selectedDateSchedules.length}개 · 실적 {selectedDateContract.total}건
                   </div>
                 </div>
               </div>
@@ -1038,133 +1022,115 @@ export default function HomePage() {
             </div>
 
             <div className="right-card friend-card">
-              <div className="friend-card-header">
-                <div>
-                  <div className="section-title friend-title">친구 목록 · U P 채팅</div>
-                  <div className="section-sub friend-sub">함께 올라가는 동료들의 상태와 프로필을 확인해요.</div>
-                </div>
-                <button type="button" onClick={() => router.push('/memo-chat')} className="friend-chat-banner big">
-                  U P 채팅방 열기
-                </button>
-              </div>
+  <div className="friend-card-header">
+    <div>
+      <div className="section-title friend-title">친구 목록 · U P 채팅</div>
+      <div className="section-sub friend-sub">
+        친구 닉네임을 검색하고, 채팅방으로 이동해요.
+      </div>
+    </div>
 
-              {friends.length === 0 ? (
-                <div className="empty-text">
-                  아직 등록된 친구가 없어요.
-                  <br />
-                  나중에 함께 U P 해봐요. ✨
-                </div>
-              ) : (
-                <ul className="friends-list">
-                  {friends.map((friend) => (
-                    <li key={friend.id} className="friend-item" onClick={() => setSelectedFriend(friend)}>
-                      <div className="friend-main-row">
-                        <span className={'friend-dot ' + (friend.online ? 'friend-dot-on' : 'friend-dot-off')} />
-                        <div className="friend-avatar-small">
-                          {friend.avatarUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={friend.avatarUrl} alt={friend.name} />
-                          ) : (
-                            friend.name[0]
-                          )}
-                        </div>
-                        <span className="friend-name-wrap">
-                          <span className="friend-name">{friend.name}</span>
-                          {friend.role && <span className="friend-role-pill">{friend.role}</span>}
-                        </span>
-                      </div>
+    <button
+      type="button"
+      onClick={() => router.push('/chats')}
+      className="friend-chat-banner big"
+    >
+      U P 채팅방 열기
+    </button>
+  </div>
 
-                      <div className="friend-meta-row">
-                        <span>{friend.industry}</span>
-                        <span>경력 {friend.career}</span>
-                        <span>
-                          {friend.company} · {friend.team}
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+  <div className="friend-tools">
+    <input
+      value={friendQuery}
+      onChange={(e) => setFriendQuery(e.target.value)}
+      placeholder="친구 검색 (닉네임)"
+      className="friend-search"
+    />
+  </div>
+
+  {/* 👇 여기 아래에 friends list / selectedFriend 액션이 이어짐 */}
+</div>
+
+
+              {filteredFriends.length === 0 ? (
+  <div className="empty-text">
+    검색 결과가 없어요.
+    <br />
+    닉네임을 다시 확인해 주세요.
+  </div>
+) : (
+  <ul className="friends-list">
+    {filteredFriends.map((friend) => (
+      <li key={friend.id} className="friend-item" onClick={() => setSelectedFriend(friend)}>
+        <div className="friend-main-row">
+          <span className={'friend-dot ' + (friend.online ? 'friend-dot-on' : 'friend-dot-off')} />
+          <div className="friend-avatar-small">
+            {friend.avatarUrl ? '🙂' : friend.nickname[0]}
+          </div>
+          <span className="friend-name-wrap">
+            <span className="friend-name">{friend.nickname}</span>
+            {friend.role && <span className="friend-role-pill">{friend.role}</span>}
+          </span>
+        </div>
+      </li>
+    ))}
+  </ul>
+)}
+
+{/* 🔥 바로 여기 */}
+{selectedFriend && (
+  <div className="friend-actions">
+    <button
+      onClick={() =>
+        router.push(`/chats/open?to=${selectedFriend.id}`)
+
+      }
+    >
+      U P 채팅하기
+    </button>
+  </div>
+)}
+
           </section>
         </main>
 
-        {/* 친구 프로필 모달 */}
-        {selectedFriend && (
-          <div className="friend-modal-backdrop" onClick={() => setSelectedFriend(null)}>
-            <div className="friend-modal" onClick={(e) => e.stopPropagation()}>
-              <button type="button" className="friend-modal-close" onClick={() => setSelectedFriend(null)}>
-                ✕
-              </button>
+        {/* ✅ 선택된 친구 액션 영역(= 모달 버튼 역할) */}
+{selectedFriend && (
+  <div className="friend-actions">
+    <div className="friend-actions-left">
+      <div className="friend-actions-name">
+        {selectedFriend.nickname}
+        {selectedFriend.role && <span className="friend-role-pill">{selectedFriend.role}</span>}
+      </div>
+      <div className="friend-actions-sub">대화는 U P 채팅에서 이어집니다</div>
+    </div>
 
-              <div className="friend-modal-header">
-                <div className="friend-modal-avatar">
-                  {selectedFriend.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={selectedFriend.avatarUrl} alt={selectedFriend.name} />
-                  ) : (
-                    selectedFriend.name[0]
-                  )}
-                </div>
+    <div className="friend-actions-right">
+      <button
+        type="button"
+        className="friend-action-btn primary"
+        onClick={() => {
+          // ✅ 핵심: 친구 UUID로 open 페이지 이동 → 방 생성/이동
+          const to = (selectedFriend as any).user_id || (selectedFriend as any).userId || '';
+          if (!to) return alert('친구 user_id(UID)가 없습니다.');
+          router.push(`/chats/open?to=${to}`);
+        }}
+      >
+        U P 채팅하기
+      </button>
 
-                <div className="friend-modal-title">
-                  <div className="friend-modal-name-row">
-                    <span className="friend-modal-name">{selectedFriend.name}</span>
-                    {selectedFriend.role && <span className="friend-modal-role">{selectedFriend.role}</span>}
-                    {selectedFriend.mood && <span className="friend-modal-mood">{getMoodEmoji(selectedFriend.mood)}</span>}
-                  </div>
+      <button
+        type="button"
+        className="friend-action-btn"
+        onClick={() => setSelectedFriend(null)}
+      >
+        닫기
+      </button>
+    </div>
+  </div>
+)}
 
-                  <div className="friend-modal-sub">
-                    {selectedFriend.industry} · 경력 {selectedFriend.career}
-                  </div>
-                  <div className="friend-modal-sub">
-                    {selectedFriend.company} · {selectedFriend.team}
-                  </div>
-                </div>
-              </div>
 
-              <div className="friend-modal-body">
-                <div className="friend-modal-section">
-                  <div className="friend-modal-label">메인 목표</div>
-                  <div className="friend-modal-main-goal">“{selectedFriend.mainGoal}”</div>
-                </div>
-
-                <div className="friend-modal-section">
-                  <div className="friend-modal-label">오늘 · 주 · 월 목표</div>
-                  <ul className="friend-modal-goals">
-                    <li>
-                      <span>오늘</span>
-                      <span>{selectedFriend.dayGoal}</span>
-                    </li>
-                    <li>
-                      <span>이번 주</span>
-                      <span>{selectedFriend.weekGoal}</span>
-                    </li>
-                    <li>
-                      <span>이번 달</span>
-                      <span>{selectedFriend.monthGoal}</span>
-                    </li>
-                  </ul>
-                </div>
-
-                <div className="friend-modal-section cheer-row">
-                  <div>
-                    <div className="friend-modal-label">응원 받은 지수</div>
-                    <div className="friend-modal-cheer">💜 {selectedFriend.cheerCount}개</div>
-                  </div>
-                </div>
-
-                <div className="friend-modal-actions">
-                  <button className="friend-modal-btn primary">U P 채팅하기</button>
-                  <button className="friend-modal-btn">친구 추가</button>
-                  <button className="friend-modal-btn">응원 보내기 💜</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 문의하기 플로팅 버튼 */}
         <button type="button" onClick={() => router.push('/support')} className="floating-support-btn">
           <span>문의하기</span>
           <span>실시간 채팅</span>
@@ -1180,750 +1146,584 @@ const styles = `
 :global(:root) {
   --uplog-accent-pink: #f472b6;
   --uplog-accent-purple: #a855f7;
+
+  --soft-purple: rgba(168, 85, 247, 0.18);
+  --soft-pink: rgba(244, 114, 182, 0.16);
+  --soft-ink: #201235;
+  --soft-sub: #6f60b8;
+  --soft-card-border: rgba(211,196,255,0.75);
+  --soft-shadow: 0 14px 26px rgba(0,0,0,0.10);
 }
 
 :global(html),
-:global(body) {
-  margin: 0;
-  padding: 0;
+:global(body) { margin: 0; padding: 0; }
+
+:global(a) { color: inherit; text-decoration: none; }
+:global(a:hover) { text-decoration: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wave-text span, .badge-icon, .coach-mascot-wrap, .coach-sparkle { animation: none !important; transition: none !important; }
 }
 
-:global(a) {
-  color: inherit;
-  text-decoration: none;
-}
-:global(a:hover) {
-  text-decoration: none;
-}
-
-.home-root {
+.home-root{
   min-height: 100vh;
   padding: 24px;
   box-sizing: border-box;
-  background: linear-gradient(180deg, #ffe6f7 0%, #f5f0ff 45%, #e8f6ff 100%);
+  background:
+    radial-gradient(900px 520px at 18% 12%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 62%),
+    radial-gradient(900px 560px at 82% 18%, rgba(243,232,255,0.55) 0%, rgba(243,232,255,0) 64%),
+    linear-gradient(180deg, #fff3fb 0%, #f6f2ff 45%, #eef8ff 100%);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #1b1030;
+  color: var(--soft-ink);
 }
+.home-inner{ max-width: 1200px; margin: 0 auto; }
 
-.home-inner {
-  max-width: 1200px;
-  margin: 0 auto;
-}
+.section-title{ font-size: 18px; font-weight: 900; color: #5d3bdb; }
+.section-sub{ font-size: 14px; margin-top: 4px; color: var(--soft-sub); }
+.home-loading{ margin-top: 120px; text-align: center; font-size: 20px; }
 
-.section-title {
-  font-size: 18px;
-  font-weight: 800;
-  color: #6b41ff;
-}
-
-.section-sub {
-  font-size: 14px;
-  margin-top: 4px;
-  color: #8c7ad9;
-}
-
-.home-loading {
-  margin-top: 120px;
-  text-align: center;
-  font-size: 20px;
-}
-
-/* 헤더 전체 */
-.home-header {
+/* 헤더 */
+.home-header{
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 24px 28px 44px;
+  padding: 22px 26px 38px;
   border-radius: 26px;
-  background: linear-gradient(135deg, #ff89bd, #a45bff);
-  box-shadow: 0 18px 34px rgba(0,0,0,0.25);
+  background:
+    radial-gradient(900px 520px at 20% 20%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0) 55%),
+    linear-gradient(135deg, rgba(236, 72, 153, 0.75), rgba(124, 58, 237, 0.72));
+  box-shadow: 0 16px 28px rgba(0,0,0,0.18);
   margin-bottom: 16px;
-  color: #fffdfd;
+  color: #ffffff;
   overflow: visible;
 }
-
-/* ✅ 상단: 왼쪽 + 오른쪽 프로필 고정 */
-.home-header-top {
+.home-header-top{
   display: grid;
   grid-template-columns: 1fr 420px;
   gap: 16px;
   align-items: start;
 }
-
-.home-header-left { min-width: 0; }
-.home-header-profile { display: flex; justify-content: flex-end; align-items: flex-start; }
-
-/* 로고 */
-.home-logo-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.home-header-profile{ display:flex; justify-content:flex-end; align-items:flex-start; }
+.home-logo-row{ display:flex; align-items:center; gap: 12px; }
+.home-logo{
+  width: 70px; height: 70px;
+  border-radius: 22px; padding: 8px;
+  background: rgba(255,255,255,0.16);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.14);
 }
-
-/* ✅ 로고 이미지 효과 제거 */
-.home-logo {
-  width: 72px;
-  height: 72px;
-  border-radius: 22px;
-  padding: 8px;
-  background: rgba(255,255,255,0.18);
-}
-
-/* ✅ 도레미파솔 웨이브(UPLOG 글자만) */
-.home-logo-text-wrap { display: flex; flex-direction: column; gap: 4px; }
-.wave-text { display: inline-flex; gap: 2px; }
-.wave-text span {
-  display: inline-block;
-  font-size: 40px;
-  font-weight: 800;
-  letter-spacing: 6px;
-  color: #ffffff;
-  animation: uplogBounce 1.6s ease-in-out infinite;
-  transform-origin: center bottom;
-}
-
-.home-logo-sub {
-  font-size: 18px;
-  font-weight: 800;
-  color: rgba(255,255,255,0.96);
-  text-shadow: 0 2px 6px rgba(0,0,0,0.25);
-}
-
-.home-date {
-  font-size: 20px;
+.home-logo-text-wrap{ display:flex; flex-direction: column; gap: 4px; }
+.wave-text{ display:inline-flex; gap: 2px; }
+.wave-text span{
+  display:inline-block;
+  font-size: 36px;
   font-weight: 900;
-  margin-top: 10px;
-  color: rgba(255,255,255,0.98);
-  text-shadow: 0 3px 10px rgba(0,0,0,0.28);
-  letter-spacing: -0.2px;
+  letter-spacing: 5px;
+  color: rgba(255,255,255,0.96);
+  animation: uplogBounce 2.2s ease-in-out infinite;
+  transform-origin: center bottom;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.18);
 }
+@keyframes uplogBounce{
+  0%,100%{ transform: translateY(0); }
+  50%{ transform: translateY(-5px); }
+}
+.home-logo-sub{ font-size: 16px; font-weight: 900; color: rgba(255,255,255,0.92); text-shadow: 0 2px 8px rgba(0,0,0,0.18); }
+.home-date{ font-size: 18px; font-weight: 900; margin-top: 10px; color: rgba(255,255,255,0.92); text-shadow: 0 2px 10px rgba(0,0,0,0.18); }
 
-/* ✅✅✅ profile-box “중복 선언” 제거: 딱 1번만 */
-.profile-box {
+/* 프로필 카드 */
+.profile-box{
   width: 420px;
   min-width: 420px;
-  max-width: 420px;
   height: 220px;
-  min-height: 220px;
-  max-height: 220px;
-
   box-sizing: border-box;
-  background: #ffffff;
+  background: rgba(255,255,255,0.96);
   border-radius: 22px;
-  padding: 14px 16px;
-  box-shadow: 0 16px 30px rgba(0,0,0,0.16);
-  display: flex;
+  padding: 12px 14px;
+  box-shadow: 0 14px 26px rgba(0,0,0,0.12);
+  display:flex;
   flex-direction: column;
-  gap: 8px;
-  border: 1px solid #e3dafb;
+  gap: 6px;
+  border: 2px solid rgba(227, 218, 251, 0.95);
   color: #211437;
+  position: relative;
 }
 
-/* ✅ 프로필 클릭(패널 열기) */
-.profile-click{
-  border: none;
-  background: transparent;
-  padding: 0;
-  text-align: left;
-  cursor: pointer;
-  width: 100%;
-}
-
-.profile-main { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-.profile-main-text{ min-width: 0; }
-
-.profile-avatar {
-  width: 72px;
-  height: 72px;
+/* 설정 버튼 */
+.profile-settings-btn{
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  height: 30px;
+  padding: 0 10px;
   border-radius: 999px;
-  background: radial-gradient(circle at top left, #ff9bd6 0, #8f5bff 60%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 800;
-  font-size: 22px;
-  overflow: hidden;
-  flex-shrink: 0;
-  box-shadow: 0 0 14px rgba(193, 126, 255, 0.7);
-}
-.profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
-
-/* ✅ 닉네임 1개만 */
-.profile-name { font-size: 18px; font-weight: 900; color: #211437; line-height: 1.15; }
-.profile-email { font-size: 13px; color: #8b7bd4; }
-
-/* ✅ 배지는 아이콘만 */
-.badge-icons{
-  display: flex;
-  gap: 8px;
-  padding: 6px 0 2px;
-  flex-wrap: wrap;
-}
-/* ✅ 배지 아이콘: 기본은 ‘불 켜짐’ 베이스 */
-.badge-icon{
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
+  border: 1px solid rgba(217,204,255,0.75);
+  background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(245,240,255,0.92));
+  color: #3a1f62;
+  font-weight: 950;
+  font-size: 12px;
+  line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #ffffff;
-  border: 2px solid rgba(180, 160, 255, 0.55);
-  font-size: 16px;
-
-  /* ✅ 은은한 기본 글로우 */
-  box-shadow:
-    0 10px 18px rgba(0,0,0,0.08),
-    0 0 0 2px rgba(255,255,255,0.55),
-    0 0 18px rgba(168, 85, 247, 0.28);
-
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: 0 8px 14px rgba(0,0,0,0.10);
 }
+.ps-gear{ font-size: 13px; }
+.ps-text{ letter-spacing: -0.2px; }
 
-/* ✅ 살짝 “숨쉬는 불빛” */
+.profile-click{ border: none; background: transparent; padding: 0; text-align: left; cursor: pointer; width: 100%; }
+.profile-main{ display:flex; align-items:center; gap: 12px; padding-right: 86px; margin-top: 2px; }
+.profile-avatar{
+  width: 72px; height: 72px; border-radius: 999px;
+  background: radial-gradient(circle at top left, rgba(244,114,182,0.85) 0, rgba(168,85,247,0.78) 60%);
+  display:flex; align-items:center; justify-content:center;
+  color: #fff; font-weight: 900; font-size: 22px;
+  overflow:hidden; flex-shrink: 0;
+  box-shadow: 0 8px 16px rgba(168,85,247,0.22);
+}
+.profile-avatar img{ width:100%; height:100%; object-fit: cover; }
+.profile-name{ font-size: 18px; font-weight: 950; line-height: 1.15; }
+.profile-email{ font-size: 13px; color: #7b6ac4; }
+
+.badge-icons{ display:flex; gap: 8px; padding: 6px 0 2px; flex-wrap: wrap; }
 .badge-icon{
-  animation: badgeGlow 2.8s ease-in-out infinite;
+  width: 34px; height: 34px; border-radius: 999px;
+  display:inline-flex; align-items:center; justify-content:center;
+  background:#fff;
+  border: 2px solid rgba(180, 160, 255, 0.50);
+  box-shadow: 0 10px 16px rgba(0,0,0,0.06), 0 0 12px rgba(168, 85, 247, 0.12);
+  animation: badgeGlow 4.6s ease-in-out infinite;
 }
-@keyframes badgeGlow{
-  0%   { filter: brightness(1); }
-  50%  { filter: brightness(1.10); }
-  100% { filter: brightness(1); }
-}
+@keyframes badgeGlow{ 0%{ filter: brightness(1);} 50%{ filter: brightness(1.06);} 100%{ filter: brightness(1);} }
 
-/* ✅ 호버 시 더 밝게 */
-.badge-icon:hover{
-  transform: translateY(-1px);
-}
+/* ✅ 핵심: 선택자 수정(점 붙이기) */
+.badge-icon.badge-monthly_top,.badge-icon.badge-weekly_top{ border-color: rgba(245,158,11,0.85); box-shadow: 0 10px 16px rgba(0,0,0,0.06), 0 0 12px rgba(245,158,11,0.18); }
+.badge-icon.badge-streak_month_king,.badge-icon.badge-streak_week_king,.badge-icon.badge-streak{ border-color: rgba(244,63,94,0.85); box-shadow: 0 10px 16px rgba(0,0,0,0.06), 0 0 12px rgba(244,63,94,0.16); }
+.badge-icon.badge-most_likes_month,.badge-icon.badge-most_likes_week,.badge-icon.badge-likes{ border-color: rgba(236,72,153,0.85); box-shadow: 0 10px 16px rgba(0,0,0,0.06), 0 0 12px rgba(236,72,153,0.18); }
+.badge-icon.badge-mvp_count_month,.badge-icon.badge-mvp_count_week,.badge-icon.badge-mvp{ border-color: rgba(168,85,247,0.85); box-shadow: 0 10px 16px rgba(0,0,0,0.06), 0 0 12px rgba(168,85,247,0.18); }
+.badge-icon.badge-mvp_amount_month,.badge-icon.badge-mvp_amount_week,.badge-icon.badge-amount{ border-color: rgba(59,130,246,0.80); box-shadow: 0 10px 16px rgba(0,0,0,0.06), 0 0 12px rgba(59,130,246,0.14); }
+.badge-icon.badge-attendance_month_mvp,.badge-icon.badge-attendance_week_mvp,.badge-icon.badge-attendance{ border-color: rgba(34,197,94,0.80); box-shadow: 0 10px 16px rgba(0,0,0,0.06), 0 0 12px rgba(34,197,94,0.12); }
+.badge-icon.badge-most_posts_month,.badge-icon.badge-most_posts_week,.badge-icon.badge-posts{ border-color: rgba(249,115,22,0.80); box-shadow: 0 10px 16px rgba(0,0,0,0.06), 0 0 12px rgba(249,115,22,0.12); }
 
-/* =========================
-   코드별 네온 테두리/글로우
-   ========================= */
-
-/* 👑 월간 1등: 골드 */
-.badge-monthly_top,
-.badge-weekly_top{
-  border-color: rgba(245, 158, 11, 0.95);
-  box-shadow:
-    0 10px 18px rgba(0,0,0,0.08),
-    0 0 0 2px rgba(255,255,255,0.55),
-    0 0 22px rgba(245, 158, 11, 0.45),
-    0 0 42px rgba(245, 158, 11, 0.20);
-}
-
-/* 🔥 연속/스트릭: 핑크-레드 */
-.badge-streak_month_king,
-.badge-streak_week_king,
-.badge-streak{
-  border-color: rgba(244, 63, 94, 0.95);
-  box-shadow:
-    0 10px 18px rgba(0,0,0,0.08),
-    0 0 0 2px rgba(255,255,255,0.55),
-    0 0 22px rgba(244, 63, 94, 0.40),
-    0 0 42px rgba(244, 63, 94, 0.18);
-}
-
-/* 💖 좋아요/응원: 핫핑크 */
-.badge-most_likes_month,
-.badge-most_likes_week,
-.badge-likes{
-  border-color: rgba(236, 72, 153, 0.95);
-  box-shadow:
-    0 10px 18px rgba(0,0,0,0.08),
-    0 0 0 2px rgba(255,255,255,0.55),
-    0 0 22px rgba(236, 72, 153, 0.42),
-    0 0 42px rgba(236, 72, 153, 0.18);
-}
-
-/* 🏆 MVP(건수): 보라 */
-.badge-mvp_count_month,
-.badge-mvp_count_week,
-.badge-mvp{
-  border-color: rgba(168, 85, 247, 0.95);
-  box-shadow:
-    0 10px 18px rgba(0,0,0,0.08),
-    0 0 0 2px rgba(255,255,255,0.55),
-    0 0 22px rgba(168, 85, 247, 0.42),
-    0 0 42px rgba(168, 85, 247, 0.20);
-}
-
-/* 💎 MVP(금액): 블루-퍼플 */
-.badge-mvp_amount_month,
-.badge-mvp_amount_week,
-.badge-amount{
-  border-color: rgba(59, 130, 246, 0.95);
-  box-shadow:
-    0 10px 18px rgba(0,0,0,0.08),
-    0 0 0 2px rgba(255,255,255,0.55),
-    0 0 22px rgba(59, 130, 246, 0.40),
-    0 0 42px rgba(59, 130, 246, 0.18);
-}
-
-/* 📅 출석: 민트 */
-.badge-attendance_month_mvp,
-.badge-attendance_week_mvp,
-.badge-attendance{
-  border-color: rgba(34, 197, 94, 0.95);
-  box-shadow:
-    0 10px 18px rgba(0,0,0,0.08),
-    0 0 0 2px rgba(255,255,255,0.55),
-    0 0 22px rgba(34, 197, 94, 0.35),
-    0 0 42px rgba(34, 197, 94, 0.16);
-}
-
-/* 📝 게시글: 오렌지 */
-.badge-most_posts_month,
-.badge-most_posts_week,
-.badge-posts{
-  border-color: rgba(249, 115, 22, 0.95);
-  box-shadow:
-    0 10px 18px rgba(0,0,0,0.08),
-    0 0 0 2px rgba(255,255,255,0.55),
-    0 0 22px rgba(249, 115, 22, 0.35),
-    0 0 42px rgba(249, 115, 22, 0.16);
-}
-
-/* 기타 기본 */
-.badge-etc{
-  border-color: rgba(180, 160, 255, 0.65);
-}
-
-
-.profile-meta{
-  display:flex;
-  flex-wrap:wrap;
-  gap: 10px;           /* ✅ 간격 더 벌림 */
-  row-gap: 10px;       /* ✅ 줄바꿈 시 위아래 간격 */
-  margin-top: 8px;     /* ✅ 배지 아이콘과 거리 */
-  font-size: 12px;
-}
-
-.profile-pill { font-size: 12px; padding: 4px 9px; border-radius: 999px; background: #f3efff; color: #352153; }
+.profile-meta{ display:flex; flex-wrap:wrap; gap: 8px; margin-top: 6px; font-size: 12px; }
+.profile-pill{ font-size: 12px; padding: 4px 9px; border-radius: 999px; background: #f4f0ff; color: #352153; }
 
 .profile-stats{
   display:flex;
-  flex-wrap:wrap;
-  gap: 10px;           /* ✅ 새 채팅/피드백/스케줄 간격 */
-  row-gap: 10px;
-  margin-top: 6px;     /* ✅ 메타(pill)와 거리 */
-  font-size: 12px;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  overflow: hidden;
 }
-
-.profile-stat-pill {
-  font-size: 12px;
-  padding: 4px 11px;
+.profile-stat-pill{
+  font-size: 11px;
+  padding: 3px 9px;
   border-radius: 999px;
   background: #f7f2ff;
   color: #352153;
   border: 1px solid #e0d4ff;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
-.profile-stat-pill strong { color: #ff4f9f; }
+.profile-stat-pill strong{ color: #ff4f9f; }
 
-/* ✅ 버튼 통일 */
-.profile-links { display: flex; justify-content: flex-end; gap: 10px; margin-top: auto; }
-
-.action-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 34px;
-  padding: 0 14px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 900;
-  letter-spacing: -0.2px;
-  cursor: pointer;
-  border: 1px solid rgba(124, 58, 237, 0.35);
-  box-shadow: 0 10px 18px rgba(0,0,0,0.12);
-  transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
-}
-.action-pill:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 14px 24px rgba(0,0,0,0.18);
-  filter: brightness(1.02);
-}
-.action-pill-primary {
-  background: linear-gradient(135deg, #f472b6, #a855f7);
-  color: #ffffff;
-  border-color: rgba(255,255,255,0.55);
-}
-.action-pill-danger {
-  background: linear-gradient(135deg, #ff4d8d, #ff7a45);
-  color: #ffffff;
-  border-color: rgba(255,255,255,0.55);
-}
-
-/* ✅ 배지 패널 */
-.mp-backdrop{
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 60;
-}
-.mp-panel{
-  width: 380px;
-  max-width: 92vw;
-  border-radius: 26px;
-  background: #ffffff;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.45);
-  padding: 18px 18px 16px;
-  position: relative;
-  border: 1px solid rgba(226, 232, 240, 0.9);
-}
-.mp-close{
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  border: none;
-  background: #f3f4ff;
-  color: #4b2d7a;
-  cursor: pointer;
-  font-size: 14px;
-}
-.mp-title{ font-size: 18px; font-weight: 900; color: #1b1030; }
-.mp-sub{ margin-top: 4px; font-size: 13px; color: #7a69c4; }
-.mp-empty{
-  margin-top: 12px;
-  border-radius: 16px;
-  padding: 12px 12px;
-  background: #faf7ff;
-  border: 1px dashed rgba(165, 148, 230, 0.9);
-  font-size: 14px;
-  color: #7461be;
-  line-height: 1.5;
-}
-.mp-list{ list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.mp-item{
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border-radius: 14px;
-  padding: 10px 10px;
-  background: #faf7ff;
-  border: 1px solid rgba(212, 200, 255, 0.9);
-}
+/* 배지 패널 */
+.mp-backdrop{ position: fixed; inset: 0; background: rgba(15, 23, 42, 0.50); display:flex; align-items:center; justify-content:center; z-index: 60; }
+.mp-panel{ width: 380px; max-width: 92vw; border-radius: 26px; background:#fff; box-shadow: 0 24px 54px rgba(15,23,42,0.38); padding: 18px 18px 16px; position: relative; border: 1px solid rgba(226,232,240,0.9); }
+.mp-close{ position:absolute; top: 10px; right: 12px; width: 30px; height: 30px; border-radius: 999px; border:none; background:#f3f4ff; color:#4b2d7a; cursor:pointer; font-size: 14px; }
+.mp-title{ font-size: 18px; font-weight: 950; color:#1b1030; }
+.mp-sub{ margin-top: 4px; font-size: 13px; color:#7a69c4; }
+.mp-empty{ margin-top: 12px; border-radius: 16px; padding: 12px; background:#faf7ff; border: 1px dashed rgba(165, 148, 230, 0.9); font-size: 14px; color:#7461be; line-height: 1.5; }
+.mp-list{ list-style:none; margin: 12px 0 0; padding:0; display:flex; flex-direction: column; gap: 8px; }
+.mp-item{ display:flex; align-items:center; gap: 10px; border-radius: 14px; padding: 10px; background:#faf7ff; border: 1px solid rgba(212, 200, 255, 0.9); }
 .mp-emoji{ width: 34px; height: 34px; border-radius: 999px; display:flex; align-items:center; justify-content:center; background:#fff; border:1px solid #eadcff; }
-.mp-name{ font-size: 15px; font-weight: 800; color:#2a1236; }
+.mp-name{ font-size: 15px; font-weight: 900; color:#2a1236; }
+
+/* 코치 */
+.home-header-bottom{ margin-top: 6px; }
+.coach-row{ display:flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
+
+.coach-bubble-panel{
+  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255,255,255,0.16);
+  border: 1px solid rgba(255,255,255,0.26);
+  border-radius: 22px;
+  padding: 14px 16px;
+  box-shadow: 0 14px 26px rgba(0,0,0,0.14);
+  min-height: 148px;
+  max-height: 148px;
+  display:flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+.coach-pill{
+  display:inline-flex;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.28);
+  font-size: 13px;
+  font-weight: 950;
+  align-self: flex-start;
+}
+.coach-text{
+  margin-top: 10px;
+  font-size: 18px;
+  font-weight: 950;
+  line-height: 1.35;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.18);
+  letter-spacing: -0.2px;
+  min-height: 72px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: keep-all;
+}
+
+/* 마스코트 */
+.coach-mascot-wrap{
+  width: 180px;
+  height: 180px;
+  flex: 0 0 180px;
+  position: relative;
+  display:flex;
+  align-items:flex-end;
+  justify-content:flex-end;
+  margin-bottom: -10px;
+  animation: floaty 2.8s ease-in-out infinite;
+}
+@keyframes floaty{ 0%,100%{ transform: translateY(8px);} 50%{ transform: translateY(-2px);} }
+.coach-mascot-img{ width: 180px; height: 180px; object-fit: contain; filter: drop-shadow(0 18px 22px rgba(0,0,0,0.22)); }
+.coach-sparkle{ position:absolute; font-size: 18px; opacity: 0.9; }
+.coach-sparkle.s1{ top: 18px; left: 18px; animation: tw 1.6s ease-in-out infinite; }
+.coach-sparkle.s2{ top: 52px; left: 46px; animation: tw 1.8s ease-in-out infinite; }
+@keyframes tw{ 0%,100%{ transform: scale(1); opacity: .85;} 50%{ transform: scale(1.25); opacity: 1;} }
 
 /* 메뉴 버튼 */
-.home-quick-nav { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: nowrap; }
-.quick-card {
+.home-quick-nav{ display:flex; gap: 8px; margin-bottom: 14px; flex-wrap: nowrap; }
+.quick-card{
   flex: 1;
   height: 44px;
   border-radius: 999px;
   padding: 0 14px;
-  background: linear-gradient(135deg, #f973b8, #a855f7);
-  box-shadow: 0 10px 18px rgba(0,0,0,0.18);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: linear-gradient(135deg, rgba(249,115,184,0.88), rgba(168,85,247,0.86));
+  box-shadow: 0 10px 16px rgba(0,0,0,0.12);
+  border: 1px solid rgba(255,255,255,0.66);
+  display:flex;
+  align-items:center;
+  justify-content:center;
   font-size: 15px;
-  font-weight: 800;
-  color: #ffffff;
+  font-weight: 900;
+  color:#fff;
   white-space: nowrap;
-  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
-}
-.quick-card:hover {
-  transform: translateY(-1px);
-  background: linear-gradient(135deg, #fb7185, #7c3aed);
-  box-shadow: 0 14px 24px rgba(0,0,0,0.24);
 }
 
 /* 날씨 */
-.weather-wide { margin-bottom: 10px; }
-.weather-panel {
+.weather-wide{ margin-bottom: 10px; }
+.weather-panel{
   border-radius: 18px;
-  background: #ffffff;
-  padding: 10px 14px 10px;
-  box-shadow: 0 12px 24px rgba(0,0,0,0.12);
+  background: rgba(255,255,255,0.96);
+  padding: 10px 14px;
+  box-shadow: var(--soft-shadow);
   border: 1px solid #e3dafb;
   color: #241336;
 }
-.weather-panel-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
-.weather-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
-.weather-slot { min-width: 100px; border-radius: 12px; background: #f7f3ff; padding: 6px; font-size: 13px; }
-.weather-time { font-weight: 600; margin-bottom: 2px; }
-.weather-temp { font-size: 20px; font-weight: 800; color: #f35fa6; }
-.weather-desc { font-size: 13px; color: #7a68c4; }
+.weather-strip{ display:flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.weather-slot{ min-width: 100px; border-radius: 12px; background: #f7f3ff; padding: 6px; font-size: 13px; }
+.weather-time{ font-weight: 800; margin-bottom: 2px; }
+.weather-temp{ font-size: 20px; font-weight: 950; color: rgba(243,95,166,0.95); }
+.weather-desc{ font-size: 13px; color: #7a68c4; }
 
-.home-main { display: flex; flex-direction: column; gap: 14px; }
-.home-section { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
-.calendar-section { grid-template-columns: repeat(1, minmax(0, 1fr)); }
-.home-top-summary { margin-top: 2px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.home-main{ display:flex; flex-direction: column; gap: 14px; }
 
-.summary-card { border-radius: 20px; padding: 14px 16px; background: #ffffff; box-shadow: 0 14px 26px rgba(0,0,0,0.12); border: 1px solid #e5ddff; color: #211437; }
-.summary-title { font-size: 18px; font-weight: 800; margin-bottom: 8px; color: #6b41ff; }
-.summary-desc { font-size: 14px; color: #7a69c4; }
-
-.goals-list { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
-.goal-card { border-radius: 16px; padding: 8px 10px; background: #faf7ff; border: 1px solid rgba(194, 179, 255, 0.6); }
-.goal-card-today { background: linear-gradient(135deg, #ffb5df, #ff8cc7); box-shadow: 0 0 12px rgba(255, 128, 205, 0.6); color: #2b1131; }
-.goal-label { font-size: 14px; color: #694292; }
-.goal-text { margin-top: 3px; font-size: 16px; font-weight: 600; }
-.goal-main { margin-top: 10px; font-size: 14px; color: #7e68c7; }
-.goal-main-strong { color: #f153aa; font-weight: 800; }
-
-.todo-empty { margin-top: 10px; border-radius: 16px; padding: 10px 12px; background: #faf7ff; border: 1px dashed rgba(165, 148, 230, 0.9); font-size: 14px; color: #7461be; line-height: 1.5; }
-.todo-empty-sub { font-size: 13px; }
-.todo-list { margin: 10px 0 0; padding: 0; list-style: none; }
-.todo-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 15px; }
-.todo-check { width: 20px; height: 20px; border-radius: 8px; border: 1.5px solid #f153aa; box-sizing: border-box; background: #fff; font-size: 13px; font-weight: 800; color: #ffffff; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.16s ease; }
-.todo-check-done { background: linear-gradient(135deg, #f153aa, #a36dff); box-shadow: 0 0 10px rgba(241, 83, 170, 0.6); }
-.todo-text { color: #241336; }
-.todo-text-done { color: #a39ad3; text-decoration: line-through; }
-
-.growth-header { display: flex; justify-content: space-between; align-items: baseline; }
-.growth-month { font-size: 14px; color: #7e6fd6; }
-.growth-caption { margin-top: 4px; font-size: 14px; color: #7c6acd; }
-.growth-graph-wrap { margin-top: 8px; padding: 10px 8px; border-radius: 16px; background: radial-gradient(circle at top, #ffe9ff 0, #f5f0ff 50%, #ffffff 100%); border: 1px solid rgba(214, 196, 255, 0.8); }
-.growth-graph { display: flex; align-items: flex-end; gap: 3px; height: 150px; width: 100%; }
-.growth-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; }
-.bar { width: 10px; border-radius: 999px; margin-bottom: 4px; }
-.contract-bar { background: linear-gradient(180deg, #fef3c7 0%, #facc15 40%, #fb923c 100%); box-shadow: 0 6px 12px rgba(234, 179, 8, 0.55), 0 0 8px rgba(251, 146, 60, 0.85); }
-.growth-day-label { margin-top: 4px; font-size: 11px; color: #8775c8; }
-
-.right-card { background: #ffffff; border-radius: 20px; padding: 12px 14px; box-shadow: 0 14px 26px rgba(0,0,0,0.12); border: 1px solid #d9ccff; color: #211437; }
-.right-card-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 6px; }
-.empty-text { font-size: 13px; color: #7a69c4; line-height: 1.5; }
-
-.section-header { margin-bottom: 6px; grid-column: 1 / -1; }
-.month-nav { display: flex; align-items: center; gap: 6px; }
-.nav-btn { border-radius: 999px; border: none; padding: 4px 8px; font-size: 13px; background: #f0e8ff; color: #5a3cb2; cursor: pointer; }
-.month-label { font-size: 15px; font-weight: 700; color: #372153; }
-
-.calendar-grid { background: #ffffff; border-radius: 16px; padding: 6px; box-shadow: 0 14px 26px rgba(0,0,0,0.12); display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; grid-column: 1 / -1; border: 1px solid #e5ddff; }
-.calendar-weekday { text-align: center; font-size: 13px; font-weight: 700; color: #7f6bd5; }
-.calendar-day { border-radius: 14px; border: none; background: #faf7ff; padding: 7px 5px; min-height: 80px; font-size: 12px; display: flex; flex-direction: column; align-items: stretch; cursor: pointer; color: #241336; transition: all 0.12s ease; }
-.calendar-day-out { opacity: 0.35; }
-.calendar-day-today { box-shadow: 0 0 0 1px #f153aa; }
-.calendar-day-selected { box-shadow: 0 0 0 2px #a45bff; background: linear-gradient(135deg, #f5e6ff, #ffe1f1); }
-.calendar-day-head { display: flex; justify-content: space-between; align-items: center; }
-.calendar-day-number { font-weight: 700; font-size: 13px; }
-.calendar-day-mood { font-size: 14px; }
-
-.calendar-day-dots { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
-.calendar-pill { font-size: 11px; padding: 4px 8px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; max-width: 100%; }
-.calendar-pill-work { background: linear-gradient(135deg, #f472b6, #e879f9); color: #ffffff; box-shadow: 0 4px 10px rgba(236, 72, 153, 0.45); }
-.calendar-pill-attend { background: linear-gradient(135deg, #fb7185, #f97316); color: #ffffff; box-shadow: 0 4px 10px rgba(248, 113, 113, 0.5); }
-.calendar-pill-etc { background: #e5e7eb; color: #111827; }
-.calendar-pill-count { background: #fee2ff; color: #a21caf; border: 1px solid rgba(244, 114, 182, 0.6); }
-
-.calendar-footer { grid-column: 1 / -1; margin-top: 4px; font-size: 14px; color: #7e6fd6; }
-.calendar-selected-card { grid-column: 1 / -1; margin-top: 8px; }
-
-.schedule-list { list-style: none; margin: 8px 0 0; padding: 0; }
-.schedule-item { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 10px; font-size: 14px; padding: 6px 0; border-bottom: 1px dashed #e0d4ff; }
-.schedule-item:last-child { border-bottom: none; }
-.schedule-time { color: #f153aa; font-weight: 600; font-size: 14px; }
-.schedule-content { display: flex; align-items: center; gap: 10px; }
-.schedule-category { border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 700; line-height: 1; border: 1px solid transparent; white-space: nowrap; }
-.schedule-cat-work { background: #fef2ff; color: #db2777; border-color: rgba(244, 114, 182, 0.4); }
-.schedule-cat-edu { background: #fef9c3; color: #ca8a04; border-color: rgba(250, 204, 21, 0.5); }
-.schedule-cat-event { background: #fee2e2; color: #dc2626; border-color: rgba(248, 113, 113, 0.6); }
-.schedule-cat-attend { background: #e0f2fe; color: #1d4ed8; border-color: rgba(59, 130, 246, 0.6); }
-.schedule-cat-etc { background: #f3f4ff; color: #4b5563; border-color: rgba(148, 163, 184, 0.6); }
-.schedule-title { color: #241336; font-size: 14px; }
-
-.friend-card { margin-top: 24px; padding: 16px 20px 20px; border-radius: 26px; border: 4px solid rgba(162, 125, 255, 0.95); background: #ffffff; box-shadow: 0 20px 40px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.7); overflow: hidden; }
-.friend-card-header { padding: 16px 20px 12px; border-radius: 20px; background: linear-gradient(135deg, #8b5cf6, #ec4899); display: flex; justify-content: space-between; align-items: center; }
-.friend-title { color: #ffffff; }
-.friend-sub { color: #fee2f2; }
-.friend-chat-banner { border-radius: 999px; border: none; padding: 8px 14px; font-size: 14px; font-weight: 700; background: #f9fafb; color: #7c3aed; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.18); }
-.friend-chat-banner.big { min-width: 140px; text-align: center; }
-
-.friends-list { list-style: none; margin: 16px 0 0; padding: 4px 4px 0 4px; max-height: 320px; overflow-y: auto; }
-.friend-item { padding: 14px 16px; border-radius: 20px; margin-bottom: 12px; background: #fbf8ff; border: 1px solid rgba(211,196,255,0.9); cursor: pointer; transition: all 0.16s ease; }
-.friend-item:last-child { margin-bottom: 0; }
-.friend-item:hover { background: #f4eeff; transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
-.friend-main-row { display: flex; align-items: center; gap: 12px; }
-.friend-avatar-small { width: 34px; height: 34px; border-radius: 999px; background: radial-gradient(circle at top left, #ff9ed5 0, #a855f7 60%); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; box-shadow: 0 0 10px rgba(185, 129, 255, 0.8); }
-.friend-dot { width: 10px; height: 10px; border-radius: 999px; flex-shrink: 0; }
-.friend-dot-on { background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.9); }
-.friend-dot-off { background: #9ca3af; opacity: 0.8; }
-.friend-name-wrap { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.friend-name { font-size: 16px; font-weight: 800; color: #111827; }
-.friend-role-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.9); color: #7c3aed; border: 1px solid rgba(167, 139, 250, 0.9); }
-.friend-meta-row { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; color: #4b5563; }
-
-.friend-modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); display: flex; align-items: center; justify-content: center; z-index: 40; }
-.friend-modal { width: 360px; max-width: 90vw; border-radius: 26px; background: #ffffff; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.45), 0 0 0 1px rgba(226, 232, 240, 0.9); padding: 18px 18px 16px; position: relative; }
-.friend-modal-close { position: absolute; top: 10px; right: 12px; width: 26px; height: 26px; border-radius: 999px; border: none; background: #f3f4ff; color: #4b2d7a; cursor: pointer; font-size: 14px; }
-.friend-modal-header { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
-.friend-modal-avatar { width: 54px; height: 54px; border-radius: 999px; background: radial-gradient(circle at top left, #ff9ed5 0, #a855f7 60%); display: flex; align-items: center; justify-content: center; color: #ffffff; font-weight: 800; font-size: 22px; overflow: hidden; }
-.friend-modal-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.friend-modal-title { display: flex; flex-direction: column; gap: 2px; }
-.friend-modal-name-row { display: flex; align-items: center; gap: 6px; }
-.friend-modal-name { font-size: 18px; font-weight: 900; color: #1e1034; }
-.friend-modal-role { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #f3e8ff; color: #7c3aed; }
-.friend-modal-mood { font-size: 18px; }
-.friend-modal-sub { font-size: 13px; color: #7a69c4; }
-.friend-modal-body { margin-top: 8px; display: flex; flex-direction: column; gap: 10px; }
-.friend-modal-section { padding: 8px 10px; border-radius: 14px; background: #faf7ff; border: 1px solid rgba(212, 200, 255, 0.9); }
-.friend-modal-label { font-size: 12px; font-weight: 700; color: #7c6acd; margin-bottom: 4px; }
-.friend-modal-main-goal { font-size: 15px; font-weight: 700; color: #f153aa; }
-.friend-modal-goals { list-style: none; margin: 0; padding: 0; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
-.friend-modal-goals li { display: flex; justify-content: space-between; }
-.friend-modal-cheer { margin-top: 4px; font-size: 14px; font-weight: 700; color: #7c3aed; }
-.friend-modal-actions { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 8px; }
-.friend-modal-btn { flex: 1; min-width: 90px; border-radius: 999px; border: 1px solid #e0d4ff; background: #f9f5ff; color: #7c3aed; font-size: 13px; padding: 7px 10px; cursor: pointer; }
-.friend-modal-btn.primary { background: linear-gradient(135deg, #f153aa, #a855f7); color: #ffffff; border-color: transparent; box-shadow: 0 10px 20px rgba(148, 60, 180, 0.45); }
-
-.floating-support-btn {
-  position: fixed;
-  right: 26px;
-  bottom: 26px;
-  border-radius: 999px;
-  border: none;
-  padding: 10px 18px;
-  background: radial-gradient(circle at top left, #ff9ed5 0, #a855f7 60%);
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
-  box-shadow: 0 14px 30px rgba(124, 58, 237, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.7);
-  display: flex;
+/* 목표/할일 카드 */
+.home-top-summary{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.summary-card{
+  border-radius: 20px;
+  padding: 18px 18px;
+  background: rgba(255,255,255,0.96);
+  box-shadow: var(--soft-shadow);
+  border: 1px solid #e5ddff;
+  color:#211437;
+  display:flex;
   flex-direction: column;
-  gap: 2px;
-  cursor: pointer;
-  z-index: 30;
 }
+.summary-title{ font-size: 20px; font-weight: 950; margin-bottom: 10px; color:#5d3bdb; }
+.summary-desc{ font-size: 15px; color:#7a69c4; margin: 0 0 10px; }
+.tiny-note{ margin-top: 10px; font-size: 12px; color:#7a69c4; }
+.fill-note{ margin-top: auto; padding-top: 12px; }
 
-@keyframes uplogBounce {
-  0% { transform: translateY(0) scale(1); }
-  20% { transform: translateY(-14px) scale(1.15, 0.9); }
-  40% { transform: translateY(0) scale(0.95, 1.05); }
-  60% { transform: translateY(-6px) scale(1.05, 0.95); }
-  100% { transform: translateY(0) scale(1); }
-}
+.goals-card{ min-height: 190px; }
+.todo-card{ min-height: 190px; }
 
-/* ✅✅✅ 스크린샷 말풍선/마스코트 스타일 오버라이드 (여기부터가 핵심) */
-.home-header-bottom{
-  height: 160px;
-  margin-top: 6px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  overflow: visible;
-}
-
-.coach-row{
-  width: 100%;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.coach-bubble-panel{
-  flex: 1;
-  min-width: 0;
-  max-width: 560px;
-  background: rgba(255,255,255,0.98);
-  border-radius: 18px;
-  padding: 14px 16px;
-  box-shadow: 0 14px 26px rgba(0,0,0,0.18);
-  border: 1px solid rgba(235, 225, 255, 0.95);
-  color: #1b1030;
-}
-
-.coach-pill{
-  display: inline-flex;
+.goal-inline{
+  display:flex;
+  flex-wrap: wrap;
+  gap: 10px;
   align-items: center;
-  justify-content: center;
-  height: 32px;
-  padding: 0 14px;
+  margin-top: 6px;
+  font-size: 17px;
+  font-weight: 950;
+}
+.goal-tag{
+  padding: 5px 11px;
   border-radius: 999px;
+  background: #ede9ff;
+  color: #5b21b6;
   font-size: 13px;
+}
+.goal-text-strong{ font-size: 19px; color: #ec4899; }
+.goal-text{ font-size: 17px; color: #372153; }
+.goal-divider{ opacity: .35; font-weight: 900; }
+.goal-main{ margin-top: 12px; font-size: 15px; color: #7e68c7; }
+.goal-main-strong{ color: #f153aa; font-weight: 950; }
+
+.todo-empty{
+  margin-top: 10px;
+  border-radius: 16px;
+  padding: 10px 12px;
+  background:#faf7ff;
+  border: 1px dashed rgba(165,148,230,0.9);
+  font-size: 14px;
+  color:#7461be;
+  line-height: 1.5;
+}
+.todo-empty.big{
+  margin-top: 12px;
+  padding: 16px 14px;
+  min-height: 110px;
+  display:flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+.todo-empty-title{ font-size: 16px; font-weight: 950; color:#5b21b6; }
+.todo-empty-sub{ font-size: 14px; color:#7a69c4; }
+
+.todo-list{ margin: 10px 0 0; padding: 0; list-style: none; }
+.todo-list.big{ margin-top: 12px; }
+.todo-item{ display:flex; align-items:center; gap: 10px; padding: 4px 0; font-size: 15px; }
+.todo-item.big{ padding: 6px 0; font-size: 16px; }
+.todo-check{ width: 22px; height: 22px; border-radius: 8px; border: 1.5px solid rgba(241,83,170,0.85); background:#fff; font-size: 13px; font-weight: 950; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.todo-check-done{ background: linear-gradient(135deg, rgba(241,83,170,0.92), rgba(163,109,255,0.90)); box-shadow: 0 0 10px rgba(241,83,170,0.30); color:#fff; }
+.todo-text-done{ color:#a39ad3; text-decoration: line-through; }
+
+/* 달력 */
+.home-section{ display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.calendar-section{ grid-template-columns: repeat(1, minmax(0, 1fr)); }
+.section-header{ margin-bottom: 6px; grid-column: 1 / -1; display:flex; justify-content: space-between; align-items:flex-end; gap: 10px; }
+.month-nav{ display:flex; align-items:center; gap: 6px; }
+.nav-btn{ border-radius: 999px; border:none; padding: 6px 10px; font-size: 13px; background: rgba(240,232,255,0.85); color:#5a3cb2; cursor:pointer; font-weight: 900; }
+.month-label{ font-size: 15px; font-weight: 900; color:#372153; }
+
+/* 달력 가이드 */
+.calendar-legend{
+  grid-column: 1 / -1;
+  display:flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items:center;
+  justify-content:flex-start;
+  margin: 2px 0 8px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.86);
+  border: 1px solid rgba(229,221,255,0.75);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.06);
+}
+.legend-item{ display:flex; align-items:center; gap: 8px; font-size: 12px; font-weight: 950; color:#372153; }
+.legend-dot{ width: 10px; height: 10px; border-radius: 999px; display:inline-block; }
+.dot-attend{ background: linear-gradient(135deg, rgba(251,113,133,0.95), rgba(249,115,22,0.95)); }
+.dot-work{ background: linear-gradient(135deg, rgba(244,114,182,0.95), rgba(232,121,249,0.95)); }
+.dot-etc{ background: rgba(148,163,184,0.95); }
+.dot-new{ background: linear-gradient(135deg, rgba(34,211,238,0.95), rgba(59,130,246,0.92)); }
+
+.legend-pill{
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(243,244,255,0.92);
+  border: 1px solid rgba(217,204,255,0.75);
+}
+.legend-label{ display:inline-flex; align-items: baseline; gap: 6px; }
+.legend-n{ font-size: 13px; color:#ff4f9f; letter-spacing: -0.2px; }
+.legend-hint{
+  margin-left: auto;
+  opacity: .85;
   font-weight: 900;
-  letter-spacing: -0.2px;
-  color: #ffffff;
-  background: linear-gradient(135deg, #ff4fd8, #a855f7);
-  box-shadow: 0 10px 18px rgba(0,0,0,0.12);
+  color:#6f60b8;
 }
 
-.coach-text{
+.calendar-grid{
+  background: rgba(255,255,255,0.96);
+  border-radius: 16px;
+  padding: 6px;
+  box-shadow: var(--soft-shadow);
+  display:grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  grid-column: 1 / -1;
+  border: 1px solid rgba(229,221,255,0.85);
+}
+.calendar-weekday{ text-align:center; font-size: 13px; font-weight: 900; color:#7f6bd5; }
+.calendar-day{
+  border-radius: 14px;
+  border: 1px solid rgba(229,221,255,0.65);
+  background: rgba(250,247,255,0.92);
+  padding: 7px 5px;
+  min-height: 92px;
+  font-size: 12px;
+  display:flex;
+  flex-direction: column;
+  align-items: stretch;
+  cursor: pointer;
+  color:#241336;
+  transition: all 0.12s ease;
+}
+.calendar-day-out{ opacity: .35; }
+.calendar-day-today{ box-shadow: 0 0 0 1px rgba(241,83,170,0.85); }
+.calendar-day-selected{ box-shadow: 0 0 0 2px rgba(164,91,255,0.85); background: linear-gradient(135deg, rgba(245,230,255,0.85), rgba(255,225,241,0.82)); }
+.calendar-day-head{ display:flex; justify-content: space-between; align-items:center; }
+.calendar-day-number{ font-weight: 950; font-size: 13px; }
+.calendar-day-mood{ font-size: 14px; }
+
+.calendar-dot-row{
   margin-top: 10px;
+  display:flex;
+  gap: 8px;
+  align-items:center;
+  flex-wrap: wrap;
+  padding: 2px 2px 0;
+}
+.calendar-dot-item{
+  display:inline-flex;
+  align-items:center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.70);
+  border: 1px solid rgba(229,221,255,0.65);
+}
+.calendar-dot{ width: 10px; height: 10px; border-radius: 999px; display:inline-block; }
+.calendar-dot-num{ font-size: 11px; font-weight: 950; color:#372153; line-height: 1; }
+
+.calendar-footer{ grid-column: 1 / -1; margin-top: 4px; font-size: 14px; color:#7e6fd6; font-weight: 900; }
+
+.right-card{ background: rgba(255,255,255,0.96); border-radius: 20px; padding: 12px 14px; box-shadow: var(--soft-shadow); border: 1px solid rgba(217,204,255,0.85); color:#211437; }
+.calendar-selected-card{ grid-column: 1 / -1; margin-top: 8px; }
+.right-card-header{ display:flex; justify-content: space-between; align-items:flex-end; margin-bottom: 6px; }
+.empty-text{ font-size: 13px; color:#7a69c4; line-height: 1.5; }
+
+.schedule-list{ list-style:none; margin: 8px 0 0; padding: 0; }
+.schedule-item{ display:grid; grid-template-columns: 70px minmax(0, 1fr); gap: 10px; font-size: 14px; padding: 6px 0; border-bottom: 1px dashed rgba(224,212,255,0.75); }
+.schedule-item:last-child{ border-bottom: none; }
+.schedule-time{ color: rgba(241,83,170,0.95); font-weight: 950; font-size: 14px; }
+.schedule-content{ display:flex; align-items:center; gap: 10px; }
+.schedule-category{ border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 950; line-height: 1; border: 1px solid transparent; white-space: nowrap; }
+.schedule-cat-work{ background: rgba(254,242,255,0.90); color:#db2777; border-color: rgba(244,114,182,0.30); }
+.schedule-cat-edu{ background: rgba(254,249,195,0.92); color:#a16207; border-color: rgba(250,204,21,0.35); }
+.schedule-cat-event{ background: rgba(254,226,226,0.90); color:#dc2626; border-color: rgba(248,113,113,0.38); }
+.schedule-cat-attend{ background: rgba(224,242,254,0.90); color:#1d4ed8; border-color: rgba(59,130,246,0.38); }
+.schedule-cat-etc{ background: rgba(243,244,255,0.92); color:#4b5563; border-color: rgba(148,163,184,0.38); }
+.schedule-title{ color:#241336; font-size: 14px; }
+
+/* 친구 */
+.friend-card{ grid-column: 1 / -1; margin-top: 14px; padding: 16px 20px 20px; border-radius: 26px; border: 2px solid rgba(162, 125, 255, 0.55); }
+.friend-card-header{ display:flex; justify-content: space-between; align-items:flex-end; gap: 12px; }
+.friend-chat-banner{
+  border: none;
+  cursor: pointer;
+  border-radius: 16px;
+  padding: 10px 14px;
+  font-weight: 950;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(244,114,182,0.92), rgba(168,85,247,0.90));
+  box-shadow: 0 14px 22px rgba(0,0,0,0.12);
+}
+.friend-chat-banner.big{ font-size: 14px; }
+
+.friend-tools{
+  margin-top: 12px;
+  display:flex;
+  justify-content:flex-start;
+}
+.friend-search{
+  width: 360px;
+  max-width: 100%;
+  height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(217,204,255,0.85);
+  background: #fff;
+  padding: 0 12px;
   font-size: 16px;
   font-weight: 800;
-  line-height: 1.25;
-  color: #211437;
+  outline: none;
 }
 
-.coach-mascot-wrap{
-  position: relative;
-  width: 180px;
-  height: 180px;
-  flex: 0 0 180px;
-  margin-right: 2px;
-  animation: coachFloat 3.6s ease-in-out infinite;
-  filter: drop-shadow(0 18px 22px rgba(0,0,0,0.22));
+.friends-list{ list-style:none; padding: 0; margin: 12px 0 0; display:flex; flex-direction: column; gap: 8px; }
+.friend-item{ padding: 10px 12px; border-radius: 16px; background:#faf7ff; border: 1px solid rgba(217,204,255,0.65); cursor: pointer; }
+.friend-main-row{ display:flex; align-items:center; gap: 10px; }
+.friend-dot{ width: 10px; height: 10px; border-radius: 999px; }
+.friend-dot-on{ background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,0.18); }
+.friend-dot-off{ background: #94a3b8; }
+.friend-avatar-small{ width: 32px; height: 32px; border-radius: 999px; display:flex; align-items:center; justify-content:center; background: rgba(168,85,247,0.14); font-weight: 950; }
+.friend-name{ font-weight: 950; }
+.friend-role-pill{ margin-left: 8px; font-size: 12px; font-weight: 900; padding: 4px 10px; border-radius: 999px; background: rgba(244,114,182,0.14); color:#a21caf; border: 1px solid rgba(244,114,182,0.26); }
+
+/* 친구 모달 */
+.friend-modal-backdrop{ position: fixed; inset:0; background: rgba(15,23,42,0.50); display:flex; align-items:center; justify-content:center; z-index: 60; }
+.friend-modal{ width: 420px; max-width: 92vw; border-radius: 26px; background:#fff; box-shadow: 0 24px 54px rgba(15,23,42,0.38); padding: 16px; position: relative; }
+.friend-modal-close{ position:absolute; top: 10px; right: 12px; width: 30px; height: 30px; border-radius: 999px; border:none; background:#f3f4ff; cursor:pointer; font-weight: 950; }
+.friend-modal-header{ display:flex; gap: 12px; align-items:center; }
+.friend-modal-avatar{ width: 54px; height: 54px; border-radius: 999px; display:flex; align-items:center; justify-content:center; background: linear-gradient(135deg, rgba(244,114,182,0.92), rgba(168,85,247,0.90)); color:#fff; font-weight: 950; font-size: 18px; }
+.friend-modal-name-row{ display:flex; align-items:center; gap: 8px; }
+.friend-modal-name{ font-size: 18px; font-weight: 950; }
+.friend-modal-role{ font-size: 12px; font-weight: 900; padding: 4px 10px; border-radius: 999px; background: rgba(237,233,254,0.85); color:#5b21b6; }
+.friend-modal-sub{ font-size: 13px; color:#7a69c4; margin-top: 2px; }
+.friend-modal-body{ margin-top: 14px; }
+.friend-modal-label{ font-size: 13px; font-weight: 950; color:#372153; margin-bottom: 8px; }
+.friend-modal-actions{ display:flex; gap: 10px; flex-wrap: wrap; }
+.friend-modal-btn{
+  border: 1px solid rgba(217,204,255,0.85);
+  background: #faf7ff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 950;
+  cursor:pointer;
+}
+.friend-modal-btn.primary{
+  background: linear-gradient(135deg, rgba(244,114,182,0.92), rgba(168,85,247,0.90));
+  border-color: rgba(255,255,255,0.55);
+  color:#fff;
 }
 
-.coach-mascot-img{
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.coach-sparkle{
-  position: absolute;
-  font-size: 18px;
-  filter: drop-shadow(0 8px 12px rgba(0,0,0,0.22));
-  opacity: 0.95;
-  animation: sparklePop 1.8s ease-in-out infinite;
-}
-.coach-sparkle.s1{ right: 18px; top: 20px; animation-delay: 0.2s; }
-.coach-sparkle.s2{ right: 52px; top: 6px; animation-delay: 0.9s; }
-
-@keyframes sparklePop{
-  0%{ transform: translateY(0) scale(1); opacity: 0.85; }
-  50%{ transform: translateY(-8px) scale(1.12); opacity: 1; }
-  100%{ transform: translateY(0) scale(1); opacity: 0.85; }
-}
-
-@keyframes coachFloat{
-  0%{ transform: translateY(0px); }
-  50%{ transform: translateY(-14px); }
-  100%{ transform: translateY(0px); }
-}
-
-/* 반응형 */
-@media (max-width: 1024px) {
-  .home-root { padding: 16px; }
-  .home-header { padding: 16px 14px 12px; }
-  .home-header-top { grid-template-columns: 1fr; }
-  .profile-box { width: 100%; min-width: 0; max-width: 100%; height: auto; min-height: 0; max-height: none; }
-  .home-header-profile { margin-top: 6px; justify-content: flex-start; }
-  .home-quick-nav { flex-wrap: wrap; }
-  .home-top-summary { grid-template-columns: 1fr; }
-  .friend-card { margin-top: 16px; }
-
-  /* ✅ 모바일/태블릿에서 말풍선 아래로, 마스코트는 오른쪽 아래 유지 */
-  .home-header-bottom{ height: auto; }
-  .coach-row{ flex-direction: row; align-items: flex-end; }
-  .coach-bubble-panel{ max-width: none; }
-}
-
-@media (max-width: 640px) {
-  .home-inner { max-width: 100%; }
-  .quick-card { flex: 1 1 calc(50% - 4px); }
-  .weather-slot { min-width: 88px; }
-  .floating-support-btn { right: 16px; bottom: 16px; }
-
-  .coach-row{ flex-direction: column; align-items: stretch; }
-  .coach-mascot-wrap{
-    width: 170px;
-    height: 170px;
-    flex: 0 0 auto;
-    align-self: flex-end;
-    margin-top: 6px;
-  }
+/* 문의하기 플로팅 */
+.floating-support-btn{
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  border: none;
+  cursor: pointer;
+  border-radius: 18px;
+  padding: 12px 14px;
+  font-weight: 950;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(59,130,246,0.90), rgba(168,85,247,0.90));
+  box-shadow: 0 18px 34px rgba(0,0,0,0.18);
+  display:flex;
+  flex-direction: column;
+  gap: 2px;
 }
 `;

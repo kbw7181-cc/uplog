@@ -1,10 +1,4 @@
-import type { Metadata } from 'next';
 import './globals.css';
-
-export const metadata: Metadata = {
-  title: 'UPLOG',
-  description: '오늘도 나를 UP 시키다',
-};
 
 export default function RootLayout({
   children,
@@ -13,9 +7,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
-      <body>
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

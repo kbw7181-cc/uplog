@@ -15,7 +15,7 @@ export default function UpzzuGuideHero({
   title = '제목',
   guideTag = '오늘의 U P 가이드',
   slides,
-  mascotSrc = '/assets/images/upzzu7.png',
+  mascotSrc = '/assets/upzzu7.png',
 }: Props) {
   const [idx, setIdx] = useState(0);
   const current = useMemo(() => slides[idx] ?? '', [slides, idx]);

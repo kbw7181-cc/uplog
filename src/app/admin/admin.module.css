@@ -1,17 +1,17 @@
-/* =====================================================
-   ✅ ADMIN DASHBOARD: /admin/support 톤과 통일 (다크 + 포인트만 네온)
-   - 대표님이 올린 기존 스타일을 "그대로" 살리고,
-   - 아래는 색감/통일감 보정만 추가
-   ===================================================== */
+/* ✅ 파일: src/app/admin/admin.module.css */
 
+/* ====== page ====== */
 .page{
+  position: relative;
   max-width: 1120px;
   margin: 0 auto;
-  padding: 34px 18px 60px;
+  padding: 28px 18px 70px;
+  font-size: 18px;
+  line-height: 1.45;
   color: #fdf2ff;
 }
 
-/* 배경은 문의관리랑 같은 결: 너무 새까맣지 않게 */
+/* 배경 (support 톤 통일) */
 .page::before{
   content:'';
   position: fixed;
@@ -24,96 +24,58 @@
     linear-gradient(180deg, rgba(14,6,28,1) 0%, rgba(9,3,20,1) 100%);
 }
 
-/* 버튼/탭/카드 통일감: 문의관리에서 쓰는 “유리 카드” 느낌 */
+/* ====== card ====== */
+.card{
+  margin: 18px auto 0;
+  border-radius: 22px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.16);
+  box-shadow: 0 18px 55px rgba(0,0,0,0.35);
+  padding: 18px 18px 16px;
+}
+
+/* ====== title ====== */
+.h1{
+  font-size: 26px;
+  font-weight: 950;
+  letter-spacing: -0.6px;
+}
+
+.sub{
+  margin-top: 8px;
+  font-size: 16px;
+  font-weight: 850;
+  opacity: 0.85;
+}
+
+/* ====== nav buttons ====== */
+.nav{
+  display:flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
 .navBtn{
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
   background: rgba(255,255,255,0.08);
   border: 1px solid rgba(255,255,255,0.16);
+  color: #fdf2ff;
+  font-weight: 950;
+  cursor: pointer;
+  box-shadow: 0 12px 24px rgba(0,0,0,0.18);
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
+
 .navBtn:hover{
+  transform: translateY(-1px);
   background: rgba(255,255,255,0.12);
   border-color: rgba(255,255,255,0.22);
+  box-shadow: 0 16px 32px rgba(0,0,0,0.24);
 }
 
-/* summary 카드 밝기 살짝 올려서 눈 피로 감소 */
-.sumCard{
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.16);
-  box-shadow: 0 18px 55px rgba(0,0,0,0.35);
-}
-
-/* 탭: 포인트만 진하게 */
-.tabs{
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.16);
-}
-.tab:hover{
-  background: rgba(255,255,255,0.10);
-}
-.active{
-  background: linear-gradient(90deg,#ff4fd8,#b084ff,#49b7ff);
-  color: #0b021b;
-  box-shadow: 0 14px 30px rgba(255,79,216,0.22);
-}
-
-/* 힌트 박스도 문의관리 톤 */
-.hint{
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.14);
-}
-
-/* 배지 카드도 동일 결 */
-.card{
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.16);
-  box-shadow: 0 18px 55px rgba(0,0,0,0.35);
-}
-
-/* 칩/필은 과하지 않게 */
-.chip{
-  background: rgba(255,255,255,0.09);
-  border: 1px solid rgba(255,255,255,0.14);
-}
-
-/* 수상자만 눈에 띄게 (포인트만 강조) */
-.winner{
-  background: linear-gradient(90deg, rgba(255,79,216,0.22), rgba(176,132,255,0.18));
-  border: 1px solid rgba(255,79,216,0.28);
-}
-.none{
-  background: rgba(255,255,255,0.06);
-  border: 1px dashed rgba(255,255,255,0.18);
-}
-.any{
-  background: rgba(176,132,255,0.14);
-  border: 1px solid rgba(176,132,255,0.22);
-}
-/* ✅ ADMIN 공통 가독성 업그레이드 */
-.adminPage{
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 28px 18px 70px;
-  font-size: 18px;         /* ✅ 전체 글씨 크게 */
-  line-height: 1.45;
-  color: #2a1236;
-}
-
-.adminCard{
-  border-radius: 22px;      /* ✅ 라운드 크게 */
-  background: rgba(255,255,255,0.95);
-  border: 2px solid rgba(167, 139, 250, 0.55);  /* ✅ 보라 테두리 */
-  box-shadow: 0 16px 30px rgba(0,0,0,0.12);
-  padding: 16px 18px;
-}
-
-.adminH1{
-  font-size: 26px;
-  font-weight: 900;
-  letter-spacing: -0.4px;
-}
-
-.adminSub{
-  margin-top: 6px;
-  font-size: 16px;
-  font-weight: 800;
-  opacity: 0.9;
+.navBtn:active{
+  transform: scale(0.98);
 }

@@ -1,9 +1,10 @@
-// src/app/profile/page.tsx
+// ✅ 파일: src/app/profile/page.tsx
 'use client';
 
 import { useEffect, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
+import { getAvatarSrc } from '@/lib/getAvatarSrc';
 
 type ProfileRow = {
   user_id: string;
@@ -37,13 +38,13 @@ export default function ProfilePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
 
-  const [hasProfile, setHasProfile] = useState(false); // ← 기존 행 존재 여부
+  const [hasProfile, setHasProfile] = useState(false);
 
   const [name, setName] = useState('');
   const [nickname, setNickname] = useState('');
   const [industry, setIndustry] = useState('');
   const [grade, setGrade] = useState('');
-  const [career, setCareer] = useState(''); // 코드 그대로 저장
+  const [career, setCareer] = useState('');
   const [company, setCompany] = useState('');
   const [department, setDepartment] = useState('');
   const [team, setTeam] = useState('');
@@ -73,7 +74,6 @@ export default function ProfilePage() {
       setUserId(user.id);
       setEmail(user.email ?? null);
 
-      // 프로필 불러오기
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select(
@@ -84,7 +84,7 @@ export default function ProfilePage() {
 
       if (!profileError && profile) {
         const p = profile as ProfileRow;
-        setHasProfile(true); // ← 존재함
+        setHasProfile(true);
 
         setName(p.name ?? '');
         setNickname(p.nickname ?? p.name ?? user.email?.split('@')[0] ?? '');
@@ -97,11 +97,9 @@ export default function ProfilePage() {
         setAvatarUrl(p.avatar_url ?? null);
         setMainGoal(p.main_goal ?? '');
       } else {
-        // 프로필 없으면 기본 닉네임
         setNickname(user.email?.split('@')[0] ?? '');
       }
 
-      // 통계는 지금은 0으로 고정 (나중에 실제 데이터 연결)
       setStats({
         givenFeedback: 0,
         receivedFeedback: 0,
@@ -115,8 +113,11 @@ export default function ProfilePage() {
 
     init();
   }, [router]);
+  
 
-  // 공통 payload 생성
+  // ✅✅✅ 여기! avatarUrl을 안전 src로 변환 (http면 그대로 / storage 경로면 publicUrl로)
+  const safeAvatarSrc = getAvatarSrc(avatarUrl);
+
   const buildPayload = () => ({
     name: name || null,
     nickname: nickname || null,
@@ -141,24 +142,18 @@ export default function ProfilePage() {
       let error = null;
 
       if (hasProfile) {
-        // 이미 행이 있으면 UPDATE
         const { error: updateError } = await supabase
           .from('profiles')
           .update(payload)
           .eq('user_id', userId);
         error = updateError;
       } else {
-        // 없으면 INSERT
-        const { error: insertError } = await supabase
-          .from('profiles')
-          .insert({
-            user_id: userId,
-            ...payload,
-          });
+        const { error: insertError } = await supabase.from('profiles').insert({
+          user_id: userId,
+          ...payload,
+        });
         error = insertError;
-        if (!insertError) {
-          setHasProfile(true);
-        }
+        if (!insertError) setHasProfile(true);
       }
 
       if (error) {
@@ -173,9 +168,7 @@ export default function ProfilePage() {
     }
   };
 
-  const handleAvatarChange = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       if (!userId) return;
       const file = event.target.files?.[0];
@@ -189,9 +182,7 @@ export default function ProfilePage() {
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, {
-          upsert: true,
-        });
+        .upload(filePath, file, { upsert: true });
 
       if (uploadError) {
         console.error('avatar upload error', uploadError);
@@ -205,7 +196,6 @@ export default function ProfilePage() {
 
       setAvatarUrl(publicUrl);
 
-      // 프로필 테이블에도 avatar_url 저장 (UPDATE 또는 INSERT)
       let error = null;
 
       if (hasProfile) {
@@ -215,12 +205,10 @@ export default function ProfilePage() {
           .eq('user_id', userId);
         error = updateError;
       } else {
-        const { error: insertError } = await supabase
-          .from('profiles')
-          .insert({
-            user_id: userId,
-            avatar_url: publicUrl,
-          });
+        const { error: insertError } = await supabase.from('profiles').insert({
+          user_id: userId,
+          avatar_url: publicUrl,
+        });
         error = insertError;
         if (!insertError) setHasProfile(true);
       }
@@ -251,14 +239,9 @@ export default function ProfilePage() {
   return (
     <div className="profile-root">
       <div className="profile-inner">
-        {/* 상단 헤더 */}
         <header className="top-header">
           <div className="top-header-left">
-            <button
-              type="button"
-              className="back-btn"
-              onClick={() => router.push('/home')}
-            >
+            <button type="button" className="back-btn" onClick={() => router.push('/home')}>
               ◀ 메인으로
             </button>
             <div className="title-wrap">
@@ -277,7 +260,6 @@ export default function ProfilePage() {
         </header>
 
         <main className="profile-main">
-          {/* 왼쪽: 기본 정보 */}
           <section className="card left-card">
             <h2 className="card-title">기본 정보 · 나의 U P 소개</h2>
             <p className="card-sub">
@@ -285,17 +267,23 @@ export default function ProfilePage() {
             </p>
 
             <form className="form" onSubmit={handleSave}>
-              {/* 프로필 이미지 */}
               <div className="profile-row">
                 <div className="avatar-block">
                   <div className="avatar-circle">
                     {avatarUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={avatarUrl} alt="프로필" />
+                      <img
+                        src={safeAvatarSrc || '/assets/upzzu1.png'}
+                        alt="프로필"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = '/assets/upzzu1.png';
+                        }}
+                      />
                     ) : (
                       <span>{avatarInitial}</span>
                     )}
                   </div>
+
                   <label className="avatar-upload-btn">
                     {avatarUploading ? '업로드 중...' : '프로필 이미지 변경'}
                     <input
@@ -351,10 +339,7 @@ export default function ProfilePage() {
                     </div>
                     <div className="field">
                       <label>경력</label>
-                      <select
-                        value={career}
-                        onChange={(e) => setCareer(e.target.value)}
-                      >
+                      <select value={career} onChange={(e) => setCareer(e.target.value)}>
                         <option value="">선택 안 함</option>
                         <option value="0-1">0~1년</option>
                         <option value="2">2년</option>
@@ -398,7 +383,6 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {/* 동기부여 U P 문장 */}
               <div className="field-full">
                 <label>최종 목표 · 나의 동기부여 U P 문장</label>
                 <p className="field-help">
@@ -415,11 +399,7 @@ export default function ProfilePage() {
               </div>
 
               <div className="form-footer">
-                <button
-                  type="button"
-                  className="secondary-btn"
-                  onClick={() => router.push('/home')}
-                >
+                <button type="button" className="secondary-btn" onClick={() => router.push('/home')}>
                   취소
                 </button>
                 <button type="submit" className="primary-btn" disabled={saving}>
@@ -429,7 +409,6 @@ export default function ProfilePage() {
             </form>
           </section>
 
-          {/* 오른쪽: 활동 통계 */}
           <section className="card right-card">
             <h2 className="card-title">나의 활동 통계</h2>
             <p className="card-sub">
@@ -447,33 +426,25 @@ export default function ProfilePage() {
 
               <div className="stat-card">
                 <div className="stat-label">받은 피드백</div>
-                <div className="stat-value accent">
-                  {stats.receivedFeedback}
-                </div>
+                <div className="stat-value accent">{stats.receivedFeedback}</div>
                 <div className="stat-desc">내 반론/글에 달린 피드백</div>
               </div>
 
               <div className="stat-card">
                 <div className="stat-label">좋아요 받은 수</div>
-                <div className="stat-value accent">
-                  {stats.likeCount}
-                </div>
+                <div className="stat-value accent">{stats.likeCount}</div>
                 <div className="stat-desc">커뮤니티 글과 댓글에 눌린 좋아요</div>
               </div>
 
               <div className="stat-card">
                 <div className="stat-label">응원 받은 수</div>
-                <div className="stat-value">
-                  {stats.cheerCount}
-                </div>
+                <div className="stat-value">{stats.cheerCount}</div>
                 <div className="stat-desc">친구/동료에게 받은 응원 횟수</div>
               </div>
 
               <div className="stat-card wide">
                 <div className="stat-label">커뮤니티 작성 글 수</div>
-                <div className="stat-value">
-                  {stats.communityPostCount}
-                </div>
+                <div className="stat-value">{stats.communityPostCount}</div>
                 <div className="stat-desc">
                   영업 노하우/거절 경험/멘탈 관리 등 대표님이 남긴 글의 개수
                 </div>
@@ -516,7 +487,6 @@ const styles = `
 }
 
 /* 상단 헤더 */
-
 .top-header {
   display: flex;
   justify-content: space-between;
@@ -581,7 +551,6 @@ const styles = `
 }
 
 /* 메인 레이아웃 */
-
 .profile-main {
   display: grid;
   grid-template-columns: minmax(0, 3.5fr) minmax(0, 2.5fr);
@@ -610,7 +579,6 @@ const styles = `
 }
 
 /* 왼쪽 카드: 프로필 */
-
 .form {
   display: flex;
   flex-direction: column;
@@ -625,7 +593,6 @@ const styles = `
 }
 
 /* 아바타 */
-
 .avatar-block {
   display: flex;
   flex-direction: column;
@@ -685,7 +652,6 @@ const styles = `
 }
 
 /* 필드 공통 */
-
 .profile-text-block {
   display: flex;
   flex-direction: column;
@@ -764,7 +730,6 @@ const styles = `
 }
 
 /* 버튼 영역 */
-
 .form-footer {
   margin-top: 8px;
   display: flex;
@@ -800,7 +765,6 @@ const styles = `
 }
 
 /* 오른쪽 카드: 통계 */
-
 .stats-grid {
   margin-top: 8px;
   display: grid;
@@ -860,7 +824,6 @@ const styles = `
 }
 
 /* 로딩 */
-
 .loading {
   margin-top: 120px;
   text-align: center;
@@ -869,33 +832,15 @@ const styles = `
 }
 
 /* 반응형 */
-
 @media (max-width: 1024px) {
-  .profile-root {
-    padding: 16px;
-  }
-
-  .profile-main {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .profile-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  .profile-root { padding: 16px; }
+  .profile-main { grid-template-columns: minmax(0, 1fr); }
+  .profile-row { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 640px) {
-  .top-header {
-    flex-direction: column;
-  }
-
-  .top-header-left {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .field-grid {
-    grid-template-columns: minmax(0,1fr);
-  }
+  .top-header { flex-direction: column; }
+  .top-header-left { flex-direction: column; align-items: flex-start; }
+  .field-grid { grid-template-columns: minmax(0,1fr); }
 }
 `;

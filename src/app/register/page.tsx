@@ -7,17 +7,20 @@ import { supabase } from '@/lib/supabaseClient';
 export default function RegisterPage() {
   const router = useRouter();
 
-  const [industry, setIndustry] = useState('');      // 업종
-  const [company, setCompany] = useState('');       // 회사명
-  const [department, setDepartment] = useState(''); // 부서명
-  const [team, setTeam] = useState('');             // 팀명
-  const [name, setName] = useState('');             // 이름
-  const [nickname, setNickname] = useState('');     // 닉네임
-  const [phone, setPhone] = useState('');           // 전화번호
-  const [email, setEmail] = useState('');           // 이메일
-  const [career, setCareer] = useState('');         // 경력(0~1년 등)
-  const [password, setPassword] = useState('');     // 비밀번호
-  const [passwordConfirm, setPasswordConfirm] = useState(''); // 비번 확인
+  const [industry, setIndustry] = useState('');
+  const [company, setCompany] = useState('');
+  const [department, setDepartment] = useState('');
+  const [team, setTeam] = useState('');
+  const [name, setName] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [career, setCareer] = useState(''); // ✅ 선택값 or 직접입력 결과값
+  const [careerMode, setCareerMode] = useState<'select' | 'custom'>('select'); // ✅ 추가
+  const [careerCustom, setCareerCustom] = useState(''); // ✅ 추가
+  const [address, setAddress] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -26,6 +29,9 @@ export default function RegisterPage() {
   const handleSubmit = async () => {
     setError('');
     setDone(false);
+
+    // ✅ career 최종값 확정
+    const finalCareer = careerMode === 'custom' ? careerCustom.trim() : career;
 
     if (!email || !password || !passwordConfirm || !name) {
       setError('필수 항목(이름, 이메일, 비밀번호)을 모두 입력해주세요.');
@@ -37,9 +43,13 @@ export default function RegisterPage() {
       return;
     }
 
+    if (careerMode === 'custom' && !finalCareer) {
+      setError('경력(직접입력)을 작성해주세요.');
+      return;
+    }
+
     setLoading(true);
 
-    // 회원가입 (user_metadata에 기본 정보 같이 저장)
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
@@ -52,224 +62,133 @@ export default function RegisterPage() {
           company,
           department,
           team,
-          career,
+          career: finalCareer, // ✅ 최종값 저장
         },
       },
     });
 
-    if (signUpError) {
-      console.error(signUpError);
-      setError('회원가입 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
+    if (signUpError || !data.user) {
+      setError('회원가입 중 오류가 발생했어요.');
       setLoading(false);
       return;
     }
 
+    // ✅ profiles에 주소 문자열 저장
+    await supabase.from('profiles').upsert({
+      user_id: data.user.id,
+      address_text: address || null,
+    });
+
     setLoading(false);
     setDone(true);
-
-    // 회원가입 후 바로 로그인 화면으로 이동 (몇 초 뒤 이동해도 되고 바로 이동해도 OK)
     router.push('/login');
   };
 
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(180deg,#B982FF,#9D60FF)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 640,
-          background: 'rgba(255,255,255,0.18)',
-          backdropFilter: 'blur(18px)',
-          padding: '32px 28px 28px',
-          borderRadius: 28,
-          boxShadow: '0 22px 60px rgba(0,0,0,0.28)',
-          color: '#fff',
-        }}
-      >
+    <main style={styles.main}>
+      <div style={styles.card}>
         {/* 헤더 */}
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <h1
-            style={{
-              fontSize: 26,
-              fontWeight: 800,
-              marginBottom: 8,
-            }}
-          >
-            UPLOG 회원가입
-          </h1>
-          <p style={{ opacity: 0.9, fontSize: 14 }}>
-            영업 기록과 나의 U P 를 한 곳에서 관리해보세요.
-          </p>
+        <div style={styles.header}>
+          <h1 style={styles.title}>UPLOG 회원가입</h1>
+          <p style={styles.subtitle}>영업 기록과 나의 U P 를 한 곳에서 관리해보세요.</p>
         </div>
 
-        {/* 섹션: 기본 정보 */}
+        {/* 기본 정보 */}
         <SectionTitle title="기본 정보" />
         <TwoCols>
-          <Field
-            label="이름"
-            placeholder="예: 홍길동"
-            value={name}
-            onChange={setName}
-          />
-          <Field
-            label="닉네임"
-            placeholder="예: 열정영업왕"
-            value={nickname}
-            onChange={setNickname}
-          />
-        </TwoCols>
-        <TwoCols>
-          <Field
-            label="전화번호"
-            placeholder="예: 010-0000-0000"
-            value={phone}
-            onChange={setPhone}
-          />
-          <SelectField
-            label="경력"
-            value={career}
-            onChange={setCareer}
-            options={[
-              { value: '', label: '선택해주세요' },
-              { value: '0-1', label: '0~1년' },
-              { value: '2', label: '2년' },
-              { value: '3', label: '3년' },
-              { value: '4-5', label: '4~5년' },
-              { value: '6-9', label: '6~9년' },
-              { value: '10+', label: '10년 이상' },
-            ]}
-          />
+          <Field label="이름" placeholder="예: 홍길동" value={name} onChange={setName} />
+          <Field label="닉네임" placeholder="예: 열정영업왕" value={nickname} onChange={setNickname} />
         </TwoCols>
 
-        {/* 섹션: 회사 / 조직 정보 */}
+        <TwoCols>
+          <Field label="전화번호" placeholder="예: 010-0000-0000" value={phone} onChange={setPhone} />
+
+          {/* ✅ 경력: 선택 + 직접입력 */}
+          <div>
+            <label style={styles.label}>경력</label>
+
+            <select
+              value={careerMode === 'custom' ? '__custom__' : career}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === '__custom__') {
+                  setCareerMode('custom');
+                  setCareer('');
+                } else {
+                  setCareerMode('select');
+                  setCareer(v);
+                  setCareerCustom('');
+                }
+              }}
+              style={styles.input}
+            >
+              <option value="">선택해주세요</option>
+              <option value="0-1">0~1년</option>
+              <option value="2">2년</option>
+              <option value="3">3년</option>
+              <option value="4-5">4~5년</option>
+              <option value="6-9">6~9년</option>
+              <option value="10+">10년 이상</option>
+              <option value="__custom__">직접 입력</option>
+            </select>
+
+            {careerMode === 'custom' && (
+              <input
+                value={careerCustom}
+                onChange={(e) => setCareerCustom(e.target.value)}
+                placeholder="예: 1년 6개월 / 신입 / 12년차 등"
+                style={{ ...styles.input, marginTop: 10 }}
+              />
+            )}
+          </div>
+        </TwoCols>
+
+        {/* 회사 / 조직 정보 */}
         <SectionTitle title="회사 / 조직 정보" />
         <TwoCols>
-          <Field
-            label="업종"
-            placeholder="예: 보험, 화장품, 교육, 건강식품 등"
-            value={industry}
-            onChange={setIndustry}
-          />
-          <Field
-            label="회사명"
-            placeholder="예: OO화장품, OO생명 등"
-            value={company}
-            onChange={setCompany}
-          />
-        </TwoCols>
-        <TwoCols>
-          <Field
-            label="부서명"
-            placeholder="예: 영업1팀, 지점명 등"
-            value={department}
-            onChange={setDepartment}
-          />
-          <Field
-            label="팀명"
-            placeholder="예: 드림팀, UP팀 등"
-            value={team}
-            onChange={setTeam}
-          />
+          <Field label="업종" placeholder="예: 보험, 화장품, 교육, 건강식품 등" value={industry} onChange={setIndustry} />
+          <Field label="회사명" placeholder="예: OO화장품, OO생명 등" value={company} onChange={setCompany} />
         </TwoCols>
 
-        {/* 섹션: 계정 정보 */}
-        <SectionTitle title="계정 정보" />
-        <Field
-          label="이메일"
-          placeholder="로그인에 사용할 이메일"
-          value={email}
-          onChange={setEmail}
-        />
         <TwoCols>
+          <Field label="부서명" placeholder="예: 영업1팀, 지점명 등" value={department} onChange={setDepartment} />
+          <Field label="팀명" placeholder="예: 드림팀, UP팀 등" value={team} onChange={setTeam} />
+        </TwoCols>
+
+        {/* 지역 정보 */}
+        <SectionTitle title="지역 정보" />
+        <Field
+          label="주소 (지역 날씨 제공용)"
+          placeholder="예: 서울특별시 강남구"
+          value={address}
+          onChange={setAddress}
+        />
+
+        {/* 계정 정보 */}
+        <SectionTitle title="계정 정보" />
+        <Field label="이메일" placeholder="로그인에 사용할 이메일" value={email} onChange={setEmail} />
+        <TwoCols>
+          <Field type="password" label="비밀번호" placeholder="비밀번호를 입력하세요" value={password} onChange={setPassword} />
           <Field
-            label="비밀번호"
-            placeholder="비밀번호를 입력하세요"
-            value={password}
-            onChange={setPassword}
             type="password"
-          />
-          <Field
             label="비밀번호 확인"
             placeholder="비밀번호를 한 번 더 입력"
             value={passwordConfirm}
             onChange={setPasswordConfirm}
-            type="password"
           />
         </TwoCols>
 
-        {/* 에러 / 완료 메시지 */}
-        {error && (
-          <p
-            style={{
-              marginTop: 10,
-              marginBottom: 6,
-              fontSize: 13,
-              color: '#FFE0EA',
-            }}
-          >
-            {error}
-          </p>
-        )}
-        {done && !error && (
-          <p
-            style={{
-              marginTop: 10,
-              marginBottom: 6,
-              fontSize: 13,
-              color: '#E5FFEA',
-            }}
-          >
-            회원가입이 완료되었습니다. 로그인 화면으로 이동합니다.
-          </p>
-        )}
+        {/* 메시지 */}
+        {error && <Msg color="#FFE0EA">{error}</Msg>}
+        {done && !error && <Msg color="#E5FFEA">회원가입이 완료되었습니다. 로그인 화면으로 이동합니다.</Msg>}
 
-        {/* 버튼 영역 */}
-        <div style={{ marginTop: 18 }}>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '14px 16px',
-              borderRadius: 999,
-              border: 'none',
-              cursor: 'pointer',
-              background: 'linear-gradient(90deg,#FF69C8,#FFB4EC)',
-              color: '#4B1A6C',
-              fontWeight: 800,
-              fontSize: 15,
-              boxShadow: '0 10px 24px rgba(255,105,200,0.65)',
-              marginBottom: 10,
-              opacity: loading ? 0.6 : 1,
-            }}
-          >
+        {/* 버튼 */}
+        <div style={{ marginTop: 22 }}>
+          <button type="button" onClick={handleSubmit} disabled={loading} style={{ ...styles.primaryBtn, opacity: loading ? 0.6 : 1 }}>
             {loading ? '가입 처리 중...' : '회원가입 완료'}
           </button>
 
-          <button
-            type="button"
-            onClick={() => router.push('/login')}
-            style={{
-              width: '100%',
-              padding: '12px 16px',
-              borderRadius: 999,
-              border: 'none',
-              cursor: 'pointer',
-              background: 'rgba(0,0,0,0.6)',
-              color: '#ffffff',
-              fontWeight: 600,
-              fontSize: 14,
-            }}
-          >
+          <button type="button" onClick={() => router.push('/login')} style={styles.subBtn}>
             이미 계정이 있으신가요? 로그인하기
           </button>
         </div>
@@ -278,37 +197,14 @@ export default function RegisterPage() {
   );
 }
 
-/* --------- 재사용 작은 컴포넌트들 --------- */
+/* ---------- UI 컴포넌트 ---------- */
 
 function SectionTitle({ title }: { title: string }) {
-  return (
-    <h2
-      style={{
-        fontSize: 13,
-        fontWeight: 700,
-        marginTop: 12,
-        marginBottom: 8,
-        opacity: 0.9,
-      }}
-    >
-      {title}
-    </h2>
-  );
+  return <h2 style={styles.sectionTitle}>{title}</h2>;
 }
 
 function TwoCols({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit,minmax(0,1fr))',
-        gap: 12,
-        marginBottom: 8,
-      }}
-    >
-      {children}
-    </div>
-  );
+  return <div style={styles.twoCols}>{children}</div>;
 }
 
 function Field({
@@ -325,71 +221,106 @@ function Field({
   type?: string;
 }) {
   return (
-    <div style={{ textAlign: 'left' }}>
-      <label style={{ fontSize: 13, opacity: 0.9 }}>{label}</label>
+    <div>
+      <label style={styles.label}>{label}</label>
       <input
         type={type}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{
-          width: '100%',
-          maxWidth: '100%',
-          boxSizing: 'border-box',
-          display: 'block',
-          marginTop: 6,
-          padding: '11px 14px',
-          borderRadius: 12,
-          border: 'none',
-          background: 'rgba(255,255,255,0.92)',
-          fontSize: 14,
-          color: '#333',
-          outline: 'none',
-        }}
+        style={styles.input}
       />
     </div>
   );
 }
 
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <div style={{ textAlign: 'left' }}>
-      <label style={{ fontSize: 13, opacity: 0.9 }}>{label}</label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          width: '100%',
-          maxWidth: '100%',
-          boxSizing: 'border-box',
-          display: 'block',
-          marginTop: 6,
-          padding: '11px 14px',
-          borderRadius: 12,
-          border: 'none',
-          background: 'rgba(255,255,255,0.92)',
-          fontSize: 14,
-          color: '#333',
-          outline: 'none',
-          appearance: 'none',
-        }}
-      >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
+function Msg({ color, children }: { color: string; children: React.ReactNode }) {
+  return <p style={{ marginTop: 12, fontSize: 14, color, fontWeight: 700 }}>{children}</p>;
 }
+
+/* ---------- 스타일 ---------- */
+
+const styles: Record<string, any> = {
+  main: {
+    minHeight: '100vh',
+    background: 'linear-gradient(180deg,#B982FF,#9D60FF)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 680,
+    background: 'rgba(255,255,255,0.18)',
+    backdropFilter: 'blur(18px)',
+    padding: '36px 30px 30px',
+    borderRadius: 28,
+    boxShadow: '0 22px 60px rgba(0,0,0,0.28)',
+    color: '#fff',
+  },
+  header: { textAlign: 'center', marginBottom: 28 },
+  title: { fontSize: 28, fontWeight: 900, marginBottom: 8, letterSpacing: -0.4 },
+  subtitle: { opacity: 0.92, fontSize: 15, lineHeight: 1.35 },
+
+  // ✅ 섹션 간격 확 키움
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: 900,
+    marginTop: 22,
+    marginBottom: 12,
+    opacity: 0.95,
+  },
+
+  // ✅ 두 칼럼: rowGap(세로)도 넉넉히
+  twoCols: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0,1fr))',
+    columnGap: 14,
+    rowGap: 16,
+    marginBottom: 14,
+  },
+
+  // ✅ 라벨/입력 폰트도 살짝 키움
+  label: { fontSize: 14, fontWeight: 800, opacity: 0.95 },
+
+  // ✅ 입력창 높이 조금 줄이고(덜 두껍게) 여백은 확보
+  input: {
+    width: '100%',
+    marginTop: 8,
+    padding: '10px 14px',
+    borderRadius: 14,
+    border: 'none',
+    fontSize: 14,
+    fontWeight: 700,
+    background: 'rgba(255,255,255,0.95)',
+    color: '#333',
+    outline: 'none',
+    boxSizing: 'border-box',
+  },
+
+  primaryBtn: {
+    width: '100%',
+    padding: '14px 16px',
+    borderRadius: 999,
+    border: 'none',
+    cursor: 'pointer',
+    background: 'linear-gradient(90deg,#FF69C8,#FFB4EC)',
+    color: '#4B1A6C',
+    fontWeight: 900,
+    fontSize: 16,
+    boxShadow: '0 10px 24px rgba(255,105,200,0.65)',
+    marginBottom: 10,
+  },
+  subBtn: {
+    width: '100%',
+    padding: '12px 16px',
+    borderRadius: 999,
+    border: 'none',
+    cursor: 'pointer',
+    background: 'rgba(0,0,0,0.6)',
+    color: '#ffffff',
+    fontWeight: 700,
+    fontSize: 14,
+  },
+};

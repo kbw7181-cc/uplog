@@ -1,35 +1,41 @@
-// src/app/chats/[id]/page.tsx
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '../../../lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
+import { getAvatarSrc } from '@/lib/getAvatarSrc';
 
 type ChatRoomRow = {
   id: string;
-  member_a: string;
-  member_b: string;
+  user1_id: string;
+  user2_id: string;
   created_at: string;
 };
 
 type ProfileRow = {
-  id: string;
+  user_id: string;
+  nickname: string | null;
   name: string | null;
   avatar_url: string | null;
 };
 
 type ChatMessage = {
   id: string;
-  chat_id: string;
+  room_id: string;
   sender_id: string;
-  message: string;
+  content: string | null;
+  body: string | null;
   created_at: string;
 };
+
+function pickName(p?: ProfileRow | null) {
+  return p?.nickname || p?.name || '친구';
+}
 
 export default function ChatRoomPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const chatId = params?.id as string | undefined;
+  const roomId = params?.id as string | undefined;
 
   const [loading, setLoading] = useState(true);
   const [room, setRoom] = useState<ChatRoomRow | null>(null);
@@ -45,7 +51,7 @@ export default function ChatRoomPage() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!chatId) return;
+    if (!roomId) return;
     let cancelled = false;
 
     async function load() {
@@ -53,7 +59,6 @@ export default function ChatRoomPage() {
         setLoading(true);
         setError(null);
 
-        // 1) 로그인 정보
         const {
           data: { user },
           error: authError,
@@ -61,61 +66,51 @@ export default function ChatRoomPage() {
 
         if (authError) throw authError;
         if (!user) {
-          router.push('/login');
+          router.replace('/login');
           return;
         }
+
         const myId = user.id;
         if (cancelled) return;
         setMeId(myId);
 
-        // 2) 채팅방 정보
         const { data: roomRow, error: roomError } = await supabase
           .from('chat_rooms')
-          .select('id, member_a, member_b, created_at')
-          .eq('id', chatId)
+          .select('id, user1_id, user2_id, created_at')
+          .eq('id', roomId)
           .single();
 
         if (roomError) throw roomError;
         const roomData = roomRow as ChatRoomRow;
 
-        // 접근 권한 체크
-        if (
-          roomData.member_a !== myId &&
-          roomData.member_b !== myId
-        ) {
+        if (roomData.user1_id !== myId && roomData.user2_id !== myId) {
           setError('이 채팅방에 접근할 수 없습니다.');
           setLoading(false);
           return;
         }
 
         setRoom(roomData);
-        const selfRoom =
-          roomData.member_a === myId && roomData.member_b === myId;
+
+        const selfRoom = roomData.user1_id === myId && roomData.user2_id === myId;
         setIsSelfRoom(selfRoom);
 
-        // 3) 상대방 / 나 프로필 가져오기 (selfRoom이면 나 자신)
-        const otherId = selfRoom
-          ? myId
-          : roomData.member_a === myId
-          ? roomData.member_b
-          : roomData.member_a;
+        const otherId = selfRoom ? myId : roomData.user1_id === myId ? roomData.user2_id : roomData.user1_id;
 
-        const { data: profileRows, error: profileError } = await supabase
+        // 상대 프로필
+        const { data: prof, error: pErr } = await supabase
           .from('profiles')
-          .select('id, name, avatar_url')
-          .eq('id', otherId);
+          .select('user_id, nickname, name, avatar_url')
+          .eq('user_id', otherId)
+          .maybeSingle();
 
+        if (pErr) throw pErr;
+        setOtherProfile((prof as any) ?? null);
 
-        if (profileError) throw profileError;
-
-        const prof = (profileRows?.[0] ?? null) as ProfileRow | null;
-        setOtherProfile(prof);
-
-        // 4) 메시지 목록
+        // 메시지
         const { data: msgRows, error: msgError } = await supabase
           .from('chat_messages')
-          .select('id, chat_id, sender_id, message, created_at')
-          .eq('chat_id', chatId)
+          .select('id, room_id, sender_id, content, body, created_at')
+          .eq('room_id', roomId)
           .order('created_at', { ascending: true });
 
         if (msgError) throw msgError;
@@ -123,10 +118,7 @@ export default function ChatRoomPage() {
         setMessages((msgRows ?? []) as ChatMessage[]);
         setLoading(false);
 
-        // 스크롤 맨 아래로
-        setTimeout(() => {
-          bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-        }, 50);
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
       } catch (e: any) {
         console.error(e);
         if (!cancelled) {
@@ -137,14 +129,13 @@ export default function ChatRoomPage() {
     }
 
     load();
-
     return () => {
       cancelled = true;
     };
-  }, [chatId, router]);
+  }, [roomId, router]);
 
   async function handleSend() {
-    if (!chatId || !meId) return;
+    if (!roomId || !meId) return;
     const text = input.trim();
     if (!text) return;
 
@@ -154,11 +145,11 @@ export default function ChatRoomPage() {
       const { data, error } = await supabase
         .from('chat_messages')
         .insert({
-          chat_id: chatId,
+          room_id: roomId,
           sender_id: meId,
-          message: text,
+          content: text,
         })
-        .select()
+        .select('id, room_id, sender_id, content, body, created_at')
         .single();
 
       if (error) throw error;
@@ -166,9 +157,7 @@ export default function ChatRoomPage() {
       setMessages((prev) => [...prev, data as ChatMessage]);
       setInput('');
 
-      setTimeout(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 40);
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 40);
     } catch (e: any) {
       console.error(e);
       alert(e.message ?? '메시지 전송 중 오류가 발생했습니다.');
@@ -177,58 +166,43 @@ export default function ChatRoomPage() {
     }
   }
 
-  if (!chatId) {
-    return (
-      <div className="min-h-screen bg-black text-zinc-100 p-6">
-        잘못된 채팅방 주소입니다.
-      </div>
-    );
+  if (!roomId) {
+    return <div className="min-h-screen bg-black text-zinc-100 p-6">잘못된 채팅방 주소입니다.</div>;
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-black text-zinc-100 p-6">
-        채팅방을 불러오는 중입니다…
-      </div>
-    );
+    return <div className="min-h-screen bg-black text-zinc-100 p-6">채팅방을 불러오는 중입니다…</div>;
   }
 
   if (error || !room) {
-    return (
-      <div className="min-h-screen bg-black text-zinc-100 p-6">
-        {error ?? '채팅방을 찾을 수 없습니다.'}
-      </div>
-    );
+    return <div className="min-h-screen bg-black text-zinc-100 p-6">{error ?? '채팅방을 찾을 수 없습니다.'}</div>;
   }
 
-  const title = isSelfRoom
-    ? '내 전용 메모 채팅방'
-    : otherProfile?.name ?? '친구와의 채팅';
-
+  const title = isSelfRoom ? '내 전용 메모 채팅방' : pickName(otherProfile);
   const subtitle = isSelfRoom
-    ? '오늘 들었던 반론, 아이디어, 하고 싶은 말들을 전부 여기에 쌓아두세요.'
+    ? '오늘 들었던 반론, 멘트, 감정을 전부 여기에 쌓아두세요.'
     : '영업 반론, 스크립트, 오늘의 감정까지 솔직하게 나눠보세요.';
+
+  const otherAvatar = otherProfile?.avatar_url ? getAvatarSrc(otherProfile.avatar_url) : '';
 
   return (
     <div className="flex min-h-screen flex-col bg-[#050509] text-zinc-50">
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-4">
-        {/* 헤더 */}
         <header className="mb-3 flex items-center justify-between">
-          <button
-            onClick={() => router.back()}
-            className="text-xs text-zinc-300 hover:text-zinc-100"
-          >
+          <button onClick={() => router.push('/chats')} className="text-xs text-zinc-300 hover:text-zinc-100">
             ← 채팅 목록으로
           </button>
-          <span className="text-[11px] text-zinc-500">
-            {new Date(room.created_at).toLocaleString()}
-          </span>
+          <span className="text-[11px] text-zinc-500">{new Date(room.created_at).toLocaleString()}</span>
         </header>
 
-        {/* 타이틀 */}
         <section className="mb-4 flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-tr from-indigo-500/80 to-pink-500/80 text-xs font-semibold">
-            {title.trim().charAt(0)}
+          <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-gradient-to-tr from-indigo-500/80 to-pink-500/80 text-xs font-semibold">
+            {otherAvatar && !isSelfRoom ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={otherAvatar} alt="avatar" className="h-full w-full object-cover" />
+            ) : (
+              title.trim().charAt(0)
+            )}
           </div>
           <div className="flex flex-col">
             <h1 className="text-sm font-semibold">{title}</h1>
@@ -236,38 +210,29 @@ export default function ChatRoomPage() {
           </div>
         </section>
 
-        {/* 메시지 영역 */}
         <div className="flex-1 space-y-2 overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
           {messages.length === 0 && (
             <p className="py-8 text-center text-xs text-zinc-500">
               아직 메시지가 없습니다.
               <br />
-              아래 입력창에 오늘 들은 반론이나 떠오른 문장을 바로 기록해보세요.
+              아래 입력창에 바로 기록해보세요.
             </p>
           )}
 
           {messages.map((m) => {
             const mine = m.sender_id === meId;
+            const text = (m.content ?? m.body ?? '').toString();
+
             return (
-              <div
-                key={m.id}
-                className={`flex w-full ${
-                  mine ? 'justify-end' : 'justify-start'
-                }`}
-              >
+              <div key={m.id} className={`flex w-full ${mine ? 'justify-end' : 'justify-start'}`}>
                 <div
                   className={`max-w-[70%] rounded-2xl px-3 py-2 text-xs leading-relaxed ${
-                    mine
-                      ? 'bg-pink-600 text-white rounded-br-sm'
-                      : 'bg-zinc-800 text-zinc-100 rounded-bl-sm'
+                    mine ? 'bg-pink-600 text-white rounded-br-sm' : 'bg-zinc-800 text-zinc-100 rounded-bl-sm'
                   }`}
                 >
-                  <div className="whitespace-pre-wrap">{m.message}</div>
+                  <div className="whitespace-pre-wrap">{text}</div>
                   <div className="mt-1 text-[9px] text-zinc-300/70">
-                    {new Date(m.created_at).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                    {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </div>
               </div>
@@ -276,7 +241,6 @@ export default function ChatRoomPage() {
           <div ref={bottomRef} />
         </div>
 
-        {/* 입력 영역 */}
         <form
           className="mt-3 flex items-center gap-2"
           onSubmit={(e) => {
@@ -287,11 +251,7 @@ export default function ChatRoomPage() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={
-              isSelfRoom
-                ? '예) “생각해본다고 하심” / 오늘 들었던 반론, 하고 싶은 말을 적어보세요.'
-                : '친구에게 보낼 메시지를 입력하세요.'
-            }
+            placeholder={isSelfRoom ? '예) 오늘 들었던 반론/멘트/감정을 적어보세요.' : '친구에게 보낼 메시지를 입력하세요.'}
             className="flex-1 rounded-full border border-zinc-700 bg-zinc-900 px-4 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-pink-500"
           />
           <button
