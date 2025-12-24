@@ -7,7 +7,6 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { getAvatarSrc } from '@/lib/getAvatarSrc';
 import { fetchLiveWeatherSlots, resolveRegionFromProfile, type WeatherSlot } from '@/lib/weatherClient';
-import FriendProfileModal, { FriendProfile } from '@/app/components/FriendProfileModal';
 
 // 마스코트 감성 슬라이드 문구
 const EMO_QUOTES: string[] = [
@@ -19,7 +18,8 @@ const EMO_QUOTES: string[] = [
 ];
 
 type Friend = {
-  id: string;
+  // ✅ 핵심: 채팅 open에 쓰는 값은 user_id(UUID)
+  user_id: string;
   nickname: string;
   online: boolean;
   role?: string | null;
@@ -256,10 +256,49 @@ export default function HomePage() {
   const [friendQuery, setFriendQuery] = useState('');
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
 
+  // ✅ 응원 카운트(새로고침 유지)
+  const [cheerCounts, setCheerCounts] = useState<Record<string, number>>({});
+  const [cheerPopKey, setCheerPopKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('uplog_cheer_counts');
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object') setCheerCounts(obj);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const persistCheerCounts = (next: Record<string, number>) => {
+    setCheerCounts(next);
+    try {
+      localStorage.setItem('uplog_cheer_counts', JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleCheer = (f: Friend) => {
+    const key = f.user_id;
+    const next = { ...(cheerCounts ?? {}) };
+    next[key] = (next[key] ?? 0) + 1;
+    persistCheerCounts(next);
+
+    setCheerPopKey(key);
+    window.setTimeout(() => {
+      setCheerPopKey((cur) => (cur === key ? null : cur));
+    }, 520);
+  };
+
+  // ✅ 목업: 실제 연동 시 friends를 DB로 교체하면 됨.
+  //    지금은 “필드명(user_id)”만 맞춰서 /chats/open 안정화 목적.
   const friends: Friend[] = [
-    { id: 'f1', nickname: '김영업', online: true, role: '팀장' },
-    { id: 'f2', nickname: '박성장', online: true, role: '사원' },
-    { id: 'f3', nickname: '이멘탈', online: false, role: '대리' },
+    { user_id: '00000000-0000-0000-0000-000000000001', nickname: '김영업', online: true, role: '팀장' },
+    { user_id: '00000000-0000-0000-0000-000000000002', nickname: '박성장', online: true, role: '사원' },
+    { user_id: '00000000-0000-0000-0000-000000000003', nickname: '이멘탈', online: false, role: '대리' },
   ];
 
   const filteredFriends = useMemo(() => {
@@ -270,7 +309,10 @@ export default function HomePage() {
 
   // ✅ 홈 상단 카운트
   const newRebuttalCount = useMemo(() => recentRebuttals.length, [recentRebuttals]);
-  const newScheduleCountToday = useMemo(() => schedules.filter((s) => s.schedule_date === todayStr).length, [schedules, todayStr]);
+  const newScheduleCountToday = useMemo(
+    () => schedules.filter((s) => s.schedule_date === todayStr).length,
+    [schedules, todayStr]
+  );
 
   useEffect(() => {
     const init = async () => {
@@ -479,13 +521,13 @@ export default function HomePage() {
       if (taskError) console.error('daily_tasks error', taskError);
     }
 
-    // ✅✅✅ 날씨 실데이터(설정 지역 기반)
+    // ✅✅✅ 날씨 실데이터(설정 지역 기반) + ✅ 배열 가드
     try {
       const live = await fetchLiveWeatherSlots(weatherLat, weatherLon);
-      setTodayWeather(live);
+      const safe = Array.isArray(live) ? (live as WeatherSlot[]) : [];
+      setTodayWeather(safe);
     } catch (e) {
       console.error('weather live error', e);
-      // 실패 시 화면 유지용 fallback
       const now = new Date();
       const mock: WeatherSlot[] = [];
       for (let i = 0; i < 6; i++) {
@@ -499,10 +541,6 @@ export default function HomePage() {
       setTodayWeather(mock);
     }
   };
-
-  // ⬇️⬇️⬇️ 여기부터 아래(UI/스타일)는 대표님 기존 그대로입니다.
-  // (2/2)로 이어서 전체를 끝까지 드릴게요.
-
 
   const daysInMonth = useMemo(() => {
     const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
@@ -769,11 +807,13 @@ export default function HomePage() {
             <div className="weather-panel-header">
               <div>
                 <div className="section-title">오늘 날씨</div>
-                <div className="section-sub">외근/미팅 계획 세울 때 참고하세요.</div>
+                <div className="section-sub">
+                  {weatherLabel} · 외근/미팅 계획 세울 때 참고하세요.
+                </div>
               </div>
             </div>
             <div className="weather-strip">
-              {todayWeather.map((w, idx) => (
+              {(Array.isArray(todayWeather) ? todayWeather : []).map((w, idx) => (
                 <div key={idx} className="weather-slot">
                   <div className="weather-time">
                     {weatherEmoji(w.desc)} {w.time}
@@ -1021,20 +1061,15 @@ export default function HomePage() {
               )}
             </div>
 
-            <div className="right-card friend-card">
+            {/* ✅ 친구 카드 */}
+<div className="right-card friend-card">
   <div className="friend-card-header">
     <div>
       <div className="section-title friend-title">친구 목록 · U P 채팅</div>
-      <div className="section-sub friend-sub">
-        친구 닉네임을 검색하고, 채팅방으로 이동해요.
-      </div>
+      <div className="section-sub friend-sub">이름 누르면 바로 채팅방 이동, 아이콘으로 프로필/채팅/응원까지!</div>
     </div>
 
-    <button
-      type="button"
-      onClick={() => router.push('/chats')}
-      className="friend-chat-banner big"
-    >
+    <button type="button" onClick={() => router.push('/chats')} className="friend-chat-banner big">
       U P 채팅방 열기
     </button>
   </div>
@@ -1048,88 +1083,94 @@ export default function HomePage() {
     />
   </div>
 
-  {/* 👇 여기 아래에 friends list / selectedFriend 액션이 이어짐 */}
+  {filteredFriends.length === 0 ? (
+    <div className="empty-text">
+      검색 결과가 없어요.
+      <br />
+      닉네임을 다시 확인해 주세요.
+    </div>
+  ) : (
+    <ul className="friends-list">
+      {filteredFriends.map((friend) => {
+        const key = friend.user_id;
+        const count = cheerCounts[key] ?? 0;
+        const popping = cheerPopKey === key;
+
+        return (
+          <li key={friend.user_id} className="friend-item-row">
+            {/* ✅ 왼쪽: 온라인 + 아바타 + 이름(누르면 바로 채팅 이동) */}
+            <button
+              type="button"
+              className="friend-row-left"
+              onClick={() => {
+                if (!friend.user_id) return alert('친구 user_id(UID)가 없습니다.');
+                router.push(`/chats/open?to=${friend.user_id}`);
+              }}
+              aria-label={`${friend.nickname} 채팅 이동`}
+            >
+              <span className={'friend-dot ' + (friend.online ? 'friend-dot-on' : 'friend-dot-off')} />
+              <div className="friend-avatar-small">{friend.avatarUrl ? '🙂' : friend.nickname[0]}</div>
+
+              <div className="friend-name-wrap">
+                <div className="friend-name-line">
+                  <span className="friend-name">{friend.nickname}</span>
+                  {friend.role && <span className="friend-role-pill">{friend.role}</span>}
+                </div>
+                <div className="friend-mini-hint">터치하면 바로 채팅으로 이동</div>
+              </div>
+            </button>
+
+            {/* ✅ 오른쪽: 아이콘 액션 3개 */}
+            <div className="friend-row-actions">
+              <button
+                type="button"
+                className="friend-icon-btn"
+                onClick={() => {
+                  // ✅ 프로필 보기 (모달 쓰고 있으면 여기서 열면 됨)
+                  // FriendProfileModal을 유지 중이면: setSelectedFriendProfile(friend.user_id) 같은 식으로 연결
+                  alert('프로필 보기(연결 예정)');
+                }}
+                aria-label="프로필 보기"
+                title="프로필 보기"
+              >
+                🙂<span className="sr-only">프로필</span>
+              </button>
+
+              <button
+                type="button"
+                className="friend-icon-btn"
+                onClick={() => {
+                  if (!friend.user_id) return alert('친구 user_id(UID)가 없습니다.');
+                  router.push(`/chats/open?to=${friend.user_id}`);
+                }}
+                aria-label="채팅하기"
+                title="채팅하기"
+              >
+                💬<span className="sr-only">채팅</span>
+              </button>
+
+              <button
+                type="button"
+                className={'friend-icon-btn cheer ' + (popping ? 'pop' : '')}
+                onClick={() => handleCheer(friend)}
+                aria-label="응원하기"
+                title="응원하기"
+              >
+                ❤️ <span className="cheer-count">x {count}</span>
+                <span className="cheer-pop">팡!</span>
+              </button>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  )}
 </div>
 
 
-              {filteredFriends.length === 0 ? (
-  <div className="empty-text">
-    검색 결과가 없어요.
-    <br />
-    닉네임을 다시 확인해 주세요.
-  </div>
-) : (
-  <ul className="friends-list">
-    {filteredFriends.map((friend) => (
-      <li key={friend.id} className="friend-item" onClick={() => setSelectedFriend(friend)}>
-        <div className="friend-main-row">
-          <span className={'friend-dot ' + (friend.online ? 'friend-dot-on' : 'friend-dot-off')} />
-          <div className="friend-avatar-small">
-            {friend.avatarUrl ? '🙂' : friend.nickname[0]}
-          </div>
-          <span className="friend-name-wrap">
-            <span className="friend-name">{friend.nickname}</span>
-            {friend.role && <span className="friend-role-pill">{friend.role}</span>}
-          </span>
-        </div>
-      </li>
-    ))}
-  </ul>
-)}
-
-{/* 🔥 바로 여기 */}
-{selectedFriend && (
-  <div className="friend-actions">
-    <button
-      onClick={() =>
-        router.push(`/chats/open?to=${selectedFriend.id}`)
-
-      }
-    >
-      U P 채팅하기
-    </button>
-  </div>
-)}
-
+            
           </section>
         </main>
-
-        {/* ✅ 선택된 친구 액션 영역(= 모달 버튼 역할) */}
-{selectedFriend && (
-  <div className="friend-actions">
-    <div className="friend-actions-left">
-      <div className="friend-actions-name">
-        {selectedFriend.nickname}
-        {selectedFriend.role && <span className="friend-role-pill">{selectedFriend.role}</span>}
-      </div>
-      <div className="friend-actions-sub">대화는 U P 채팅에서 이어집니다</div>
-    </div>
-
-    <div className="friend-actions-right">
-      <button
-        type="button"
-        className="friend-action-btn primary"
-        onClick={() => {
-          // ✅ 핵심: 친구 UUID로 open 페이지 이동 → 방 생성/이동
-          const to = (selectedFriend as any).user_id || (selectedFriend as any).userId || '';
-          if (!to) return alert('친구 user_id(UID)가 없습니다.');
-          router.push(`/chats/open?to=${to}`);
-        }}
-      >
-        U P 채팅하기
-      </button>
-
-      <button
-        type="button"
-        className="friend-action-btn"
-        onClick={() => setSelectedFriend(null)}
-      >
-        닫기
-      </button>
-    </div>
-  </div>
-)}
-
 
         <button type="button" onClick={() => router.push('/support')} className="floating-support-btn">
           <span>문의하기</span>
@@ -1680,50 +1721,188 @@ const styles = `
 .friend-name{ font-weight: 950; }
 .friend-role-pill{ margin-left: 8px; font-size: 12px; font-weight: 900; padding: 4px 10px; border-radius: 999px; background: rgba(244,114,182,0.14); color:#a21caf; border: 1px solid rgba(244,114,182,0.26); }
 
-/* 친구 모달 */
-.friend-modal-backdrop{ position: fixed; inset:0; background: rgba(15,23,42,0.50); display:flex; align-items:center; justify-content:center; z-index: 60; }
-.friend-modal{ width: 420px; max-width: 92vw; border-radius: 26px; background:#fff; box-shadow: 0 24px 54px rgba(15,23,42,0.38); padding: 16px; position: relative; }
-.friend-modal-close{ position:absolute; top: 10px; right: 12px; width: 30px; height: 30px; border-radius: 999px; border:none; background:#f3f4ff; cursor:pointer; font-weight: 950; }
-.friend-modal-header{ display:flex; gap: 12px; align-items:center; }
-.friend-modal-avatar{ width: 54px; height: 54px; border-radius: 999px; display:flex; align-items:center; justify-content:center; background: linear-gradient(135deg, rgba(244,114,182,0.92), rgba(168,85,247,0.90)); color:#fff; font-weight: 950; font-size: 18px; }
-.friend-modal-name-row{ display:flex; align-items:center; gap: 8px; }
-.friend-modal-name{ font-size: 18px; font-weight: 950; }
-.friend-modal-role{ font-size: 12px; font-weight: 900; padding: 4px 10px; border-radius: 999px; background: rgba(237,233,254,0.85); color:#5b21b6; }
-.friend-modal-sub{ font-size: 13px; color:#7a69c4; margin-top: 2px; }
-.friend-modal-body{ margin-top: 14px; }
-.friend-modal-label{ font-size: 13px; font-weight: 950; color:#372153; margin-bottom: 8px; }
-.friend-modal-actions{ display:flex; gap: 10px; flex-wrap: wrap; }
-.friend-modal-btn{
-  border: 1px solid rgba(217,204,255,0.85);
-  background: #faf7ff;
-  border-radius: 14px;
+/* ✅ 하단 고정 액션바(친구 선택 시) */
+/* ✅ 친구 row: 액션을 줄 안으로 */
+.friend-item-row{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 10px 12px;
+  border-radius: 16px;
+  background:#faf7ff;
+  border: 1px solid rgba(217,204,255,0.65);
+}
+
+.friend-row-left{
+  flex: 1;
+  min-width: 0;
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.friend-name-wrap{ min-width: 0; display:flex; flex-direction: column; gap: 2px; }
+.friend-name-line{ display:flex; align-items:center; gap: 8px; min-width: 0; }
+.friend-mini-hint{ font-size: 12px; color:#7a69c4; font-weight: 800; opacity: .85; }
+
+.friend-row-actions{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.friend-icon-btn{
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(217,204,255,0.85);
+  background: #fff;
+  padding: 0 12px;
   font-size: 14px;
   font-weight: 950;
-  cursor:pointer;
+  cursor: pointer;
+  color:#2a1236;
+  box-shadow: 0 10px 16px rgba(0,0,0,0.06);
+  position: relative;
+  white-space: nowrap;
 }
-.friend-modal-btn.primary{
-  background: linear-gradient(135deg, rgba(244,114,182,0.92), rgba(168,85,247,0.90));
-  border-color: rgba(255,255,255,0.55);
+
+.friend-icon-btn:hover{
+  transform: translateY(-1px);
+}
+
+.friend-icon-btn.cheer{
+  background: linear-gradient(135deg, rgba(255,255,255,0.98), rgba(255,240,248,0.92));
+}
+
+.cheer-count{
+  font-weight: 950;
+  color: rgba(241,83,170,0.95);
+}
+
+.friend-icon-btn .cheer-pop{
+  position:absolute;
+  top: -12px;
+  right: 8px;
+  font-size: 12px;
+  font-weight: 950;
+  opacity: 0;
+  transform: translateY(6px) scale(0.9);
+  transition: all 0.18s ease;
+  color: rgba(241,83,170,0.95);
+}
+
+.friend-icon-btn.cheer.pop .cheer-pop{
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* 접근성 숨김 */
+.sr-only{
+  position:absolute;
+  width:1px; height:1px;
+  padding:0; margin:-1px;
+  overflow:hidden;
+  clip: rect(0,0,0,0);
+  white-space:nowrap;
+  border:0;
+}
+
+.friend-actionbar{
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: min(980px, calc(100vw - 24px));
+  border-radius: 22px;
+  background: rgba(255,255,255,0.96);
+  border: 2px solid rgba(162, 125, 255, 0.55);
+  box-shadow: 0 24px 48px rgba(0,0,0,0.18);
+  padding: 12px 14px;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 80;
+}
+.fab-left{ display:flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fab-name{ font-size: 16px; font-weight: 950; color:#241336; display:flex; align-items:center; gap: 6px; flex-wrap: wrap; }
+.fab-sub{ font-size: 13px; font-weight: 900; color:#7a69c4; }
+
+.fab-right{ display:flex; align-items:center; gap: 10px; flex-wrap: wrap; justify-content:flex-end; }
+.fab-btn{
+  border: 1px solid rgba(217,204,255,0.85);
+  background: #fff;
+  color:#2a1236;
+  border-radius: 16px;
+  height: 42px;
+  padding: 0 14px;
+  font-weight: 950;
+  cursor: pointer;
+  box-shadow: 0 12px 18px rgba(0,0,0,0.08);
+  position: relative;
+  overflow: hidden;
+}
+.fab-btn.primary{
+  border: none;
   color:#fff;
+  background: linear-gradient(135deg, rgba(244,114,182,0.92), rgba(168,85,247,0.90));
+}
+.fab-btn.cheer{
+  background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(250,245,255,0.96));
+}
+.fab-count{ color:#ff4f9f; }
+.cheer-pop{
+  position:absolute;
+  right: 10px;
+  top: 8px;
+  font-size: 12px;
+  font-weight: 950;
+  color:#ec4899;
+  opacity: 0;
+  transform: translateY(6px) scale(0.9);
+  pointer-events: none;
+}
+.fab-btn.cheer.pop{
+  animation: popPulse .52s ease-in-out;
+}
+.fab-btn.cheer.pop .cheer-pop{
+  opacity: 1;
+  animation: popText .52s ease-in-out;
+}
+@keyframes popPulse{
+  0%{ transform: scale(1); }
+  45%{ transform: scale(1.06); }
+  100%{ transform: scale(1); }
+}
+@keyframes popText{
+  0%{ opacity: 0; transform: translateY(6px) scale(0.9); }
+  55%{ opacity: 1; transform: translateY(0px) scale(1.08); }
+  100%{ opacity: 0; transform: translateY(-6px) scale(1); }
 }
 
 /* 문의하기 플로팅 */
 .floating-support-btn{
   position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 40;
+  right: 18px;
+  bottom: 18px;
   border: none;
   cursor: pointer;
   border-radius: 18px;
   padding: 12px 14px;
   font-weight: 950;
-  color: #fff;
-  background: linear-gradient(135deg, rgba(59,130,246,0.90), rgba(168,85,247,0.90));
-  box-shadow: 0 18px 34px rgba(0,0,0,0.18);
+  color:#fff;
+  background: linear-gradient(135deg, rgba(244,114,182,0.92), rgba(168,85,247,0.90));
+  box-shadow: 0 18px 28px rgba(0,0,0,0.18);
   display:flex;
   flex-direction: column;
   gap: 2px;
+  z-index: 90;
 }
 `;
