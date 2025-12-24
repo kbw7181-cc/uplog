@@ -1,236 +1,349 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
-export type FriendProfile = {
-  // ✅ 친구 UID (profiles.user_id)
-  user_id: string;
+function isUuid(v: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
 
-  // ✅ 표시용
-  nickname: string;
-  name?: string | null;
+function normPair(a: string, b: string) {
+  // ✅ 항상 작은 uid를 user_id로 저장
+  return a < b ? { user_id: a, friend_id: b } : { user_id: b, friend_id: a };
+}
 
-  // ✅ 프로필 상세
-  career?: string | null;   // 경력 (예: "10년 이상")
-  company?: string | null;  // 회사명
-  team?: string | null;     // 팀명
-  role?: string | null;     // (예: "팀장/사원/대리" 등)
-  badgeEmoji?: string | null; // 배지 이모지 (예: "👑" "🔥" "💎")
-
-  // ✅ 상태
-  online?: boolean;
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  meId: string;
+  targetUserId: string;
+  targetNickname?: string;
 };
 
-export default function FriendProfileModal({
-  open,
-  friend,
-  onClose,
-  onChat,
-  onCheer,
-}: {
-  open: boolean;
-  friend: FriendProfile | null;
-  onClose: () => void;
-  onChat: (friend: FriendProfile) => void;
-  onCheer: (friend: FriendProfile) => void;
-}) {
+export default function FriendProfileModal({ open, onClose, meId, targetUserId, targetNickname }: Props) {
+  const [loading, setLoading] = useState(true);
+  const [target, setTarget] = useState<any>(null);
+
+  const [friendStatus, setFriendStatus] = useState<'none' | 'pending' | 'accepted'>('none');
+  const [busy, setBusy] = useState(false);
+
+  const safeTargetId = useMemo(() => (isUuid(targetUserId) ? targetUserId : ''), [targetUserId]);
+
+  const canQuery = open && !!meId && !!safeTargetId && meId !== safeTargetId;
+
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
+    if (!open) return;
+    if (!meId || !safeTargetId) return;
+
+    const run = async () => {
+      setLoading(true);
+
+      // ✅ 프로필 로드 (필드 최소 안전)
+      try {
+        const { data: p } = await supabase
+          .from('profiles')
+          .select('user_id, nickname, name, avatar_url, career, company, team, likes_count, posts_count, feedback_count')
+          .eq('user_id', safeTargetId)
+          .maybeSingle();
+
+        setTarget(p ?? null);
+      } catch {
+        setTarget(null);
+      }
+
+      // ✅ 친구 상태 체크 (friends 테이블)
+      try {
+        if (meId === safeTargetId) {
+          setFriendStatus('accepted');
+        } else {
+          const pair = normPair(meId, safeTargetId);
+          const { data, error } = await supabase
+            .from('friends')
+            .select('status')
+            .eq('user_id', pair.user_id)
+            .eq('friend_id', pair.friend_id)
+            .maybeSingle();
+
+          if (error || !data?.status) setFriendStatus('none');
+          else if (data.status === 'accepted') setFriendStatus('accepted');
+          else setFriendStatus('pending');
+        }
+      } catch {
+        setFriendStatus('none');
+      }
+
+      setLoading(false);
+    };
+
+    run();
+  }, [open, meId, safeTargetId]);
+
+  const displayName = target?.nickname || target?.name || targetNickname || '친구';
+  const career = target?.career ? String(target.career) : '';
+  const company = target?.company ? String(target.company) : '';
+  const team = target?.team ? String(target.team) : '';
+
+  const likesN = Number(target?.likes_count ?? 0);
+  const postsN = Number(target?.posts_count ?? 0);
+  const feedbackN = Number(target?.feedback_count ?? 0);
+
+  const onChat = () => {
+    window.location.href = `/chats/open?to=${safeTargetId}`;
+  };
+
+  const onAddFriend = async () => {
+    if (!canQuery) return;
+    setBusy(true);
+    try {
+      const pair = normPair(meId, safeTargetId);
+
+      // ✅ pending 업서트
+      const { error } = await supabase
+        .from('friends')
+        .upsert(
+          { user_id: pair.user_id, friend_id: pair.friend_id, status: 'pending' },
+          { onConflict: 'user_id,friend_id' as any }
+        );
+
+      if (error) {
+        console.error('add friend error', error);
+        alert('친구 요청 중 오류가 발생했어요.');
+      } else {
+        setFriendStatus('pending');
+      }
+    } finally {
+      setBusy(false);
     }
-    if (open) window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  };
 
-  if (!open || !friend) return null;
+  const onRemoveFriend = async () => {
+    if (!canQuery) return;
+    setBusy(true);
+    try {
+      const pair = normPair(meId, safeTargetId);
+      const { error } = await supabase.from('friends').delete().eq('user_id', pair.user_id).eq('friend_id', pair.friend_id);
 
-  const displayName = friend.nickname || friend.name || '친구';
-  const initial = displayName.trim().charAt(0) || '🙂';
-  const badge = (friend.badgeEmoji || '').trim();
-  const role = (friend.role || '').trim();
-  const career = (friend.career || '').trim();
-  const company = (friend.company || '').trim();
-  const team = (friend.team || '').trim();
-  const online = !!friend.online;
+      if (error) {
+        console.error('remove friend error', error);
+        alert('친구 해제 중 오류가 발생했어요.');
+      } else {
+        setFriendStatus('none');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) return null;
 
   return (
-    <div className="fp-backdrop" onMouseDown={onClose}>
-      <div className="fp-panel" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="fp-top">
-          <div className="fp-avatar">
-            <span>{initial}</span>
-            <span className={'fp-dot ' + (online ? 'on' : 'off')} />
-          </div>
+    <div className="fp-backdrop" onClick={onClose}>
+      <div className="fp-panel" onClick={(e) => e.stopPropagation()}>
+        <button className="fp-close" onClick={onClose} type="button">
+          ✕
+        </button>
 
-          <div className="fp-meta">
-            <div className="fp-name-row">
-              <div className="fp-name">
-                {displayName}
-                {badge ? <span className="fp-badge">{badge}</span> : null}
+        <div className="fp-title">프로필</div>
+
+        {loading ? (
+          <div className="fp-loading">불러오는 중...</div>
+        ) : (
+          <>
+            <div className="fp-card">
+              <div className="fp-name">{displayName}</div>
+
+              <div className="fp-meta">
+                {career && <span className="fp-pill">경력 {career}</span>}
+                {company && <span className="fp-pill">{company}</span>}
+                {team && <span className="fp-pill">{team}</span>}
               </div>
-              <button className="fp-x" onClick={onClose} aria-label="닫기">
-                ×
-              </button>
-            </div>
 
-            <div className="fp-sub">
-              {role ? <span className="fp-pill">{role}</span> : null}
-              {career ? <span className="fp-pill soft">{career}</span> : null}
-              {company ? <span className="fp-pill soft2">{company}</span> : null}
-              {team ? <span className="fp-pill soft2">{team}</span> : null}
-            </div>
+              <div className="fp-stats">
+                <span className="fp-stat">좋아요 <b>{likesN}</b></span>
+                <span className="fp-stat">게시글 <b>{postsN}</b></span>
+                <span className="fp-stat">피드백 <b>{feedbackN}</b></span>
+              </div>
 
-            <div className="fp-desc">
-              대화는 <b>U P 채팅</b>에서 이어집니다.
-            </div>
-          </div>
-        </div>
+              <div className="fp-actions">
+                <button type="button" className="fp-btn fp-chat" onClick={onChat}>
+                  💬 채팅하기
+                </button>
 
-        <div className="fp-actions">
-          <button className="fp-btn primary" onClick={() => onChat(friend)}>
-            U P 채팅하기
-          </button>
-          <button className="fp-btn ghost" onClick={() => onCheer(friend)}>
-            응원하기
-          </button>
-        </div>
+                {/* ✅ 친구면 "친구해제(빨강)" / 아니면 "친구하기(핑크퍼플)" */}
+                {friendStatus === 'accepted' ? (
+                  <button type="button" className="fp-btn fp-remove" onClick={onRemoveFriend} disabled={busy}>
+                    친구해제
+                  </button>
+                ) : (
+                  <button type="button" className="fp-btn fp-add" onClick={onAddFriend} disabled={busy}>
+                    {friendStatus === 'pending' ? '친구요청중' : '친구하기'}
+                  </button>
+                )}
+              </div>
+
+              {/* ✅ 상태 텍스트(작게) */}
+              <div className="fp-status">
+                {friendStatus === 'accepted' && <span className="st ok">이미 친구입니다</span>}
+                {friendStatus === 'pending' && <span className="st wait">친구 요청 대기중</span>}
+                {friendStatus === 'none' && <span className="st none">아직 친구가 아니에요</span>}
+              </div>
+            </div>
+          </>
+        )}
+
+        <style jsx>{`
+          .fp-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 80;
+            padding: 18px;
+          }
+          .fp-panel {
+            width: 420px;
+            max-width: 94vw;
+            border-radius: 26px;
+            background: #fff;
+            box-shadow: 0 28px 70px rgba(15, 23, 42, 0.38);
+            border: 1px solid rgba(226, 232, 240, 0.95);
+            padding: 16px;
+            position: relative;
+          }
+          .fp-close {
+            position: absolute;
+            top: 10px;
+            right: 12px;
+            width: 34px;
+            height: 34px;
+            border-radius: 999px;
+            border: none;
+            background: #f3f4ff;
+            cursor: pointer;
+            font-weight: 900;
+            color: #4b2d7a;
+          }
+          .fp-title {
+            font-size: 18px;
+            font-weight: 950;
+            color: #1b1030;
+            margin-bottom: 10px;
+          }
+          .fp-loading {
+            padding: 22px 6px;
+            color: #7a69c4;
+            font-weight: 900;
+          }
+          .fp-card {
+            border-radius: 20px;
+            border: 1px solid rgba(217, 204, 255, 0.85);
+            background: rgba(255, 255, 255, 0.98);
+            padding: 14px;
+          }
+          .fp-name {
+            font-size: 22px;
+            font-weight: 950;
+            color: #2a1236;
+          }
+          .fp-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+          }
+          .fp-pill {
+            font-size: 12px;
+            font-weight: 950;
+            padding: 5px 10px;
+            border-radius: 999px;
+            background: #f4f0ff;
+            color: #352153;
+            border: 1px solid rgba(217, 204, 255, 0.75);
+          }
+          .fp-stats {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+          }
+          .fp-stat {
+            font-size: 13px;
+            font-weight: 950;
+            color: #3a1f62;
+            background: #faf7ff;
+            border: 1px solid rgba(229, 221, 255, 0.8);
+            padding: 8px 10px;
+            border-radius: 14px;
+          }
+          .fp-stat b {
+            color: #ff4f9f;
+          }
+
+          .fp-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 14px;
+          }
+          .fp-btn {
+            height: 44px;
+            border-radius: 16px;
+            border: none;
+            cursor: pointer;
+            font-weight: 950;
+            font-size: 14px;
+          }
+          .fp-chat {
+            color: #fff;
+            background: linear-gradient(135deg, rgba(244, 114, 182, 0.92), rgba(168, 85, 247, 0.9));
+            box-shadow: 0 14px 22px rgba(0, 0, 0, 0.12);
+          }
+          .fp-add {
+            color: #fff;
+            background: linear-gradient(135deg, rgba(244, 114, 182, 0.92), rgba(168, 85, 247, 0.9));
+            box-shadow: 0 14px 22px rgba(0, 0, 0, 0.12);
+          }
+          .fp-remove {
+            color: #fff;
+            background: linear-gradient(135deg, rgba(248, 113, 113, 0.95), rgba(239, 68, 68, 0.95));
+            box-shadow: 0 14px 22px rgba(0, 0, 0, 0.12);
+          }
+          .fp-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+          }
+
+          .fp-status {
+            margin-top: 10px;
+            display: flex;
+            justify-content: flex-end;
+          }
+          .st {
+            font-weight: 950;
+            font-size: 12px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(226, 232, 240, 0.9);
+          }
+          .st.ok {
+            background: rgba(16, 185, 129, 0.12);
+            color: #0f766e;
+            border-color: rgba(16, 185, 129, 0.3);
+          }
+          .st.wait {
+            background: rgba(168, 85, 247, 0.10);
+            color: #6d28d9;
+            border-color: rgba(168, 85, 247, 0.28);
+          }
+          .st.none {
+            background: rgba(244, 114, 182, 0.10);
+            color: #be185d;
+            border-color: rgba(244, 114, 182, 0.28);
+          }
+        `}</style>
       </div>
-
-      <style jsx>{`
-        .fp-backdrop{
-          position: fixed; inset: 0;
-          background: rgba(10, 6, 14, 0.45);
-          display: flex; align-items: center; justify-content: center;
-          padding: 16px;
-          z-index: 9999;
-        }
-        .fp-panel{
-          width: min(560px, 96vw);
-          border-radius: 22px;
-          background: rgba(255,255,255,0.96);
-          border: 2px solid rgba(180,120,255,0.35);
-          box-shadow: 0 30px 80px rgba(30, 10, 60, 0.25);
-          overflow: hidden;
-        }
-        .fp-top{
-          display: flex; gap: 14px;
-          padding: 16px 16px 12px 16px;
-          background:
-            radial-gradient(600px 180px at 12% 0%, rgba(255, 215, 245, 0.95) 0%, rgba(255,255,255,0) 60%),
-            radial-gradient(600px 220px at 88% 0%, rgba(230, 220, 255, 0.95) 0%, rgba(255,255,255,0) 65%);
-        }
-        .fp-avatar{
-          position: relative;
-          width: 54px; height: 54px;
-          border-radius: 18px;
-          display: grid; place-items: center;
-          color: #230b35;
-          font-weight: 950;
-          background: linear-gradient(135deg, rgba(255,120,205,0.35), rgba(150,120,255,0.35));
-          border: 2px solid rgba(255,110,210,0.35);
-        }
-        .fp-avatar span{ font-size: 22px; }
-        .fp-dot{
-          position: absolute; left: -6px; top: 50%;
-          transform: translateY(-50%);
-          width: 12px; height: 12px; border-radius: 999px;
-          border: 2px solid rgba(255,255,255,0.95);
-          box-shadow: 0 8px 18px rgba(0,0,0,0.12);
-        }
-        .fp-dot.on{ background: #22c55e; }
-        .fp-dot.off{ background: #9ca3af; }
-
-        .fp-meta{ flex: 1; min-width: 0; }
-        .fp-name-row{
-          display: flex; align-items: center; justify-content: space-between;
-          gap: 8px;
-        }
-        .fp-name{
-          font-size: 18px;
-          font-weight: 950;
-          color: #2a0f3a;
-          letter-spacing: -0.2px;
-          display: flex; align-items: center; gap: 8px;
-        }
-        .fp-badge{
-          font-size: 18px;
-          filter: drop-shadow(0 6px 10px rgba(180, 60, 255, 0.25));
-        }
-        .fp-x{
-          width: 34px; height: 34px;
-          border-radius: 12px;
-          border: 1px solid rgba(50, 20, 80, 0.12);
-          background: rgba(255,255,255,0.85);
-          color: rgba(60, 20, 90, 0.75);
-          font-size: 18px;
-          cursor: pointer;
-        }
-        .fp-x:hover{ background: rgba(255,255,255,1); }
-
-        .fp-sub{
-          margin-top: 6px;
-          display: flex; flex-wrap: wrap;
-          gap: 6px;
-        }
-        .fp-pill{
-          font-size: 12px;
-          padding: 6px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,110,210,0.35);
-          background: rgba(255, 230, 245, 0.65);
-          color: #521a6a;
-          font-weight: 800;
-        }
-        .fp-pill.soft{
-          border-color: rgba(150,120,255,0.25);
-          background: rgba(240, 232, 255, 0.65);
-          color: #3b1a63;
-        }
-        .fp-pill.soft2{
-          border-color: rgba(60,20,90,0.10);
-          background: rgba(255,255,255,0.80);
-          color: rgba(45, 12, 65, 0.85);
-          font-weight: 850;
-        }
-
-        .fp-desc{
-          margin-top: 8px;
-          font-size: 12px;
-          color: rgba(45, 12, 65, 0.72);
-          font-weight: 800;
-        }
-
-        .fp-actions{
-          display: flex;
-          gap: 10px;
-          padding: 14px 16px 16px 16px;
-          background: rgba(255,255,255,0.92);
-          border-top: 1px solid rgba(60,20,90,0.08);
-        }
-        .fp-btn{
-          flex: 1;
-          height: 44px;
-          border-radius: 999px;
-          font-weight: 950;
-          letter-spacing: -0.2px;
-          cursor: pointer;
-          border: none;
-        }
-        .fp-btn.primary{
-          color: white;
-          background: linear-gradient(135deg, #ff5fb8, #7a5cff);
-          box-shadow: 0 16px 35px rgba(120, 70, 255, 0.28);
-        }
-        .fp-btn.primary:hover{ filter: brightness(1.02); }
-        .fp-btn.ghost{
-          background: rgba(255,255,255,0.92);
-          border: 2px solid rgba(150,120,255,0.35);
-          color: #2a0f3a;
-        }
-        .fp-btn.ghost:hover{
-          background: rgba(245, 240, 255, 0.85);
-        }
-      `}</style>
     </div>
   );
 }

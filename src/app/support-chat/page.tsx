@@ -1,9 +1,8 @@
-// src/app/support-chat/page.tsx
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 type ChatRole = 'user' | 'admin';
 
@@ -16,7 +15,7 @@ type ChatMessage = {
 };
 
 const FIXED_GUIDE =
-  '여기엔 문의 내용을 편하게 남겨주세요. 운영자가 순서대로 확인하고 답변해요.';
+  '문의 내용을 편하게 남겨주세요. AI가 먼저 안내하고, 운영자가 확인 후 답변합니다.';
 
 export default function SupportChatPage() {
   const router = useRouter();
@@ -30,7 +29,6 @@ export default function SupportChatPage() {
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  // 사용자 확인
   useEffect(() => {
     let isMounted = true;
 
@@ -43,7 +41,6 @@ export default function SupportChatPage() {
       if (!isMounted) return;
 
       if (!user) {
-        alert('로그인 후 문의 채팅을 이용하실 수 있습니다.');
         router.push('/login');
         return;
       }
@@ -58,7 +55,6 @@ export default function SupportChatPage() {
     };
   }, [router]);
 
-  // 메시지 불러오기
   async function fetchMessages(uid: string) {
     setLoadingMessages(true);
     const { data, error } = await supabase
@@ -76,7 +72,6 @@ export default function SupportChatPage() {
     setLoadingMessages(false);
   }
 
-  // 실시간 구독 + 초기 로딩
   useEffect(() => {
     if (!userId) return;
 
@@ -112,11 +107,8 @@ export default function SupportChatPage() {
     };
   }, [userId]);
 
-  // 스크롤 항상 맨 아래로
   useEffect(() => {
-    if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
   async function handleSend() {
@@ -134,9 +126,10 @@ export default function SupportChatPage() {
       if (error) {
         console.error('SUPPORT_CHAT_SEND_ERROR', error);
         alert('메시지 전송 중 오류가 발생했습니다.');
-      } else {
-        setInput('');
+        return;
       }
+
+      setInput('');
     } finally {
       setSending(false);
     }
@@ -149,41 +142,45 @@ export default function SupportChatPage() {
     }
   }
 
-  const isReady = useMemo(
-    () => !loadingUser && !!userId,
-    [loadingUser, userId]
-  );
+  const isReady = useMemo(() => !loadingUser && !!userId, [loadingUser, userId]);
 
   return (
     <div className="root">
       <div className="inner">
-        {/* ===== 헤더 (UP 채팅 + 말풍선/마스코트) ===== */}
         <header className="header">
           <div className="headerTop">
             <p className="headerTag">UPLOG · SUPPORT CHAT</p>
-            <h1 className="headerTitle">UP 채팅</h1>
+            <h1 className="headerTitle">문의하기 실시간 채팅</h1>
           </div>
 
           <div className="headerBottom">
-            <div className="bubbleAndMascot">
+            <div className="guideWrap">
               <div className="guideBubble">
                 <div className="guideBubbleTop">
-                  <span className="guideBubbleChip">채팅 가이드</span>
+                  <span className="chip">채팅 가이드</span>
                 </div>
-                <p className="guideBubbleText">{FIXED_GUIDE}</p>
+                <p className="guideText">{FIXED_GUIDE}</p>
               </div>
 
               <img
-                className="mascotImg"
+                className="mascot"
                 src="/assets/upzzu4.png"
                 alt="업쮸"
                 draggable={false}
               />
             </div>
           </div>
+
+          <div className="headerBtns">
+            <button className="mini" onClick={() => router.push('/support')}>
+              ← 문의 목록
+            </button>
+            <button className="mini" onClick={() => router.push('/home')}>
+              ← 홈으로
+            </button>
+          </div>
         </header>
 
-        {/* ===== 채팅 박스 ===== */}
         <section className="chatBox">
           <div className="chatScroll">
             {(!isReady || loadingMessages) && (
@@ -228,7 +225,6 @@ export default function SupportChatPage() {
           </div>
         </section>
 
-        {/* ===== 입력창 ===== */}
         <section className="inputBox">
           <label className="inputLabel">메시지 입력</label>
 
@@ -237,7 +233,7 @@ export default function SupportChatPage() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={3}
-            placeholder="문의하실 내용을 편하게 남겨 주세요. 엔터 전송, 줄바꿈은 Shift+Enter"
+            placeholder="엔터 전송, 줄바꿈은 Shift+Enter"
             className="textarea"
           />
 
@@ -260,9 +256,6 @@ export default function SupportChatPage() {
 }
 
 const styles = `
-/* =========================
-   BASE
-   ========================= */
 .root{
   min-height:100vh;
   padding:24px 12px;
@@ -280,10 +273,6 @@ const styles = `
   flex-direction:column;
   gap:16px;
 }
-
-/* =========================
-   HEADER
-   ========================= */
 .header{
   border-radius:34px;
   background: radial-gradient(circle at top left, #ff8ac8 0, #a855f7 40%, #2a1bff 100%);
@@ -299,7 +288,7 @@ const styles = `
   text-transform:uppercase;
   margin:0;
   color: rgba(255,255,255,0.88);
-  font-weight:900;
+  font-weight:950;
 }
 .headerTitle{
   margin:0;
@@ -308,21 +297,13 @@ const styles = `
   letter-spacing:-0.02em;
 }
 
-/* 말풍선+업쮸 */
-.headerBottom{
-  margin-top:14px;
-  display:flex;
-  justify-content:center;
-}
-.bubbleAndMascot{
-  width:100%;
-  max-width:860px;
+.headerBottom{ margin-top:14px; }
+.guideWrap{
   display:flex;
   gap:14px;
   justify-content:center;
   align-items:center;
 }
-
 .guideBubble{
   flex:1;
   border-radius:999px;
@@ -351,43 +332,55 @@ const styles = `
   border-bottom:1px solid rgba(223, 202, 255, 0.9);
 }
 .guideBubbleTop{ display:flex; justify-content:center; margin-bottom:6px; }
-.guideBubbleChip{
+.chip{
   font-size:11px;
-  font-weight:900;
+  font-weight:950;
   padding:4px 10px;
   border-radius:999px;
   background: rgba(250, 244, 255, 0.95);
-  color:#f973b8;
+  color:#fb7185;
   border:1px solid rgba(223, 202, 255, 0.6);
 }
-.guideBubbleText{
+.guideText{
   margin:0;
   font-size:14px;
-  font-weight:750;
+  font-weight:850;
   color:#4b2966;
   text-align:center;
   line-height:1.55;
 }
-
-.mascotImg{
+.mascot{
   width:150px;
   height:150px;
   object-fit:contain;
   flex-shrink:0;
   user-select:none;
   -webkit-user-drag:none;
-  animation: upzzu-float 2.6s ease-in-out infinite;
+  animation: float 2.6s ease-in-out infinite;
   filter: drop-shadow(0 10px 14px rgba(0,0,0,0.18));
 }
-@keyframes upzzu-float{
-  0%   { transform: translateY(0) scale(1); }
-  45%  { transform: translateY(-6px) scale(1.02); }
-  100% { transform: translateY(0) scale(1); }
+@keyframes float{
+  0%{ transform: translateY(0); }
+  45%{ transform: translateY(-6px); }
+  100%{ transform: translateY(0); }
 }
+.headerBtns{
+  margin-top:12px;
+  display:flex;
+  gap:10px;
+  justify-content:flex-end;
+}
+.mini{
+  padding:10px 14px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.35);
+  background: rgba(255,255,255,0.12);
+  color:#fff;
+  font-weight:950;
+  cursor:pointer;
+}
+.mini:hover{ background: rgba(255,255,255,0.18); }
 
-/* =========================
-   CHAT BOX
-   ========================= */
 .chatBox{
   flex:1;
   min-height:360px;
@@ -413,10 +406,9 @@ const styles = `
   font-size:14px;
   color:#7a69c4;
   padding:10px 8px;
-  font-weight:700;
+  font-weight:800;
 }
 
-/* messages */
 .row{ display:flex; }
 .bubbleWrap{
   max-width:80%;
@@ -427,7 +419,7 @@ const styles = `
 .who{
   font-size:11px;
   color:#7a69c4;
-  font-weight:900;
+  font-weight:950;
 }
 .bubble{
   border-radius:18px;
@@ -452,12 +444,9 @@ const styles = `
 .time{
   font-size:10px;
   color:#a78bfa;
-  font-weight:900;
+  font-weight:950;
 }
 
-/* =========================
-   INPUT
-   ========================= */
 .inputBox{
   border-radius:22px;
   padding:12px;
@@ -518,7 +507,7 @@ const styles = `
 @media (max-width: 640px){
   .header{ padding:20px 14px 14px; border-radius:28px; }
   .headerTitle{ font-size:22px; }
-  .bubbleAndMascot{ gap:10px; }
-  .mascotImg{ width:128px; height:128px; }
+  .guideWrap{ gap:10px; }
+  .mascot{ width:128px; height:128px; }
 }
 `;
