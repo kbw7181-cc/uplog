@@ -167,22 +167,31 @@ function isImageFile(f?: File | null) {
   return /^image\/(png|jpe?g|webp|gif)$/i.test(f.type);
 }
 
+function extFromFile(file: File) {
+  const raw = (file.name.split('.').pop() || '').toLowerCase().trim();
+  if (raw) return raw;
+  const t = (file.type || '').toLowerCase();
+  if (t.includes('png')) return 'png';
+  if (t.includes('jpeg') || t.includes('jpg')) return 'jpg';
+  if (t.includes('webp')) return 'webp';
+  if (t.includes('gif')) return 'gif';
+  return 'png';
+}
+
 async function uploadToSupportBucket(file: File, userId: string): Promise<string | null> {
   // ✅ bucket 이름 고정: support_uploads
   // ⚠️ Supabase Storage에 bucket이 없으면 "Bucket not found" 발생
   const bucket = 'support_uploads';
-  const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+  const ext = extFromFile(file);
   const path = `${userId}/${Date.now()}.${ext}`;
 
   const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, {
     cacheControl: '3600',
     upsert: false,
-    contentType: file.type,
+    contentType: file.type || 'application/octet-stream',
   });
 
-  if (upErr) {
-    throw upErr;
-  }
+  if (upErr) throw upErr;
 
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
   const url = data?.publicUrl ? String(data.publicUrl) : '';
@@ -271,8 +280,8 @@ export default function SupportPage() {
     const payload: any = {
       user_id: uid,
       role,
-      content: safe,  // content 컬럼 쓰는 경우
-      message: safe,  // message NOT NULL 컬럼 쓰는 경우 (둘 중 하나만 있어도 안전)
+      content: safe, // content 컬럼 쓰는 경우
+      message: safe, // message NOT NULL 컬럼 쓰는 경우 (둘 중 하나만 있어도 안전)
     };
     if (attachmentUrl) payload.attachment_url = attachmentUrl;
 
@@ -313,7 +322,7 @@ export default function SupportPage() {
     setLoadingMessages(false);
   }
 
-  // 2) 웰컴 메시지 1회 보장 (DB 컬럼 불일치/NOT NULL 방어 위해 insertMessage 사용)
+  // 2) 웰컴 메시지 1회 보장
   async function ensureWelcome(uid: string) {
     const { data, error } = await supabase.from('support_messages').select('id').eq('user_id', uid).limit(1);
     if (error) {
@@ -392,8 +401,10 @@ export default function SupportPage() {
           attachmentUrl = await uploadToSupportBucket(file, userId);
         } catch (e: any) {
           console.error('SUPPORT_UPLOAD_ERROR', e);
+
+          // 버킷/정책 문제일 때 안내를 강하게
           alert(
-            '사진 업로드가 실패했어요.\n(원인: Storage 버킷/정책 문제일 가능성)\n\n✅ Supabase Storage에 버킷을 먼저 만들어주세요: support_uploads\n그 전까지는 텍스트만 전송해 주세요.'
+            '사진 업로드가 실패했어요.\n(원인: Storage 버킷/정책 문제일 가능성)\n\n✅ Supabase Storage에 버킷을 먼저 만들어주세요: support_uploads\n✅ 정책도 적용되어야 업로드가 됩니다.\n\n그 전까지는 텍스트만 전송해 주세요.'
           );
           attachmentUrl = null;
         }
@@ -405,7 +416,7 @@ export default function SupportPage() {
         return;
       }
 
-      // 2) 유저 메시지 저장 (NOT NULL 방어)
+      // 2) 유저 메시지 저장
       const userMessage = safeInput || '[사진]';
       await insertMessage(userId, 'user', userMessage, attachmentUrl);
 
@@ -420,7 +431,7 @@ export default function SupportPage() {
       setFilePreview('');
       if (fileInputRef.current) fileInputRef.current.value = '';
 
-      // 실시간 구독이 있으니 fetch는 선택, 그래도 안정성 위해 1번만
+      // 안정성 위해 1회 재로딩
       await fetchMessages(userId);
     } catch (e: any) {
       console.error('SUPPORT_SEND_ERROR', e);
@@ -441,11 +452,20 @@ export default function SupportPage() {
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] || null;
+
+    // 이전 preview URL 정리
+    if (filePreview) {
+      try {
+        URL.revokeObjectURL(filePreview);
+      } catch {}
+    }
+
     if (!f) {
       setFile(null);
       setFilePreview('');
       return;
     }
+
     setFile(f);
 
     if (isImageFile(f)) {
@@ -457,6 +477,11 @@ export default function SupportPage() {
   }
 
   function clearFile() {
+    if (filePreview) {
+      try {
+        URL.revokeObjectURL(filePreview);
+      } catch {}
+    }
     setFile(null);
     setFilePreview('');
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -481,6 +506,7 @@ export default function SupportPage() {
           <div className="headerTop">
             <div className="brandRow">
               <div className="brandLeft">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img className="logo" src={LOGO_SRC} alt="UPLOG" draggable={false} />
                 <div className="brandText">
                   <div className="brandTag">{BRAND_TAG}</div>
@@ -495,6 +521,7 @@ export default function SupportPage() {
                 <div className="bubbleText">{headerGuide}</div>
               </div>
 
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img className="mascot" src={MASCOT_SRC} alt="업쮸" draggable={false} />
             </div>
           </div>
@@ -562,6 +589,7 @@ export default function SupportPage() {
                   </div>
                 );
               })}
+
               <div ref={bottomRef} />
             </div>
 
@@ -922,7 +950,7 @@ const styles = `
   font-size:12px;
   font-weight:1000;
   color:#5b21b6;
- n  text-decoration:none;
+  text-decoration:none;
 }
 
 /* INPUT */
