@@ -399,16 +399,47 @@ function normalizeLogs(raw: any): ManageLog[] {
 
 function logCatBadge(cat: ManageLogCategory) {
   if (cat === '해피콜')
-    return { emoji: '📞', bg: 'rgba(34,197,94,0.12)', bd: 'rgba(34,197,94,0.26)', tx: '#14532d' };
+    return { emoji: '📞', bg: 'rgba(34,197,94,0.12)', bd: 'rgba(34,197,94,0.26)', tx: '#14532d', dot: '#22c55e' };
   if (cat === '상담')
-    return { emoji: '🗓️', bg: 'rgba(59,130,246,0.12)', bd: 'rgba(59,130,246,0.26)', tx: '#1e3a8a' };
+    return { emoji: '🗓️', bg: 'rgba(59,130,246,0.12)', bd: 'rgba(59,130,246,0.26)', tx: '#1e3a8a', dot: '#3b82f6' };
   if (cat === '부재')
-    return { emoji: '⚪', bg: 'rgba(100,116,139,0.10)', bd: 'rgba(100,116,139,0.22)', tx: '#334155' };
+    return { emoji: '⚪', bg: 'rgba(100,116,139,0.10)', bd: 'rgba(100,116,139,0.22)', tx: '#334155', dot: '#64748b' };
   if (cat === '안부')
-    return { emoji: '🟢', bg: 'rgba(168,85,247,0.10)', bd: 'rgba(168,85,247,0.22)', tx: '#3a1850' };
+    return { emoji: '🟢', bg: 'rgba(168,85,247,0.10)', bd: 'rgba(168,85,247,0.22)', tx: '#3a1850', dot: '#a855f7' };
   if (cat === '거부')
-    return { emoji: '🔴', bg: 'rgba(239,68,68,0.12)', bd: 'rgba(239,68,68,0.26)', tx: '#7f1d1d' };
-  return { emoji: '🟪', bg: 'rgba(255,80,170,0.10)', bd: 'rgba(255,80,170,0.22)', tx: '#6b1140' };
+    return { emoji: '🔴', bg: 'rgba(239,68,68,0.12)', bd: 'rgba(239,68,68,0.26)', tx: '#7f1d1d', dot: '#ef4444' };
+  return { emoji: '🟪', bg: 'rgba(255,80,170,0.10)', bd: 'rgba(255,80,170,0.22)', tx: '#6b1140', dot: '#ec4899' };
+}
+
+/** ✅ schedules.category에서 “종류(해피콜/상담/계약…)” 뽑기 */
+function scheduleKindFromRow(s: ScheduleRow): string {
+  const cat = String(s.category || '');
+  // 예: "고객관리/해피콜"
+  const slashIdx = cat.indexOf('/');
+  if (slashIdx >= 0) {
+    const kind = cat.slice(slashIdx + 1).trim();
+    if (kind) return kind;
+  }
+  // title 기반 fallback: "이름 · 해피콜 · ..."
+  const t = String(s.title || '');
+  const parts = t.split('·').map((x) => x.trim());
+  if (parts.length >= 2) {
+    const maybe = parts[1];
+    if (maybe) return maybe;
+  }
+  return '스케줄';
+}
+
+function dotColorByKind(kind: string) {
+  const k = (kind || '').trim();
+  if (k === '계약') return '#ec4899'; // 핑크
+  if (k === '해피콜') return '#22c55e'; // 그린
+  if (k === '상담') return '#3b82f6'; // 블루
+  if (k === '부재') return '#64748b'; // 그레이
+  if (k === '안부') return '#a855f7'; // 퍼플
+  if (k === '거부') return '#ef4444'; // 레드
+  if (k === '기타') return '#f59e0b'; // 앰버
+  return '#ec4899';
 }
 
 export default function CustomersPage() {
@@ -721,6 +752,8 @@ export default function CustomersPage() {
       return;
     }
 
+    // ✅✅✅ (요청 반영)
+    // - “해피콜이면…” 제약 제거: 어떤 카테고리든 “달력 스케줄에 저장” 체크 가능
     const next: ManageLog = {
       id: makeLogId(),
       tsISO: nowISO(),
@@ -729,7 +762,7 @@ export default function CustomersPage() {
       category: logCategory,
       content,
       memo,
-      saveSchedule: logCategory === '해피콜' ? !!logSaveSchedule : false,
+      saveSchedule: !!logSaveSchedule,
     };
 
     setManageLogs((prev) => [...prev, next]);
@@ -939,7 +972,7 @@ export default function CustomersPage() {
 
     // ✅ 스케줄 저장 규칙
     // 1) 계약: 체크된 경우만 저장
-    // 2) 해피콜: “꾸준한관리(이력)”에서 카테고리=해피콜 & 스케줄저장 체크된 로그만 저장
+    // 2) 꾸준한관리(이력): “달력 스케줄에 저장” 체크된 로그는 카테고리 그대로 달력에 저장
     const scheduleJobs: { date: string; time: string; label: string; enabled: boolean }[] = [];
 
     if (checkContract || contractProgress === '완료') {
@@ -947,20 +980,20 @@ export default function CustomersPage() {
     }
 
     for (const lg of logsSorted) {
-      if (lg.category !== '해피콜') continue;
       if (lg.saveSchedule !== true) continue;
-      scheduleJobs.push({ date: lg.date, time: lg.time, label: '해피콜', enabled: true });
+      scheduleJobs.push({ date: lg.date, time: lg.time, label: lg.category, enabled: true });
     }
 
     const toInsert = scheduleJobs.filter((x) => x.enabled && x.date && isYMD(x.date));
 
     for (const item of toInsert) {
+      // ✅✅✅ 카테고리에 종류를 넣어서(고객관리/해피콜 등) 달력 dot 색상 구분 가능
       const payloadSch: any = {
         user_id: userId,
         title: buildScheduleTitle(name, item.label, cStage),
         schedule_date: item.date,
         schedule_time: isHHMM(item.time) ? item.time : null,
-        category: '고객관리',
+        category: `고객관리/${item.label}`,
       };
 
       const ins = await safeInsertSchedule(userId, payloadSch);
@@ -1189,9 +1222,8 @@ export default function CustomersPage() {
     dayCellToday: { borderColor: 'rgba(109,40,217,0.35)' },
     dayHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
     dayNum: { fontSize: 13, fontWeight: 950, color: '#2a0f3a' },
-    dotRow: { marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' },
+    dotRow: { marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' },
     dot: { width: 9, height: 9, borderRadius: 999, background: '#ec4899' },
-    dot2: { width: 9, height: 9, borderRadius: 999, background: '#22c55e' },
 
     item: {
       marginTop: 10,
@@ -1329,7 +1361,7 @@ export default function CustomersPage() {
               <div style={S.bubble}>
                 <div style={{ fontSize: 14, fontWeight: 950 }}>오늘 가이드</div>
                 <div style={{ marginTop: 6 }}>{coachLine}</div>
-                <div style={S.bubbleSub}>꾸준한관리: 해피콜/상담 이력을 쌓고, 필요하면 “달력 스케줄”까지 자동으로 연결하세요.</div>
+                <div style={S.bubbleSub}>꾸준한관리: 이력을 쌓고, 체크한 항목은 “달력 스케줄”까지 자동 연결됩니다.</div>
               </div>
 
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1395,7 +1427,7 @@ export default function CustomersPage() {
         <div style={{ ...S.card, marginTop: 12 }}>
           <div style={S.pad}>
             <div style={S.sectionTitle}>고객 목록</div>
-            <div style={S.sectionSub}>보기/수정에서 계약/상품/특이사항/꾸준한관리(해피콜 포함)까지 관리</div>
+            <div style={S.sectionSub}>보기/수정에서 계약/상품/특이사항/꾸준한관리(스케줄 체크 포함)까지 관리</div>
 
             {filteredCustomers.length === 0 ? (
               <div style={{ marginTop: 12, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>
@@ -1494,9 +1526,7 @@ export default function CustomersPage() {
                           <div style={{ marginTop: 8, fontWeight: 950, fontSize: 12, opacity: 0.6 }}>🧾 최근 이력: 없음 (보기/수정에서 추가)</div>
                         )}
 
-                        <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {contractD ? <span style={S.pill}>계약 {contractD}</span> : null}
-                        </div>
+                        <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>{contractD ? <span style={S.pill}>계약 {contractD}</span> : null}</div>
 
                         {showContractProgress ? (
                           <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1571,7 +1601,10 @@ export default function CustomersPage() {
 
                 const list = schedulesByDate[ymd] || [];
                 const hasAny = list.length > 0;
-                const hasCustomer = list.some((x) => String(x.category || '').includes('고객'));
+                const hasCustomer = list.some((x) => String(x.category || '').includes('고객관리'));
+
+                // ✅✅✅ 카테고리별 dot 색상: 그 날짜에 있는 종류를 최대 3개까지 보여줌
+                const kinds = Array.from(new Set(list.map((x) => scheduleKindFromRow(x)))).slice(0, 3);
 
                 const style: any = {
                   ...S.dayCell,
@@ -1589,7 +1622,10 @@ export default function CustomersPage() {
 
                     {hasAny ? (
                       <div style={S.dotRow}>
-                        <span style={hasCustomer ? S.dot2 : S.dot} />
+                        {kinds.map((k) => (
+                          <span key={k} style={{ ...S.dot, background: dotColorByKind(k) }} title={k} />
+                        ))}
+
                         <span
                           style={{
                             fontSize: 11,
@@ -1619,7 +1655,10 @@ export default function CustomersPage() {
             ) : (
               <div style={{ marginTop: 10 }}>
                 {selectedSchedules.map((s) => {
-                  const isCustomer = String(s.category || '').includes('고객');
+                  const isCustomer = String(s.category || '').includes('고객관리');
+                  const kind = scheduleKindFromRow(s);
+                  const dotColor = dotColorByKind(kind);
+
                   return (
                     <div
                       key={s.id}
@@ -1630,10 +1669,15 @@ export default function CustomersPage() {
                       title={isCustomer ? '클릭하면 고객 상세로 이동' : ''}
                     >
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 950 }}>{s.title}</div>
-                        <div style={{ marginTop: 4, fontSize: 12, fontWeight: 950, opacity: 0.75 }}>
+                        <div style={{ fontWeight: 950, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ ...S.dot, background: dotColor, width: 10, height: 10 }} />
+                          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</span>
+                        </div>
+
+                        <div style={{ marginTop: 6, fontSize: 12, fontWeight: 950, opacity: 0.75, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           {s.category ? <span style={S.chip}>{String(s.category)}</span> : null}
-                          {isCustomer ? <span style={{ ...S.chip, marginLeft: 8, opacity: 0.95 }}>🔎 고객 상세로</span> : null}
+                          <span style={S.chip}>🏷 {kind}</span>
+                          {isCustomer ? <span style={{ ...S.chip, opacity: 0.95 }}>🔎 고객 상세로</span> : null}
                         </div>
                       </div>
                       <div style={{ fontWeight: 950, opacity: 0.85 }}>{(s.schedule_time || '').slice(0, 5) || '--:--'}</div>
@@ -1662,7 +1706,7 @@ export default function CustomersPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
                   <div>
                     <div style={S.modalTitle}>{editId ? '고객 정보 수정' : '고객 추가'}</div>
-                    <div style={S.sectionSub}>✅ 계약일(기본정보 아래) + 상품/특이사항 + 꾸준한관리(해피콜 스케줄)까지 한 번에.</div>
+                    <div style={S.sectionSub}>✅ 계약일(기본정보 아래) + 상품/특이사항 + 꾸준한관리(달력 스케줄 체크)까지 한 번에.</div>
                     <div style={{ ...S.small, marginTop: 6 }}>입력일시: {fmtKoreanDT(cInputISO)}</div>
                   </div>
 
@@ -1868,7 +1912,11 @@ export default function CustomersPage() {
                               placeholder={`메모 ${idx + 1}`}
                             />
                             {issues.length > 1 ? (
-                              <button type="button" style={{ ...S.dangerBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => setIssues((prev) => prev.filter((_, i) => i !== idx))}>
+                              <button
+                                type="button"
+                                style={{ ...S.dangerBtn, padding: '8px 10px', fontSize: 12 }}
+                                onClick={() => setIssues((prev) => prev.filter((_, i) => i !== idx))}
+                              >
                                 삭제
                               </button>
                             ) : null}
@@ -1905,7 +1953,11 @@ export default function CustomersPage() {
                             placeholder={`상품명 ${idx + 1}`}
                           />
                           {products.length > 1 ? (
-                            <button type="button" style={{ ...S.dangerBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => setProducts((prev) => prev.filter((_, i) => i !== idx))}>
+                            <button
+                              type="button"
+                              style={{ ...S.dangerBtn, padding: '8px 10px', fontSize: 12 }}
+                              onClick={() => setProducts((prev) => prev.filter((_, i) => i !== idx))}
+                            >
                               삭제
                             </button>
                           ) : null}
@@ -1971,7 +2023,7 @@ export default function CustomersPage() {
                 <div style={{ ...S.card, marginTop: 12 }}>
                   <div style={S.pad}>
                     <div style={S.sectionTitle}>꾸준한 관리</div>
-                    <div style={S.sectionSub}>상담/관리 메모를 쌓고, 해피콜 스케줄은 아래 “꾸준한관리(이력)”에서 잡습니다.</div>
+                    <div style={S.sectionSub}>상담/관리 메모를 쌓고, 스케줄로 남길 항목은 아래 “꾸준한관리(이력)”에서 체크합니다.</div>
 
                     <div style={{ marginTop: 12 }}>
                       <div style={{ ...S.small, marginBottom: 6 }}>관리 내용 메모(선물/후속조치 등)</div>
@@ -1999,7 +2051,7 @@ export default function CustomersPage() {
                 <div style={{ ...S.card, marginTop: 12 }}>
                   <div style={S.pad}>
                     <div style={S.sectionTitle}>꾸준한관리 (이력)</div>
-                    <div style={S.sectionSub}>날짜/시간/카테고리/내용/메모를 “누적”으로 쌓고, 해피콜은 체크 시 달력에 스케줄 저장됩니다.</div>
+                    <div style={S.sectionSub}>날짜/시간/카테고리/내용/메모를 “누적”으로 쌓고, 체크한 항목은 달력에 스케줄로 저장됩니다.</div>
 
                     <div style={{ ...S.card, marginTop: 10, background: 'rgba(255,255,255,0.78)', border: '1px solid rgba(60,30,90,0.10)' }}>
                       <div style={S.pad}>
@@ -2043,20 +2095,9 @@ export default function CustomersPage() {
                         </div>
 
                         <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                          {/* ✅✅✅ (요청) “해피콜이면” 문구 삭제 → “달력 스케줄에 저장” */}
-                          <label
-                            style={{
-                              ...S.toggle,
-                              opacity: logCategory === '해피콜' ? 1 : 0.55,
-                              cursor: logCategory === '해피콜' ? 'pointer' : 'not-allowed',
-                            }}
-                            onClick={() => {
-                              if (logCategory !== '해피콜') return;
-                              setLogSaveSchedule((v) => !v);
-                            }}
-                            title={logCategory !== '해피콜' ? '해피콜 카테고리일 때만 스케줄 저장이 가능합니다' : ''}
-                          >
-                            <input type="checkbox" checked={logCategory === '해피콜' ? logSaveSchedule : false} readOnly />
+                          {/* ✅✅✅ “해피콜이면…” 제약 제거: 항상 체크 가능 */}
+                          <label style={S.toggle} onClick={() => setLogSaveSchedule((v) => !v)}>
+                            <input type="checkbox" checked={logSaveSchedule} readOnly />
                             <span>달력 스케줄에 저장</span>
                           </label>
 
@@ -2064,11 +2105,7 @@ export default function CustomersPage() {
                             + 이력 추가
                           </button>
 
-                          {/* ✅✅✅ (요청) 입력 초기화 버튼 삭제 */}
-                        </div>
-
-                        <div style={{ ...S.small, marginTop: 6 }}>
-                          ※ 스케줄 저장은 “카테고리=해피콜”인 경우에만 달력에 의미가 있으니, 해피콜만 체크 추천
+                          {/* ✅✅✅ 입력 초기화 버튼 삭제 */}
                         </div>
                       </div>
                     </div>
@@ -2091,7 +2128,7 @@ export default function CustomersPage() {
                                     </span>
                                     <span style={{ ...S.chip, opacity: 0.9 }}>🗓 {x.date}</span>
                                     <span style={{ ...S.chip, opacity: 0.9 }}>⏰ {x.time}</span>
-                                    {x.category === '해피콜' && x.saveSchedule ? <span style={{ ...S.chip, opacity: 0.95 }}>📌 스케줄 저장</span> : null}
+                                    {x.saveSchedule ? <span style={{ ...S.chip, opacity: 0.95 }}>📌 스케줄 저장</span> : null}
                                   </div>
 
                                   <div style={{ marginTop: 8, fontWeight: 950, lineHeight: 1.35 }}>{x.content}</div>
@@ -2111,7 +2148,7 @@ export default function CustomersPage() {
 
                 {err ? <div style={S.warn}>{err}</div> : null}
 
-                {/* ✅✅✅ (요청) 상단 저장 제거 → 맨 아래 저장 버튼 */}
+                {/* ✅✅✅ 상단 저장 제거 → 맨 아래 저장 버튼 */}
                 <div style={S.bottomBar}>
                   <button type="button" style={S.saveBtn} onClick={saveCustomer}>
                     저장

@@ -1,4 +1,4 @@
-// ✅ 파일: src/app/home/page.tsx
+// ✅✅✅ 전체복붙: src/app/home/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -30,6 +30,7 @@ const EMO_QUOTES: string[] = [
   '오늘 1건의 계약도 내일 10건의 씨앗이 됩니다.',
 ];
 
+// ✅ Friend
 type Friend = {
   user_id: string;
   nickname: string;
@@ -38,12 +39,14 @@ type Friend = {
   avatarUrl?: string | null;
 };
 
+// ✅ Schedule
 type ScheduleRow = {
   id: string;
   title: string;
   schedule_date: string; // YYYY-MM-DD
   schedule_time?: string | null;
   category?: string | null;
+  customer_id?: string | null; // (유지: 나중에 다시 쓸 수 있음)
 };
 
 type DaySummary = { date: string; count: number };
@@ -54,6 +57,7 @@ type DailyTask = { id: string; content: string; done: boolean; task_date: string
 type ContractLevel = 'new' | 'contract1' | 'contract2' | 'contract3';
 type ContractDay = { date: string; newCount: number; c1: number; c2: number; c3: number };
 
+// ✅ 날짜/라벨 유틸
 function formatDate(date: Date): string {
   const y = date.getFullYear();
   const m = `${date.getMonth() + 1}`.padStart(2, '0');
@@ -66,6 +70,8 @@ function getMonthLabel(date: Date) {
 function getKoreanWeekday(date: Date) {
   return date.toLocaleDateString('ko-KR', { weekday: 'long' });
 }
+
+// ✅ 날씨 이모지
 function weatherEmoji(desc: string) {
   if (!desc) return '🌤';
   if (desc.includes('맑')) return '☀️';
@@ -76,6 +82,7 @@ function weatherEmoji(desc: string) {
   return '🌤';
 }
 
+// ✅ 스케줄 카테고리 메타
 type ScheduleCategoryKind = 'work' | 'attendance' | 'etc';
 type ScheduleCategoryMeta = { label: string; badgeClass: string; kind: ScheduleCategoryKind };
 
@@ -99,6 +106,7 @@ function getScheduleCategoryMeta(category: string | null | undefined): ScheduleC
   return { label: '기타', badgeClass: 'schedule-cat-etc', kind: 'etc' };
 }
 
+// ✅ 무드/경력 라벨
 function getMoodEmoji(code: string | null | undefined): string {
   if (!code) return '';
   if (code === '🙂' || code === '😎' || code === '🔥') return code;
@@ -140,6 +148,7 @@ function getCareerLabel(code: string | null | undefined): string | null {
   }
 }
 
+// ✅ 계약 단계 파싱
 function pickContractLevel(statusRaw: any): ContractLevel | null {
   const s = String(statusRaw ?? '').replace(/\s/g, '').toLowerCase();
   if (!s) return null;
@@ -151,6 +160,7 @@ function pickContractLevel(statusRaw: any): ContractLevel | null {
   return null;
 }
 
+// ✅ localStorage 유틸
 function lsGetJson<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -203,7 +213,7 @@ export default function HomePage() {
 
   const [daySummaries, setDaySummaries] = useState<DaySummary[]>([]);
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
-  const [todayWeather, setTodayWeather] = useState<WeatherSlot[]>([]); // ✅ 항상 배열 유지
+  const [todayWeather, setTodayWeather] = useState<WeatherSlot[]>([]);
   const [latestGoals, setLatestGoals] = useState<LatestGoals | null>(null);
   const [recentRebuttals, setRecentRebuttals] = useState<RebuttalSummary[]>([]);
   const [todayTasks, setTodayTasks] = useState<DailyTask[]>([]);
@@ -395,10 +405,7 @@ export default function HomePage() {
 
       let likesCount = 0;
       try {
-        const { count } = await supabase
-          .from('post_likes')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', targetUserId);
+        const { count } = await supabase.from('post_likes').select('id', { count: 'exact', head: true }).eq('user_id', targetUserId);
         likesCount = count ?? 0;
       } catch {
         likesCount = 0;
@@ -445,10 +452,7 @@ export default function HomePage() {
   };
 
   const newRebuttalCount = useMemo(() => recentRebuttals.length, [recentRebuttals]);
-  const newScheduleCountToday = useMemo(
-    () => schedules.filter((s) => s.schedule_date === todayStr).length,
-    [schedules, todayStr]
-  );
+  const newScheduleCountToday = useMemo(() => schedules.filter((s) => s.schedule_date === todayStr).length, [schedules, todayStr]);
 
   // 감성 슬라이드
   useEffect(() => {
@@ -471,19 +475,21 @@ export default function HomePage() {
     const moodMap: Record<string, string> = {};
     const contractByDate: Record<string, { newCount: number; c1: number; c2: number; c3: number }> = {};
 
+    // ✅ schedules 로드 (customer_id 포함)
     const { data: scheduleRows, error: scheduleError } = await supabase
       .from('schedules')
-      .select('id, title, schedule_date, schedule_time, category')
+      .select('id, title, schedule_date, schedule_time, category, customer_id')
       .eq('user_id', uid)
       .gte('schedule_date', from)
       .lte('schedule_date', to)
       .order('schedule_date', { ascending: true });
 
-    if (scheduleError) console.error('schedules error', scheduleError);
+    if (scheduleError) throw scheduleError;
 
-    const safeSchedules = (scheduleRows ?? []) as ScheduleRow[];
+    const safeSchedules: ScheduleRow[] = (scheduleRows ?? []) as ScheduleRow[];
     setSchedules(safeSchedules);
 
+    // ✅ 날짜별 요약(count)
     const summaryMap: Record<string, number> = {};
     safeSchedules.forEach((row) => {
       summaryMap[row.schedule_date] = (summaryMap[row.schedule_date] ?? 0) + 1;
@@ -911,7 +917,7 @@ export default function HomePage() {
           </div>
         </header>
 
-        {/* ✅✅✅ 메뉴버튼: 문자도우미를 커뮤니티 앞으로 (스왑) */}
+        {/* ✅✅✅ 메뉴버튼: 문자도우미를 커뮤니티 앞으로 */}
         <section className="home-quick-nav">
           <Link href="/my-up" className="quick-card">
             나의 U P 관리
@@ -1178,10 +1184,13 @@ export default function HomePage() {
                     return (
                       <li key={s.id} className="schedule-item">
                         <div className="schedule-time">{timeText}</div>
+
                         <div className="schedule-content">
                           <span className={'schedule-category ' + meta.badgeClass}>{meta.label}</span>
                           <span className="schedule-title">{s.title}</span>
                         </div>
+
+                        {/* ✅✅✅ 상세보기 버튼 관련 코드 "전부 제거" */}
                       </li>
                     );
                   })}
@@ -1351,19 +1360,21 @@ export default function HomePage() {
 }
 
 const styles = `
-:global(:root) {
+:root {
   --uplog-accent-pink: #f472b6;
   --uplog-accent-purple: #a855f7;
   --soft-ink: #201235;
   --soft-sub: #6f60b8;
   --soft-shadow: 0 14px 26px rgba(0,0,0,0.10);
 }
-:global(html), :global(body) { margin: 0; padding: 0; }
-:global(a) { color: inherit; text-decoration: none; }
-:global(a:hover) { text-decoration: none; }
-:global(.sr-only){
+
+html, body { margin: 0; padding: 0; }
+a { color: inherit; text-decoration: none; }
+a:hover { text-decoration: none; }
+.sr-only{
   position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
 }
+
 @media (prefers-reduced-motion: reduce) {
   .wave-text span, .badge-icon, .coach-mascot-wrap, .coach-sparkle { animation: none !important; transition: none !important; }
 }
@@ -1400,6 +1411,7 @@ const styles = `
   color: #ffffff;
   overflow: visible;
 }
+
 .home-header-top{
   display: grid;
   grid-template-columns: 1fr 420px;
@@ -1469,6 +1481,7 @@ const styles = `
   cursor: pointer;
   box-shadow: 0 8px 14px rgba(0,0,0,0.10);
 }
+.profile-settings-btn:hover{ transform: translateY(-1px); transition: 160ms ease; }
 .profile-click{ border: none; background: transparent; padding: 0; text-align: left; cursor: pointer; width: 100%; }
 .profile-main{ display:flex; align-items:center; gap: 12px; padding-right: 86px; margin-top: 2px; }
 .profile-avatar{
@@ -1599,6 +1612,7 @@ const styles = `
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.quick-card:hover{ transform: translateY(-1px); transition: 170ms ease; filter: brightness(1.02); }
 @media (max-width: 860px){
   .home-header-top{ grid-template-columns: 1fr; }
   .home-header-profile{ justify-content:flex-start; }
@@ -1696,6 +1710,7 @@ const styles = `
   font-weight: 950;
   color: #4b2d7a;
 }
+.nav-btn:hover{ transform: translateY(-1px); transition: 160ms ease; }
 .month-label{ font-weight: 950; color:#2a1236; }
 .calendar-legend{ display:flex; flex-wrap: wrap; gap: 10px; align-items:center; margin: 8px 0 12px; }
 .legend-item{ display:flex; align-items:center; gap: 8px; font-size: 13px; color:#4b2d7a; }
@@ -1718,6 +1733,7 @@ const styles = `
   text-align: left;
   min-height: 76px;
 }
+.calendar-day:hover{ transform: translateY(-1px); transition: 160ms ease; box-shadow: 0 16px 28px rgba(0,0,0,0.06); }
 .calendar-day-out{ opacity: .38; background: #fbfbff; }
 .calendar-day-today{ border-color: rgba(244,114,182,0.75); box-shadow: 0 0 0 3px rgba(244,114,182,0.12); }
 .calendar-day-selected{ border-color: rgba(168,85,247,0.85); box-shadow: 0 0 0 3px rgba(168,85,247,0.14); }
@@ -1734,9 +1750,28 @@ const styles = `
 .right-card-header{ display:flex; align-items:flex-end; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .empty-text{ padding: 14px; border-radius: 14px; background:#fff; border: 1px dashed rgba(165,148,230,0.7); color:#6f60b8; line-height: 1.45; font-weight: 700; }
 .schedule-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction: column; gap: 10px; }
-.schedule-item{ display:flex; gap: 10px; align-items:flex-start; padding: 10px; border-radius: 14px; background:#fff; border: 1px solid rgba(226,232,240,0.9); }
-.schedule-time{ width: 52px; font-weight: 950; color:#4b2d7a; }
-.schedule-content{ display:flex; align-items:center; gap: 10px; flex-wrap: wrap; }
+
+/* schedule row */
+.schedule-item{
+  display:flex;
+  gap: 10px;
+  align-items:center;
+  padding: 10px;
+  border-radius: 14px;
+  background:#fff;
+  border: 1px solid rgba(226,232,240,0.9);
+  position: relative;
+  overflow: visible !important;
+}
+.schedule-time{ width: 52px; font-weight: 950; color:#4b2d7a; flex: 0 0 auto; }
+.schedule-content{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .schedule-title{ font-weight: 900; color:#2a1236; }
 .schedule-category{ font-size: 12px; font-weight: 950; padding: 5px 10px; border-radius: 999px; }
 .schedule-cat-work{ background: rgba(16,185,129,0.14); color: rgba(5,150,105,1); border: 1px solid rgba(16,185,129,0.30); }
@@ -1745,7 +1780,7 @@ const styles = `
 .schedule-cat-event{ background: rgba(236,72,153,0.14); color: rgba(219,39,119,1); border: 1px solid rgba(236,72,153,0.30); }
 .schedule-cat-etc{ background: rgba(99,102,241,0.14); color: rgba(79,70,229,1); border: 1px solid rgba(99,102,241,0.30); }
 
-/* Friends: 덩어리 느낌 + 네모 상자 제거 */
+/* Friends */
 .friends-card{
   margin-top: 14px;
   border-radius: 22px;
@@ -1935,160 +1970,162 @@ const styles = `
 .fa-chat{ box-shadow: 0 10px 18px rgba(0,0,0,0.06), 0 0 0 3px rgba(59,130,246,0.08); }
 
 .fa-cheer{
-  background: linear-gradient(135deg, rgba(255,255,255,0.86), rgba(255,240,249,0.90));
-  border-color: rgba(244,114,182,0.45);
+  min-width: 126px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.88), rgba(255,239,251,0.88));
+  border-color: rgba(244,114,182,0.55);
   box-shadow: 0 10px 18px rgba(0,0,0,0.06), 0 0 0 3px rgba(244,114,182,0.10);
-  min-width: 120px;
+  position: relative;
+  overflow: visible;
 }
 .fa-heart{ font-size: 14px; }
 .fa-cheer-n{
-  margin-left: 2px;
-  min-width: 26px;
+  min-width: 18px;
   text-align: right;
-  font-size: 14px;
   font-weight: 950;
-  color:#ec4899;
+  color: #ec4899;
 }
 .fa-pop{
-  position:absolute;
-  margin-left: 10px;
+  position: absolute;
+  top: -10px;
+  right: 8px;
   font-size: 12px;
   font-weight: 950;
-  color:#ff4fa1;
-  animation: popUp 520ms ease forwards;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(236,72,153,0.95);
+  color: #fff;
+  box-shadow: 0 12px 24px rgba(0,0,0,0.18);
 }
-@keyframes popUp{
-  0%{ transform: translateY(6px); opacity: 0; }
-  30%{ transform: translateY(-2px); opacity: 1; }
-  100%{ transform: translateY(-12px); opacity: 0; }
+.fa-pop-limit{
+  background: rgba(124,58,237,0.95);
 }
-.fa-pop-limit{ color:#7c3aed; }
 .fa-limit{
-  border-color: rgba(124,58,237,0.45);
-  box-shadow: 0 10px 18px rgba(0,0,0,0.06), 0 0 0 3px rgba(124,58,237,0.10);
+  animation: jiggle 240ms ease-in-out 2;
+}
+@keyframes jiggle{
+  0%{ transform: translateX(0); }
+  25%{ transform: translateX(-2px); }
+  50%{ transform: translateX(2px); }
+  100%{ transform: translateX(0); }
 }
 
 /* Friend Profile Modal */
-.fp-backdrop{ position: fixed; inset: 0; background: rgba(15, 23, 42, 0.52); display:flex; align-items:center; justify-content:center; z-index: 80; padding: 18px; }
+.fp-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,0.55);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index: 80;
+}
 .fp-panel{
-  width: 560px;
-  max-width: 96vw;
+  width: 420px;
+  max-width: 92vw;
   border-radius: 26px;
-  background:
-    radial-gradient(700px 240px at 18% 8%, rgba(244,114,182,0.22) 0%, rgba(244,114,182,0) 60%),
-    radial-gradient(700px 260px at 82% 10%, rgba(168,85,247,0.20) 0%, rgba(168,85,247,0) 62%),
-    rgba(255,255,255,0.96);
-  border: 1px solid rgba(226,232,240,0.92);
-  box-shadow: 0 26px 60px rgba(15,23,42,0.42);
-  position: relative;
+  background: rgba(255,255,255,0.98);
+  box-shadow: 0 28px 60px rgba(15,23,42,0.45);
   padding: 18px 18px 16px;
+  border: 1px solid rgba(226,232,240,0.9);
+  position: relative;
 }
 .fp-close{
   position:absolute;
   top: 10px;
   right: 12px;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border-radius: 999px;
-  border: none;
-  cursor: pointer;
-  background: rgba(255,255,255,0.86);
-  color:#3a1f62;
-  font-weight: 950;
-  box-shadow: 0 10px 18px rgba(0,0,0,0.10);
+  border:none;
+  background:#f3f4ff;
+  color:#4b2d7a;
+  cursor:pointer;
+  font-size: 14px;
 }
-.fp-title{ font-size: 18px; font-weight: 950; color:#1b1030; }
-.fp-loading, .fp-error{
-  margin-top: 12px;
-  border-radius: 16px;
-  padding: 12px;
-  background: rgba(255,255,255,0.86);
-  border: 1px dashed rgba(165,148,230,0.7);
-  font-weight: 900;
-  color:#6f60b8;
-}
-.fp-body{ margin-top: 12px; }
+.fp-title{ font-size: 18px; font-weight: 950; color:#1b1030; margin-bottom: 10px; }
+.fp-loading, .fp-error{ padding: 14px; border-radius: 16px; background:#faf7ff; border: 1px dashed rgba(165,148,230,0.8); color:#6f60b8; font-weight: 900; }
+.fp-body{ display:flex; flex-direction: column; gap: 12px; }
 .fp-top{ display:flex; gap: 12px; align-items:center; }
 .fp-avatar{
-  width: 84px; height: 84px; border-radius: 999px;
-  background: radial-gradient(circle at top left, rgba(244,114,182,0.86) 0, rgba(168,85,247,0.78) 62%);
+  width: 64px; height: 64px;
+  border-radius: 999px;
+  background: radial-gradient(circle at top left, rgba(244,114,182,0.85) 0, rgba(168,85,247,0.78) 60%);
+  overflow:hidden;
   display:flex; align-items:center; justify-content:center;
-  color:#fff; font-weight: 950; font-size: 24px;
-  overflow:hidden; flex: 0 0 auto;
-  box-shadow: 0 18px 32px rgba(168,85,247,0.22);
+  color:#fff;
+  font-weight: 950;
 }
 .fp-avatar img{ width:100%; height:100%; object-fit: cover; }
 .fp-main{ min-width: 0; }
-.fp-name{ font-size: 20px; font-weight: 950; color:#2a1236; }
-.fp-sub{ margin-top: 4px; font-size: 14px; font-weight: 900; color:#7a69c4; }
+.fp-name{ font-size: 18px; font-weight: 950; color:#2a1236; }
+.fp-sub{ font-size: 13px; color:#7a69c4; font-weight: 900; margin-top: 2px; }
 
-.fp-sec-title{ font-size: 14px; font-weight: 950; color:#4b2d7a; margin-bottom: 8px; }
-.fp-badges{
-  margin-top: 14px;
-  border-radius: 18px;
-  padding: 12px;
-  background: rgba(255,255,255,0.70);
-  border: 1px solid rgba(226,232,240,0.92);
-}
-.fp-muted{ font-weight: 900; color:#7a69c4; }
-.fp-badge-row{ display:flex; gap: 10px; flex-wrap: wrap; }
+.fp-sec-title{ font-size: 13px; font-weight: 950; color:#4b2d7a; margin-bottom: 6px; }
+.fp-muted{ font-size: 13px; color:#7a69c4; font-weight: 900; }
+.fp-badge-row{ display:flex; gap: 8px; flex-wrap: wrap; }
 .fp-badge{
-  width: 42px; height: 42px; border-radius: 999px;
-  display:inline-flex; align-items:center; justify-content:center;
+  width: 34px; height: 34px;
+  border-radius: 999px;
   background:#fff;
-  border: 2px solid rgba(180,160,255,0.50);
-  box-shadow: 0 12px 18px rgba(0,0,0,0.06), 0 0 14px rgba(168,85,247,0.12);
-  font-size: 18px;
+  border: 2px solid rgba(180, 160, 255, 0.50);
+  display:flex; align-items:center; justify-content:center;
+  box-shadow: 0 10px 16px rgba(0,0,0,0.06);
 }
 
-.fp-counts{ margin-top: 12px; display:flex; gap: 10px; flex-wrap: wrap; }
+.fp-counts{ display:flex; gap: 8px; flex-wrap: wrap; }
 .fp-count-pill{
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.86);
-  border: 1px solid rgba(214,200,255,0.85);
-  font-weight: 900;
+  background: #f7f2ff;
+  border: 1px solid #e0d4ff;
+  font-size: 13px;
+  font-weight: 950;
   color:#2a1236;
 }
-.fp-count-pill b{ color:#ec4899; }
+.fp-count-pill b{ color:#ff4f9f; }
 
-.fp-actions{ margin-top: 14px; display:flex; gap: 10px; }
+.fp-actions{ display:flex; gap: 10px; }
 .fp-btn{
   flex: 1;
-  height: 44px;
-  border-radius: 16px;
-  border: 1px solid rgba(214,200,255,0.85);
-  background: rgba(255,255,255,0.86);
+  height: 40px;
+  border-radius: 999px;
   font-weight: 950;
   cursor:pointer;
-  box-shadow: 0 14px 26px rgba(0,0,0,0.08);
+  border: 1px solid rgba(214,200,255,0.95);
+  background: rgba(255,255,255,0.92);
+  color:#2a1236;
+  box-shadow: 0 10px 18px rgba(0,0,0,0.06);
 }
-.fp-btn.ghost:hover{ background: rgba(255,255,255,0.95); }
+.fp-btn:hover{ transform: translateY(-1px); transition: 160ms ease; }
+.fp-btn.ghost{ box-shadow: 0 10px 18px rgba(0,0,0,0.06), 0 0 0 3px rgba(59,130,246,0.08); }
 .fp-btn.pink{
-  border: 2px solid rgba(255,255,255,0.86);
   background: linear-gradient(90deg,#ff4fa1,#a855f7);
   color:#fff;
+  border: 2px solid rgba(255,255,255,0.85);
+  box-shadow: 0 14px 28px rgba(168,85,247,0.22), 0 0 0 3px rgba(244,114,182,0.12);
 }
-.fp-btn.pink:hover{ filter: brightness(1.03); }
 
-/* Floating support button */
+/* Floating Support */
 .floating-support-btn{
   position: fixed;
   right: 18px;
   bottom: 18px;
-  z-index: 90;
-  border: none;
-  cursor: pointer;
-  border-radius: 18px;
-  padding: 12px 14px;
+  width: 126px;
+  height: 58px;
+  border-radius: 20px;
+  border: 2px solid rgba(255,255,255,0.86);
+  background: linear-gradient(135deg, rgba(249,115,184,0.92), rgba(168,85,247,0.90));
+  box-shadow: 0 18px 40px rgba(0,0,0,0.22);
+  color:#fff;
+  font-weight: 950;
   display:flex;
   flex-direction: column;
+  align-items:center;
+  justify-content:center;
   gap: 2px;
-  font-weight: 950;
-  color: #fff;
-  background: linear-gradient(135deg, rgba(244,114,182,0.95), rgba(168,85,247,0.95));
-  box-shadow: 0 18px 40px rgba(0,0,0,0.18);
+  cursor:pointer;
+  z-index: 90;
 }
-.floating-support-btn:hover{ transform: translateY(-2px); transition: 160ms ease; }
-.floating-support-btn:active{ transform: translateY(0); }
+.floating-support-btn:hover{ transform: translateY(-1px); transition: 180ms ease; }
+.floating-support-btn span{ font-size: 13px; line-height: 1.05; }
 `;
