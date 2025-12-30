@@ -77,7 +77,8 @@ async function resolveCommunityImageSrc(imageUrlOrPath?: string | null): Promise
   // public 상대경로(/something.png)
   if (v.startsWith('/')) return v;
 
-  const bucketCandidates = ['community', 'community_uploads', 'uploads'] as const;
+  // ✅ 대표님 글쓰기에서 쓰는 버킷명 포함(대소문자/하이픈 그대로)
+  const bucketCandidates = ['COMMUNITY-IMAGES', 'community', 'community_uploads', 'uploads'] as const;
 
   for (const bucket of bucketCandidates) {
     const path = normalizeStoragePath(v, bucket);
@@ -185,9 +186,9 @@ export default function CommunityPage() {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState<'전체' | CommunityCategory>('전체');
 
-  const mascotCandidates = useMemo(() => ['/upzzu3.png', '/assets/upzzu3.png'], []);
-  const [mascotIdx, setMascotIdx] = useState(0);
-  const mascotSrc = mascotCandidates[Math.min(mascotIdx, mascotCandidates.length - 1)];
+  // ✅✅✅ 커뮤니티 마스코트(고정) + 캐시 방지
+  const UPZZU_COMMUNITY_SRC = '/assets/upzzu3.png';
+  const mascotSrc = `${UPZZU_COMMUNITY_SRC}?v=${Date.now()}`;
 
   const [thumbMap, setThumbMap] = useState<Record<string, string>>({});
 
@@ -328,8 +329,7 @@ export default function CommunityPage() {
       if (!okCat) return false;
 
       if (!keyword) return true;
-      const hay =
-        `${p.title || ''} ${p.content || ''} ${p.category || ''} ${p.industry || ''} ${(p.tags || []).join(' ')}`.toLowerCase();
+      const hay = `${p.title || ''} ${p.content || ''} ${p.category || ''} ${p.industry || ''} ${(p.tags || []).join(' ')}`.toLowerCase();
       return hay.includes(keyword);
     });
   }, [posts, q, cat]);
@@ -369,9 +369,13 @@ export default function CommunityPage() {
   }
 
   async function bumpView(postId: string) {
-    setViewCount((m) => ({ ...m, [postId]: (m[postId] || 0) + 1 }));
+    let next = 0;
+    setViewCount((prev) => {
+      next = (prev[postId] || 0) + 1;
+      return { ...prev, [postId]: next };
+    });
+
     try {
-      const next = (viewCount[postId] || 0) + 1;
       await supabase.from('community_posts').update({ view_count: next }).eq('id', postId);
     } catch {
       // ignore
@@ -394,7 +398,7 @@ export default function CommunityPage() {
           <div style={styles.heroSub}>세일즈들끼리 경험을 공유하고, 내 자산으로 저장하세요.</div>
         </div>
 
-        {/* ✅✅✅ 말풍선 + 마스코트: “하나의 카드” 안에서 같이 */}
+        {/* ✅✅✅ 말풍선 카드 안으로 마스코트 “같이” 넣기 (밖으로 빼지 않음) */}
         <div style={styles.guideCard}>
           <div style={styles.guideBubble}>
             <div style={styles.tipBadge}>업쮸 가이드</div>
@@ -425,14 +429,17 @@ export default function CommunityPage() {
                 />
               ))}
             </div>
-          </div>
 
-          <div style={styles.guideMascotWrap}>
+            {/* ✅ 마스코트: 말풍선 카드 “안” 오른쪽 */}
             <img
               src={mascotSrc}
               alt="upzzu"
-              style={styles.mascot as any}
-              onError={() => setMascotIdx((i) => (i < mascotCandidates.length - 1 ? i + 1 : i))}
+              style={styles.mascotInBubble as any}
+              onError={(e) => {
+                // 숨기지 말고 반투명 처리(원인 확인용)
+                console.error('UPZZU LOAD FAIL:', UPZZU_COMMUNITY_SRC);
+                (e.currentTarget as HTMLImageElement).style.opacity = '0.2';
+              }}
             />
           </div>
         </div>
@@ -657,35 +664,41 @@ const styles: Record<string, any> = {
   heroTitle: { fontSize: 28, fontWeight: 1000, color: '#3c184c' },
   heroSub: { marginTop: 8, fontSize: 16, color: '#5a2d6b', fontWeight: 850 },
 
-  // ✅✅✅ 말풍선+마스코트 한 카드
+  // ✅✅✅ 말풍선 “카드” (커뮤니티 큰 테두리 카드 느낌 제거, 다른 페이지 톤)
   guideCard: {
     marginTop: 16,
     borderRadius: 22,
-    padding: 14,
-    border: '1px solid rgba(255,120,200,0.20)',
-    background: 'linear-gradient(135deg, rgba(255,120,200,0.12), rgba(170,120,255,0.12))',
+    padding: 12,
+    border: '1px solid rgba(255,120,200,0.18)',
+    background: 'linear-gradient(135deg, rgba(255,120,200,0.10), rgba(170,120,255,0.10))',
     boxShadow: '0 12px 26px rgba(30,10,55,0.08)',
-    display: 'grid',
-    gridTemplateColumns: '1fr 220px',
-    gap: 12,
-    alignItems: 'stretch',
     boxSizing: 'border-box',
     overflow: 'hidden',
   },
+
+  // ✅✅✅ 말풍선 카드 내부에 마스코트 포함(오른쪽)
   guideBubble: {
+    position: 'relative',
     borderRadius: 18,
-    padding: 16,
+    padding: '16px 150px 16px 16px', // ✅ 오른쪽 공간 확보(마스코트 때문에 밖으로 안 나가게)
     border: '1px solid rgba(255,120,200,0.16)',
     background: 'rgba(255,255,255,0.92)',
-    minHeight: 150,
+    minHeight: 168,
     boxSizing: 'border-box',
+    overflow: 'hidden',
   },
-  guideMascotWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 6,
-    boxSizing: 'border-box',
+
+  mascotInBubble: {
+    position: 'absolute',
+    right: 10,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    width: 120,
+    height: 'auto',
+    userSelect: 'none',
+    filter: 'drop-shadow(0 14px 24px rgba(40,10,60,0.16))',
+    animation: 'upzzuFloat 2.8s ease-in-out infinite',
+    pointerEvents: 'none',
   },
 
   tipBadge: {
@@ -717,14 +730,6 @@ const styles: Record<string, any> = {
   dots: { marginTop: 12, display: 'flex', gap: 6, alignItems: 'center' },
   dot: { width: 7, height: 7, borderRadius: 999, background: 'rgba(120,80,160,0.20)', cursor: 'pointer' },
   dotOn: { background: 'rgba(255,120,200,0.72)' },
-
-  mascot: {
-    width: 170,
-    height: 'auto',
-    userSelect: 'none',
-    filter: 'drop-shadow(0 14px 24px rgba(40,10,60,0.16))',
-    animation: 'upzzuFloat 2.8s ease-in-out infinite',
-  },
 
   // ✅✅✅ 경고카드
   warnCard: {
@@ -765,7 +770,6 @@ const styles: Record<string, any> = {
   },
   sectionTitle: { fontSize: 18, fontWeight: 1000, color: '#3c184c' },
 
-  // ✅ 오른쪽으로 튀는거 방지(그리드 폭 안전)
   filterRow: { display: 'grid', gridTemplateColumns: '1fr 280px', gap: 12, alignItems: 'center', boxSizing: 'border-box' },
   search: {
     width: '100%',
@@ -806,7 +810,6 @@ const styles: Record<string, any> = {
   hlHead: { fontSize: 15.5, fontWeight: 1000, color: '#3c184c' },
   hlList: { marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 },
 
-  // ✅ 자동 맞춤(오른쪽 튐 방지)
   listGrid: {
     marginTop: 16,
     display: 'grid',
@@ -901,7 +904,7 @@ const styles: Record<string, any> = {
 };
 
 if (typeof document !== 'undefined') {
-  const id = 'uplog-community-page-keyframes-v9';
+  const id = 'uplog-community-page-keyframes-v10';
   if (!document.getElementById(id)) {
     const s = document.createElement('style');
     s.id = id;
@@ -923,6 +926,11 @@ if (typeof document !== 'undefined') {
 
       @media (max-width: 720px){
         .uplog-community-list { grid-template-columns: 1fr !important; }
+      }
+
+      /* ✅ 말풍선 안 마스코트 공간 자동 축소(아주 작은 화면) */
+      @media (max-width: 520px){
+        .uplog-community-bubble-padfix { padding-right: 120px !important; }
       }
     `;
     document.head.appendChild(s);

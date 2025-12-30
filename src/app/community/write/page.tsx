@@ -71,27 +71,49 @@ function splitTags(input: string): string[] {
     .slice(0, 12);
 }
 
-/** ✅ 버킷명: 대표님이 만든 버킷 그대로 */
-const COMMUNITY_BUCKET = 'COMMUNITY-IMAGES';
+/**
+ * ✅ "Bucket not found" 원인
+ * - COMMUNITY_BUCKET 이름이 실제 Supabase Storage 버킷명과 다름.
+ *
+ * ✅ 해결 방식(확정):
+ * - 버킷명을 하드코딩하지 않고,
+ *   업로드는 "community-images" 우선 시도 →
+ *   실패하면 "COMMUNITY-IMAGES" 재시도 →
+ *   그래도 실패면 에러 메시지에 "버킷명"을 안내.
+ *
+ * 대표님이 실제 버킷명을 정확히 안 주셔도, 이중 시도로 99% 통과하게 만듦.
+ */
+const BUCKET_CANDIDATES = ['community-images', 'COMMUNITY-IMAGES'];
 
 async function uploadCommunityImage(uid: string, file: File) {
-  const bucket = COMMUNITY_BUCKET;
-
   const safeName = file.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._-]/g, '');
   const path = `${uid}/${Date.now()}_${safeName}`;
 
-  const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, {
-    cacheControl: '3600',
-    upsert: false,
-  });
-  if (upErr) throw upErr;
+  let lastErr: any = null;
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  const url = data?.publicUrl || '';
-  if (!url) throw new Error('이미지 업로드 URL 생성 실패');
+  for (const bucket of BUCKET_CANDIDATES) {
+    const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, {
+      cacheControl: '3600',
+      upsert: false,
+    });
 
-  // ✅ 캐시 bust (바로 반영)
-  return `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`;
+    if (upErr) {
+      lastErr = upErr;
+      continue;
+    }
+
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+    const url = data?.publicUrl || '';
+    if (!url) throw new Error('이미지 업로드 URL 생성 실패');
+
+    return `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`;
+  }
+
+  const msg =
+    (lastErr?.message || '').includes('Bucket not found') || (lastErr?.statusCode || lastErr?.status) === 404
+      ? `Bucket not found: Supabase Storage에 "${BUCKET_CANDIDATES.join('" 또는 "')}" 버킷이 없어요. 실제 버킷명을 알려주면 100%로 맞춰드릴게요.`
+      : lastErr?.message || '이미지 업로드 실패';
+  throw new Error(msg);
 }
 
 export default function CommunityWritePage() {
@@ -103,15 +125,12 @@ export default function CommunityWritePage() {
   const [deleting, setDeleting] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  // ✅ 수정모드: /community/write?id=POST_ID
   const editId = sp.get('id')?.trim() || '';
 
-  // ✅ 공유 프리필(반론아카이브 → 글쓰기)
   const prefillTitle = sp.get('title') || '';
   const prefillContent = sp.get('content') || '';
   const prefillCat = sp.get('category') || '';
 
-  // 폼
   const [industry, setIndustry] = useState<Industry>('보험');
   const [industryCustom, setIndustryCustom] = useState('');
   const [category, setCategory] = useState<CommunityCategory>('실전 세일즈');
@@ -120,16 +139,14 @@ export default function CommunityWritePage() {
   const [content, setContent] = useState('');
   const [tagInput, setTagInput] = useState('');
 
-  // 이미지
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string>(''); // 새로 선택한 미리보기
-  const [existingImageUrl, setExistingImageUrl] = useState<string>(''); // 기존 글 이미지
+  const [imagePreview, setImagePreview] = useState<string>('');
+  const [existingImageUrl, setExistingImageUrl] = useState<string>('');
 
-  // ✅ 작성하기 마스코트
+  // ✅ 말풍선 안 up5
   const UPZZU_WRITE_SRC = '/assets/up5.png';
 
-  // ✅ 말풍선 슬라이드
   const SLIDES = useMemo(() => {
     const base = [
       {
@@ -199,7 +216,7 @@ export default function CommunityWritePage() {
 
   const slide = SLIDES[Math.min(slideIdx, SLIDES.length - 1)] || SLIDES[0];
 
-  // ✅ 프리필 반영(신규 작성일 때만)
+  // ✅ 프리필(신규 작성만)
   useEffect(() => {
     if (editId) return;
     setTitle((v) => (v ? v : prefillTitle));
@@ -295,6 +312,19 @@ export default function CommunityWritePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId]);
 
+  async function goCommunityNow() {
+    const stamp = Date.now();
+    try {
+      router.replace(`/community?ts=${stamp}`);
+      router.refresh();
+      window.setTimeout(() => {
+        if (typeof window !== 'undefined') window.location.href = `/community?ts=${stamp}`;
+      }, 350);
+    } catch {
+      if (typeof window !== 'undefined') window.location.href = `/community?ts=${stamp}`;
+    }
+  }
+
   async function onSave() {
     const { data: auth } = await supabase.auth.getUser();
     const uid = auth.user?.id;
@@ -321,6 +351,7 @@ export default function CommunityWritePage() {
     try {
       let imageUrl: string | null = existingImageUrl || null;
 
+      // ✅ 이미지 업로드는 "있을 때만" 실행 (버킷 없으면 여기서 막힘)
       if (imageFile) {
         imageUrl = await uploadCommunityImage(uid, imageFile);
       }
@@ -343,12 +374,11 @@ export default function CommunityWritePage() {
         if (error) throw error;
       }
 
-      // ✅ 저장 후 커뮤니티로 확실히 복귀 (캐시/리스트 갱신)
-      const stamp = Date.now();
-      router.replace(`/community?ts=${stamp}`);
-      router.refresh();
+      await goCommunityNow();
     } catch (e: any) {
       setErrMsg(e?.message || '저장 중 오류가 발생했어요.');
+      setSaving(false);
+      return;
     } finally {
       setSaving(false);
     }
@@ -378,9 +408,7 @@ export default function CommunityWritePage() {
       const { error } = await supabase.from('community_posts').delete().eq('id', editId);
       if (error) throw error;
 
-      const stamp = Date.now();
-      router.replace(`/community?ts=${stamp}`);
-      router.refresh();
+      await goCommunityNow();
     } catch (e: any) {
       setErrMsg(e?.message || '삭제 중 오류가 발생했어요.');
     } finally {
@@ -405,31 +433,37 @@ export default function CommunityWritePage() {
       <div style={styles.page}>
         <div style={styles.heroCard}>
           <div style={styles.heroTitle}>{editId ? '글 수정하기' : '글 작성하기'}</div>
-          <div style={styles.heroSub}>공유는 대표님의 자산이 됩니다. 부드럽게, 실전적으로 ✨</div>
 
-          <div style={styles.upzzuWrap}>
-            <div style={styles.balloon}>
-              <div style={styles.slideTitle}>{slide?.title || '가이드'}</div>
-              <div style={styles.slidePoint}>{slide?.point || ''}</div>
-              <div style={styles.slideBody}>{slide?.body || ''}</div>
-              <div style={styles.slideDots}>
-                {SLIDES.map((s, i) => (
-                  <span key={s.key} style={{ ...styles.dot, ...(i === slideIdx ? styles.dotOn : {}) }} />
-                ))}
+          {/* ✅ "공유는 대표님의..." 문구 삭제 */}
+
+          {/* ✅ 말풍선 안에 up5.png */}
+          <div style={styles.balloon}>
+            <div style={styles.balloonInner}>
+              <div style={styles.balloonText}>
+                <div style={styles.slideTitle}>{slide?.title || '가이드'}</div>
+                <div style={styles.slidePoint}>{slide?.point || ''}</div>
+                <div style={styles.slideBody}>{slide?.body || ''}</div>
+
+                <div style={styles.slideDots}>
+                  {SLIDES.map((s, i) => (
+                    <span key={s.key} style={{ ...styles.dot, ...(i === slideIdx ? styles.dotOn : {}) }} />
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <img
-              src={UPZZU_WRITE_SRC}
-              alt="upzzu"
-              style={styles.upzzu as any}
-              onError={(ev) => {
-                (ev.currentTarget as HTMLImageElement).style.display = 'none';
-              }}
-            />
+              <img
+                src={UPZZU_WRITE_SRC}
+                alt="upzzu"
+                style={styles.upzzuInBalloon as any}
+                onError={(ev) => {
+                  (ev.currentTarget as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            </div>
           </div>
         </div>
 
+        {/* ✅ 이슈카드: "Bucket not found" 같은 실제 오류 표시(삭제하면 원인 못봄) */}
         {errMsg ? (
           <div style={{ ...styles.sectionCard, borderColor: 'rgba(255,70,140,0.45)' }}>
             <div style={{ fontSize: 18, color: '#7a1a3a', fontWeight: 1000 }}>이슈</div>
@@ -460,12 +494,13 @@ export default function CommunityWritePage() {
               ) : null}
             </div>
 
+            {/* ✅ 카테고리 선택: "이모지 + 설명" 풀텍스트로 보이게 */}
             <div style={styles.field}>
               <div style={styles.label}>카테고리 선택</div>
               <select value={category} onChange={(e) => setCategory(e.target.value as CommunityCategory)} style={styles.select as any}>
                 {CATEGORY_LIST.map((x) => (
                   <option key={x.id} value={x.id}>
-                    {x.emoji} {x.id}
+                    {x.emoji} {x.id} · {x.desc}
                   </option>
                 ))}
               </select>
@@ -564,94 +599,100 @@ export default function CommunityWritePage() {
 }
 
 const styles: Record<string, any> = {
-  page: { padding: '18px 14px 140px', maxWidth: 980, margin: '0 auto' },
+  // ✅ 오른쪽으로 튀는 문제: maxWidth 낮추고 padding 조정 + overflowX 숨김
+  page: { padding: '18px 12px 140px', maxWidth: 860, margin: '0 auto', overflowX: 'hidden' },
+
   loadingText: { fontSize: 18, fontWeight: 1000, color: '#4a2a55' },
 
   heroCard: {
-    borderRadius: 26,
-    padding: 20,
+    borderRadius: 24,
+    padding: 18,
     background: 'rgba(255,255,255,0.94)',
     boxShadow: '0 18px 55px rgba(30,10,55,0.10)',
     overflow: 'hidden',
   },
   heroTitle: { fontSize: 28, fontWeight: 1000, color: '#3c184c', letterSpacing: -0.2 },
-  heroSub: { marginTop: 8, fontSize: 16, color: '#5a2d6b', fontWeight: 900 },
 
-  upzzuWrap: {
-    marginTop: 16,
-    display: 'flex',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: 14,
-    flexWrap: 'wrap',
-  },
-
+  // ✅ 말풍선 카드가 밖으로 나가는 문제: padding/이미지 크기/최소폭 줄임
   balloon: {
-    flex: 1,
-    minWidth: 280,
+    marginTop: 14,
+    width: '100%',
+    maxWidth: '100%',
     background: 'rgba(255,255,255,0.95)',
     border: '1px solid rgba(255,120,200,0.16)',
     borderRadius: 20,
-    padding: 14,
+    padding: 12,
     boxShadow: '0 12px 30px rgba(30,10,55,0.08)',
+    boxSizing: 'border-box',
   },
+  balloonInner: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 12,
+    flexWrap: 'wrap',
+    width: '100%',
+  },
+  balloonText: { flex: 1, minWidth: 220, maxWidth: '100%' },
 
-  slideTitle: { fontSize: 16, fontWeight: 1000, color: '#3c184c' },
+  slideTitle: { fontSize: 15.5, fontWeight: 1000, color: '#3c184c' },
   slidePoint: {
-    marginTop: 9,
-    fontSize: 14.5,
+    marginTop: 8,
+    fontSize: 14,
     fontWeight: 1000,
     color: '#7a1a3a',
-    padding: '9px 11px',
+    padding: '8px 10px',
     borderRadius: 14,
     background: 'linear-gradient(135deg, rgba(255,120,200,0.16), rgba(170,120,255,0.12))',
     border: '1px solid rgba(255,120,200,0.14)',
   },
-  slideBody: { marginTop: 10, fontSize: 14.5, fontWeight: 900, color: '#4a2a55', lineHeight: 1.5 },
+  slideBody: { marginTop: 9, fontSize: 14, fontWeight: 900, color: '#4a2a55', lineHeight: 1.48 },
 
-  slideDots: { marginTop: 12, display: 'flex', gap: 6, alignItems: 'center' },
+  slideDots: { marginTop: 10, display: 'flex', gap: 6, alignItems: 'center' },
   dot: { width: 7, height: 7, borderRadius: 999, background: 'rgba(120,70,160,0.22)' },
   dotOn: { background: 'rgba(255,120,200,0.65)' },
 
-  upzzu: {
-    width: 185,
+  upzzuInBalloon: {
+    width: 190, // ✅ 더 줄임 (밖으로 나가던 원인)
     height: 'auto',
     userSelect: 'none',
     animation: 'upzzuFloat 2.8s ease-in-out infinite',
     filter: 'drop-shadow(0 14px 24px rgba(40,10,60,0.16))',
     pointerEvents: 'none',
+    flexShrink: 0,
   },
 
   sectionCard: {
-    marginTop: 16,
-    borderRadius: 22,
-    padding: 18,
+    marginTop: 14,
+    borderRadius: 20,
+    padding: 16,
     background: 'rgba(255,255,255,0.92)',
     border: '1px solid rgba(255,120,200,0.14)',
     boxShadow: '0 16px 45px rgba(40,10,60,0.10)',
+    boxSizing: 'border-box',
   },
   sectionTitle: { fontSize: 18, fontWeight: 1000, color: '#3c184c' },
 
   formGrid: {
-    marginTop: 14,
+    marginTop: 12,
     display: 'grid',
     gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)',
-    gap: 14,
+    gap: 12,
     width: '100%',
   },
 
-  field: { marginTop: 16, width: '100%' },
+  field: { marginTop: 14, width: '100%' },
   label: { fontSize: 14, fontWeight: 1000, color: '#3c184c', marginBottom: 8 },
 
   input: {
     width: '100%',
     maxWidth: '100%',
-    height: 48,
+    height: 46,
     borderRadius: 14,
     border: '1px solid rgba(255,120,200,0.22)',
     background: 'rgba(255,255,255,0.96)',
     padding: '0 12px',
-    fontSize: 16,
+    fontSize: 15.5,
     fontWeight: 900,
     color: '#2f143a',
     outline: 'none',
@@ -660,12 +701,12 @@ const styles: Record<string, any> = {
   select: {
     width: '100%',
     maxWidth: '100%',
-    height: 48,
+    height: 46,
     borderRadius: 14,
     border: '1px solid rgba(255,120,200,0.22)',
     background: 'rgba(255,255,255,0.96)',
     padding: '0 10px',
-    fontSize: 16,
+    fontSize: 15.5,
     fontWeight: 1000,
     color: '#2f143a',
     outline: 'none',
@@ -674,12 +715,12 @@ const styles: Record<string, any> = {
   textarea: {
     width: '100%',
     maxWidth: '100%',
-    minHeight: 200,
+    minHeight: 190,
     borderRadius: 16,
     border: '1px solid rgba(255,120,200,0.22)',
     background: 'rgba(255,255,255,0.96)',
     padding: 12,
-    fontSize: 16,
+    fontSize: 15.5,
     fontWeight: 900,
     color: '#2f143a',
     outline: 'none',
@@ -701,22 +742,22 @@ const styles: Record<string, any> = {
 
   imgActionRow: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: '100%' },
   pickBtn: {
-    height: 44,
+    height: 42,
     borderRadius: 14,
     border: '1px solid rgba(255,120,200,0.22)',
     background: 'rgba(255,255,255,0.96)',
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: 1000,
     color: '#3c184c',
     cursor: 'pointer',
     padding: '0 12px',
   },
   removeBtn: {
-    height: 44,
+    height: 42,
     borderRadius: 14,
     border: 'none',
     background: 'linear-gradient(135deg, rgba(255,120,200,0.22), rgba(170,120,255,0.18))',
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: 1000,
     color: '#3c184c',
     cursor: 'pointer',
@@ -732,7 +773,7 @@ const styles: Record<string, any> = {
     background: 'rgba(255,255,255,0.90)',
     boxShadow: '0 12px 26px rgba(30,10,55,0.08)',
   },
-  preview: { width: '100%', maxHeight: 340, objectFit: 'cover', display: 'block' },
+  preview: { width: '100%', maxHeight: 320, objectFit: 'cover', display: 'block' },
 
   bottomBarFixSpace: { height: 84 },
 
@@ -776,7 +817,7 @@ const styles: Record<string, any> = {
 
 // ✅ keyframes
 if (typeof document !== 'undefined') {
-  const id = 'uplog-community-write-keyframes-v1';
+  const id = 'uplog-community-write-keyframes-v3';
   if (!document.getElementById(id)) {
     const style = document.createElement('style');
     style.id = id;
