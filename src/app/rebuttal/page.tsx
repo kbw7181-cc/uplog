@@ -69,6 +69,10 @@ function toYYMMDD(dateStr: string) {
   });
 }
 
+function safeTrim(v?: string | null) {
+  return (v || '').trim();
+}
+
 export default function RebuttalPage() {
   const router = useRouter();
 
@@ -376,76 +380,38 @@ export default function RebuttalPage() {
     }
   };
 
-  const safeInsertCommunityPost = async (payload: any) => {
-    const first = await supabase.from('community_posts').insert(payload);
-    if (!first.error) return { ok: true as const };
-
-    const e = first.error;
-    const payload2 = { ...payload };
-    if ('user_id' in payload2) {
-      payload2.author_id = payload2.user_id;
-      delete payload2.user_id;
-    }
-    const second = await supabase.from('community_posts').insert(payload2);
-    if (!second.error) return { ok: true as const };
-
-    return { ok: false as const, error: second.error ?? e };
-  };
-
-  const handleShareToCommunity = async (item: MyRebuttal) => {
-    if (!item.content) {
+  // ✅✅✅ 커뮤니티 공유: DB에 직접 insert 안 함
+  // -> /community/write 로 이동하면서 제목/본문/카테고리를 프리필로 같이 전달
+  const handleShareToCommunity = (item: MyRebuttal) => {
+    const body = (item.content || '').trim();
+    if (!body) {
       setToast('공유할 내용이 없습니다.');
       return;
     }
 
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+    const lines = body
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
 
-      if (userError || !user) {
-        alert('로그인이 필요해요.');
-        return;
-      }
+    const typeLine = lines.find((l) => l.startsWith('【거절 유형】')) || '';
+    const rawIndex = lines.findIndex((l) => l.startsWith('【받은 거절 멘트】'));
+    const rawLine = rawIndex >= 0 ? lines[rawIndex + 1] ?? '' : '';
+    const short = rawLine.length > 40 ? rawLine.slice(0, 40) + '…' : rawLine;
 
-      const lines = item.content
-        .split('\n')
-        .map(l => l.trim())
-        .filter(Boolean);
+    const typeLabel =
+      safeTrim(typeLine.replace('【거절 유형】', '')) || safeTrim(item.category) || '반론 스크립트';
 
-      const typeLine = lines.find(l => l.startsWith('【거절 유형】')) || '';
-      const rawIndex = lines.findIndex(l => l.startsWith('【받은 거절 멘트】'));
-      const rawLine = rawIndex >= 0 ? lines[rawIndex + 1] ?? '' : '';
-      const short = rawLine.length > 40 ? rawLine.slice(0, 40) + '…' : rawLine;
+    const title = `[반론공유] ${typeLabel}${short ? ` · ${short}` : ''}`;
 
-      const title =
-        '[피드백] ' +
-        (typeLine.replace('【거절 유형】', '').trim() || item.category || '반론 스크립트') +
-        (short ? ' · ' + short : '');
+    const params = new URLSearchParams();
+    params.set('title', title);
+    params.set('content', body);
+    // ✅ 커뮤니티 글쓰기 페이지 카테고리 목록에 맞춰 기본값 지정
+    params.set('category', '실전 세일즈');
 
-      const payload: any = {
-        category: '피드백',
-        title,
-        content: item.content,
-        user_id: user.id,
-      };
-
-      const res = await safeInsertCommunityPost(payload);
-      if (!res.ok) {
-        console.error(res.error);
-        alert(
-          '커뮤니티 공유 중 오류가 발생했어요. community_posts 컬럼(user_id/author_id) 또는 RLS 정책을 확인해 주세요.',
-        );
-        return;
-      }
-
-      setToast('커뮤니티에 "피드백" 글로 자동 공유됐어요.');
-      router.push('/community');
-    } catch (err) {
-      console.error(err);
-      alert('커뮤니티 공유 중 알 수 없는 오류가 발생했어요.');
-    }
+    setToast('커뮤니티 글쓰기 화면으로 이동했어요. “게시하기”만 누르면 끝!');
+    router.push(`/community/write?${params.toString()}`);
   };
 
   const handleShareToFriend = (item: MyRebuttal) => {
@@ -519,7 +485,6 @@ export default function RebuttalPage() {
             <h1 className="rb-h1">반론 아카이브</h1>
           </div>
 
-          {/* ✅ 말풍선+마스코트: 말풍선만 카드형 / 마스코트는 테두리 제거 + 사이즈 업 + 둥둥 */}
           <section className="rb-hero">
             <div className="rb-hero-bubble">
               <div className="rb-hero-badge">오늘 가이드</div>
@@ -528,11 +493,11 @@ export default function RebuttalPage() {
             </div>
 
             <div className="rb-hero-mascot">
-              <img src="/assets/upzzu7.png" alt="업쮸" draggable={false} />
+              {/* ✅ 마스코트 경로 고정: /upzzu7.png */}
+              <img src="/upzzu7.png" alt="업쮸" draggable={false} />
             </div>
           </section>
 
-          {/* ===== 오늘 카드 ===== */}
           <section className="rb-card">
             <div className="rb-row">
               <span className="rb-label">오늘 날짜</span>
@@ -548,7 +513,6 @@ export default function RebuttalPage() {
             </div>
           </section>
 
-          {/* ===== 입력 ===== */}
           <section className="rb-sec">
             <div className="rb-sec-head">
               <h2 className="rb-h2">거절 유형 입력 · AI 피드백 받기</h2>
@@ -564,13 +528,13 @@ export default function RebuttalPage() {
                   <select
                     className="rb-sel rb-sel-sm"
                     value={rebuttalType}
-                    onChange={e => {
+                    onChange={(e) => {
                       const v = e.target.value as RebuttalType;
                       setRebuttalType(v);
                       if (v !== '기타') setCustomType('');
                     }}
                   >
-                    {REBUTTAL_OPTIONS.map(opt => (
+                    {REBUTTAL_OPTIONS.map((opt) => (
                       <option key={opt.id} value={opt.id}>
                         {opt.label}
                       </option>
@@ -586,7 +550,7 @@ export default function RebuttalPage() {
                     className="rb-inp rb-inp-sm"
                     placeholder='예) "배송/설치 걱정", "효과 의심"'
                     value={customType}
-                    onChange={e => setCustomType(e.target.value)}
+                    onChange={(e) => setCustomType(e.target.value)}
                   />
                 </div>
               </div>
@@ -598,7 +562,7 @@ export default function RebuttalPage() {
                   rows={4}
                   placeholder="예) 지금은 생각이 없어요. 나중에 필요하면 제가 연락드릴게요."
                   value={rawText}
-                  onChange={e => setRawText(e.target.value)}
+                  onChange={(e) => setRawText(e.target.value)}
                 />
               </div>
 
@@ -611,7 +575,7 @@ export default function RebuttalPage() {
                   rows={3}
                   placeholder="예) 기존 고객 / 첫 통화 / 가격 부담을 많이 느끼는 상황 등 간단히 적어 두면 좋아요."
                   value={situation}
-                  onChange={e => setSituation(e.target.value)}
+                  onChange={(e) => setSituation(e.target.value)}
                 />
               </div>
 
@@ -628,7 +592,6 @@ export default function RebuttalPage() {
             </div>
           </section>
 
-          {/* ===== 결과 ===== */}
           <section className="rb-sec">
             <div className="rb-sec-head">
               <h2 className="rb-h2">AI 반론 스크립트 · 사용 팁</h2>
@@ -642,7 +605,7 @@ export default function RebuttalPage() {
                   className="rb-ta rb-ta-big"
                   rows={10}
                   value={aiScript}
-                  onChange={e => setAiScript(e.target.value)}
+                  onChange={(e) => setAiScript(e.target.value)}
                   placeholder="AI 피드백을 받으면 이곳에 스크립트가 표시됩니다."
                 />
               </div>
@@ -653,7 +616,7 @@ export default function RebuttalPage() {
                   className="rb-ta rb-ta-tip"
                   rows={6}
                   value={aiTips}
-                  onChange={e => setAiTips(e.target.value)}
+                  onChange={(e) => setAiTips(e.target.value)}
                   placeholder="예) 먼저 고객의 부담감을 인정해 주고, 가격이 아닌 ‘얻는 변화’를 그림 그려주기."
                 />
               </div>
@@ -668,7 +631,6 @@ export default function RebuttalPage() {
             {toast && <div className="rb-toast">{toast}</div>}
           </section>
 
-          {/* ===== 아카이브 ===== */}
           <section className="rb-sec">
             <div className="rb-sec-head">
               <h2 className="rb-h2">나의 반론 아카이브</h2>
@@ -680,16 +642,14 @@ export default function RebuttalPage() {
                 <p className="rb-empty">아직 저장된 반론 스크립트가 없습니다.</p>
               ) : (
                 <ul className="rb-list">
-                  {myList.map(item => {
+                  {myList.map((item) => {
                     const dateLabel = toYYMMDD(item.created_at);
                     const full = item.content || '';
 
-                    const lines = full.split('\n').map(l => l.trim());
-                    const rawIndex = lines.findIndex(l => l.startsWith('【받은 거절 멘트】'));
+                    const lines = full.split('\n').map((l) => l.trim());
+                    const rawIndex = lines.findIndex((l) => l.startsWith('【받은 거절 멘트】'));
                     const previewSource =
-                      rawIndex >= 0
-                        ? lines[rawIndex + 1] ?? ''
-                        : lines.find(l => l.startsWith('“')) ?? '';
+                      rawIndex >= 0 ? lines[rawIndex + 1] ?? '' : lines.find((l) => l.startsWith('“')) ?? '';
                     const preview =
                       previewSource.length > 44
                         ? previewSource.slice(0, 44) + ' ···'
@@ -748,6 +708,7 @@ export default function RebuttalPage() {
                                   >
                                     커뮤니티에 공유
                                   </button>
+
                                   <button
                                     type="button"
                                     className="rb-btn rb-btn-mini rb-friend"
@@ -765,7 +726,7 @@ export default function RebuttalPage() {
                                     className="rb-ta rb-ta-edit"
                                     rows={14}
                                     value={editText}
-                                    onChange={e => setEditText(e.target.value)}
+                                    onChange={(e) => setEditText(e.target.value)}
                                   />
                                 </div>
 
@@ -806,7 +767,7 @@ export default function RebuttalPage() {
         </div>
 
         <style jsx global>{`
-          /* ===== page background: 고객관리 톤(은은한 라벤더/핑크) ===== */
+          /* ===== page background: 은은한 라벤더/핑크 ===== */
           .rb-wrap {
             min-height: 100vh;
             padding: 18px 22px 80px;
@@ -834,7 +795,7 @@ export default function RebuttalPage() {
             color: #2a1742;
           }
 
-          /* ===== 헤더 카드(고객관리처럼) ===== */
+          /* ===== 헤더 카드 ===== */
           .rb-hero {
             margin-top: 14px;
             border-radius: 26px;
@@ -882,7 +843,7 @@ export default function RebuttalPage() {
             color: rgba(86, 60, 150, 0.68);
           }
 
-          /* ✅✅✅ 마스코트: 테두리/카드효과 제거 + 사이즈 업 + 둥둥 */
+          /* ✅ 마스코트: 테두리/카드효과 제거 + 사이즈 업 + 둥둥 */
           .rb-hero-mascot {
             width: 190px;
             height: 120px;
@@ -890,13 +851,9 @@ export default function RebuttalPage() {
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
-
-            /* ✅ 카드/테두리/배경 완전 제거 */
             background: transparent;
             border: none;
             box-shadow: none;
-
-            /* 살짝 위로 띄워서 “둥둥” 더 자연스럽게 */
             transform: translateY(-2px);
           }
           .rb-hero-mascot img {
@@ -905,11 +862,7 @@ export default function RebuttalPage() {
             object-fit: contain;
             user-select: none;
             -webkit-user-drag: none;
-
-            /* 기존 드롭섀도는 유지(필요하면 약하게) */
             filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.18));
-
-            /* ✅ 둥둥 애니메이션 */
             animation: rb-float 2.8s ease-in-out infinite;
             will-change: transform;
           }
@@ -1304,8 +1257,6 @@ export default function RebuttalPage() {
             .rb-prev {
               max-width: 420px;
             }
-
-            /* 모바일에서도 마스코트 “테두리 없이” 크게 유지 */
             .rb-hero-mascot {
               width: 170px;
               height: 112px;
@@ -1326,7 +1277,6 @@ export default function RebuttalPage() {
             .rb-hero {
               padding: 14px 14px;
             }
-
             .rb-hero-mascot {
               width: 150px;
               height: 104px;
