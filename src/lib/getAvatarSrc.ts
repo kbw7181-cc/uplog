@@ -1,36 +1,31 @@
-// ✅ 파일: src/lib/getAvatarSrc.ts
+// ✅✅✅ 전체복붙: src/lib/getAvatarSrc.ts
+
 import { supabase } from '@/lib/supabaseClient';
 
 /**
  * avatar_url이
- * - https://... 형태면 그대로 사용
- * - "avatars/xxx.png" 같은 Storage 경로면 publicUrl로 변환
- * - 캐시 때문에 갱신이 안 보이면 ?v=timestamp 붙여서 bust
+ * - 이미 http(s) URL이면 그대로 반환
+ * - 'avatars/xxx.png' 같은 Storage 경로면 publicUrl로 변환
+ * - 없으면 '' 반환
+ *
+ * ✅ 서버/빌드에서도 안전: 단순 문자열 처리만 함
  */
-export function getAvatarSrc(avatarUrl?: string | null, bust?: string): string {
-  if (!avatarUrl) return '';
-  const v = String(avatarUrl).trim();
+export function getAvatarSrc(avatar_url?: string | null): string {
+  const v = (avatar_url ?? '').trim();
   if (!v) return '';
 
-  // 이미 URL이면 그대로
-  if (v.startsWith('http://') || v.startsWith('https://')) {
-    const sep = v.includes('?') ? '&' : '?';
-    return bust ? `${v}${sep}v=${encodeURIComponent(bust)}` : v;
-  }
+  // 이미 완성 URL이면 그대로
+  if (v.startsWith('http://') || v.startsWith('https://')) return v;
 
-  // Storage 경로면 변환
+  // data url도 그대로
+  if (v.startsWith('data:')) return v;
+
+  // supabase storage 경로(avatars/...)면 public url로 변환
   try {
     const { data } = supabase.storage.from('avatars').getPublicUrl(v);
     const url = data?.publicUrl ?? '';
-    if (!url) return v;
-
-    const sep = url.includes('?') ? '&' : '?';
-    return bust ? `${url}${sep}v=${encodeURIComponent(bust)}` : url;
+    return url;
   } catch {
-    return v;
+    return '';
   }
-}
-
-export function getAvatarBust(): string {
-  return String(Date.now());
 }

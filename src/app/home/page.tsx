@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { getAvatarSrc } from '@/lib/getAvatarSrc';
 import { fetchLiveWeatherSlots, resolveRegionFromProfile, type WeatherSlot } from '@/lib/weatherClient';
+import AdminEntryButton from '@/app/components/AdminEntryButton';
 
 /** ✅ 친구목록 프로필 모달(홈에서만 사용) */
 type FriendProfileData = {
@@ -46,7 +47,7 @@ type ScheduleRow = {
   schedule_date: string; // YYYY-MM-DD
   schedule_time?: string | null;
   category?: string | null;
-  customer_id?: string | null; // (유지: 나중에 다시 쓸 수 있음)
+  customer_id?: string | null; // (유지)
 };
 
 type DaySummary = { date: string; count: number };
@@ -225,7 +226,30 @@ export default function HomePage() {
   const [weatherLat, setWeatherLat] = useState<number>(37.5665);
   const [weatherLon, setWeatherLon] = useState<number>(126.978);
 
+  // ✅ 오늘 날짜 (중복 선언 제거)
   const todayStr = useMemo(() => formatDate(new Date()), []);
+
+  // ✅✅✅ 프로필 이미지 캐시버스터: "profileImage가 바뀔 때만" 갱신 (매 렌더 Date.now() 금지)
+  const [avatarVer, setAvatarVer] = useState<number>(0);
+  useEffect(() => {
+    if (!profileImage) return;
+    setAvatarVer(Date.now());
+  }, [profileImage]);
+
+  // ✅✅✅ (FIX) loading return 전에 훅 호출 고정 + storage 경로도 정상 변환
+  const avatarSrc = useMemo(() => {
+    const v = avatarVer ? `?v=${avatarVer}` : '';
+    if (!profileImage) return '';
+    const raw = String(profileImage);
+
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      return `${raw}${v}`;
+    }
+
+    // storage 경로(avatars/xxx.png)면 getAvatarSrc로 public url 변환
+    const publicUrl = getAvatarSrc(raw);
+    return publicUrl ? `${publicUrl}${v}` : '';
+  }, [profileImage, avatarVer]);
 
   // ✅ 배지 패널
   const [badgeOpen, setBadgeOpen] = useState(false);
@@ -405,7 +429,10 @@ export default function HomePage() {
 
       let likesCount = 0;
       try {
-        const { count } = await supabase.from('post_likes').select('id', { count: 'exact', head: true }).eq('user_id', targetUserId);
+        const { count } = await supabase
+          .from('post_likes')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', targetUserId);
         likesCount = count ?? 0;
       } catch {
         likesCount = 0;
@@ -452,7 +479,10 @@ export default function HomePage() {
   };
 
   const newRebuttalCount = useMemo(() => recentRebuttals.length, [recentRebuttals]);
-  const newScheduleCountToday = useMemo(() => schedules.filter((s) => s.schedule_date === todayStr).length, [schedules, todayStr]);
+  const newScheduleCountToday = useMemo(
+    () => schedules.filter((s) => s.schedule_date === todayStr).length,
+    [schedules, todayStr]
+  );
 
   // 감성 슬라이드
   useEffect(() => {
@@ -660,7 +690,9 @@ export default function HomePage() {
         setWeatherLat(lat);
         setWeatherLon(lon);
 
-        if (p.avatar_url) setProfileImage(p.avatar_url);
+        // ✅✅✅ 프로필 이미지 핵심: avatar_url이 storage 경로여도 profileImage에 넣고,
+        // 위 avatarSrc useMemo에서 getAvatarSrc로 변환해서 표시함
+        if (p.avatar_url) setProfileImage(String(p.avatar_url));
       } else if (user.email) {
         setNickname(user.email.split('@')[0]);
       }
@@ -773,8 +805,6 @@ export default function HomePage() {
     grade && careerYears ? `${grade} · ${careerYears}` : grade ? grade : careerYears ? careerYears : '경력/직함 미설정';
   const orgCombined = [company, department, team].filter(Boolean).join(' / ') || '조직/팀 미설정';
 
-  const avatarSrc = profileImage ? `${getAvatarSrc(profileImage)}?v=${Date.now()}` : '';
-
   return (
     <div className="home-root">
       <div className="home-inner">
@@ -796,6 +826,8 @@ export default function HomePage() {
                   </div>
                   <div className="home-logo-sub">오늘도 나를 UP시키다</div>
                 </div>
+
+                <AdminEntryButton adminEmail="대표님이쓰는이메일@domain.com" label="관리자" size="sm" />
               </div>
 
               <div className="home-date">
@@ -821,7 +853,16 @@ export default function HomePage() {
                     <div className="profile-avatar">
                       {avatarSrc ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={avatarSrc} alt="프로필" />
+                        <img
+                          src={avatarSrc}
+                          alt="프로필"
+                          onError={(e) => {
+                            console.warn('[HOME] avatar img error:', profileImage, avatarSrc);
+                            // ✅✅✅ (FIX) 이미지 실패 시 "빈 원" 방지: 즉시 초기값(이니셜)로 fallback
+                            setProfileImage(null);
+                            (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
                       ) : (
                         avatarInitial
                       )}
@@ -1379,11 +1420,12 @@ a:hover { text-decoration: none; }
   .wave-text span, .badge-icon, .coach-mascot-wrap, .coach-sparkle { animation: none !important; transition: none !important; }
 }
 
-/* Layout */
+/* 1) ✅ home-root 기본 글씨 크기 살짝 업 (전체적으로 체감 올라감) */
 .home-root{
   min-height: 100vh;
   padding: 24px;
   box-sizing: border-box;
+  font-size: 16px; /* ✅ 추가 */
   background:
     radial-gradient(900px 520px at 18% 12%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 62%),
     radial-gradient(900px 560px at 82% 18%, rgba(243,232,255,0.55) 0%, rgba(243,232,255,0) 64%),
@@ -1409,15 +1451,17 @@ a:hover { text-decoration: none; }
   box-shadow: 0 16px 28px rgba(0,0,0,0.18);
   margin-bottom: 16px;
   color: #ffffff;
-  overflow: visible;
+  overflow: hidden; /* ✅ 여기만 변경 (visible -> hidden) */
 }
+
 
 .home-header-top{
   display: grid;
-  grid-template-columns: 1fr 420px;
+  grid-template-columns: 1fr minmax(0, clamp(320px, 36vw, 420px)); /* ✅ 변경 */
   gap: 16px;
   align-items: start;
 }
+
 .home-header-profile{ display:flex; justify-content:flex-end; align-items:flex-start; }
 .home-logo-row{ display:flex; align-items:center; gap: 12px; }
 .home-logo{
@@ -1447,8 +1491,9 @@ a:hover { text-decoration: none; }
 
 /* Profile */
 .profile-box{
-  width: 420px;
-  min-width: 420px;
+  width: 100%;                 /* ✅ 변경 (420px -> 100%) */
+  max-width: 420px;            /* ✅ 추가 */
+  min-width: 0;                /* ✅ 변경 (420px -> 0) */
   height: 220px;
   box-sizing: border-box;
   background: rgba(255,255,255,0.96);
@@ -1462,6 +1507,7 @@ a:hover { text-decoration: none; }
   color: #211437;
   position: relative;
 }
+
 .profile-settings-btn{
   position: absolute;
   top: 10px;
@@ -1588,40 +1634,90 @@ a:hover { text-decoration: none; }
 .coach-sparkle.s1{ top: 18px; left: 18px; }
 .coach-sparkle.s2{ top: 52px; left: 46px; }
 
-/* Quick Nav */
+/* ✅ 메뉴바(버튼 줄) : 박스 느낌 제거 */
 .home-quick-nav{
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  display:flex;
   gap: 10px;
-  margin-bottom: 14px;
+  padding: 10px 6px;      /* 위아래 숨 */
+  margin: 14px 0 18px;    /* 아래 섹션과 여유 */
+
+  /* ❌ 갇힌 느낌 만드는 요소 제거 */
+  background: transparent;
+  border: none;
+  box-shadow: none;
+
+  /* 한줄 유지 */
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
+
+
+/* ✅ 메뉴 버튼 : 더 낮고 말랑한 pill */
 .quick-card{
-  height: 44px;
-  border-radius: 18px;
-  padding: 0 10px;
-  background: linear-gradient(135deg, rgba(249,115,184,0.88), rgba(168,85,247,0.86));
-  box-shadow: 0 10px 16px rgba(0,0,0,0.12);
-  border: 1px solid rgba(255,255,255,0.66);
+  flex: 1 1 0;
+  min-width: 0;
+
+  height: 44px;                 /* ✅ 더 슬림하게 (54 -> 44 추천) */
+  border-radius: 999px;         /* 완전 pill */
+  padding: 0 14px;
+
+  /* ✅ 부드러운 그라데이션 + 살짝 투명 */
+  background: linear-gradient(
+    135deg,
+    rgba(255, 133, 210, 0.85),
+    rgba(166, 120, 255, 0.82)
+  );
+
+  /* ✅ 테두리도 얇고 은은하게 */
+  border: 1px solid rgba(255,255,255,0.55);
+
+  /* ✅ 너무 “카드”같이 뜨는 그림자 제거 → 소프트하게 */
+  box-shadow:
+    0 8px 18px rgba(120, 70, 210, 0.14);
+
   display:flex;
   align-items:center;
   justify-content:center;
-  font-size: 14px;
+
+  font-size: 17px;              /* 글씨는 유지 */
   font-weight: 900;
+  letter-spacing: -0.3px;
   color:#fff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+
+  cursor:pointer;
+
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    filter 160ms ease;
 }
-.quick-card:hover{ transform: translateY(-1px); transition: 170ms ease; filter: brightness(1.02); }
-@media (max-width: 860px){
-  .home-header-top{ grid-template-columns: 1fr; }
-  .home-header-profile{ justify-content:flex-start; }
-  .profile-box{ width: 100%; min-width: 0; }
-  .home-quick-nav{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+
+/* ✅ 호버 시: 살짝 커지고 빛나는 느낌 */
+.quick-card:hover{
+  transform: translateY(-1px) scale(1.03);
+  filter: brightness(1.04) saturate(1.06);
+  box-shadow:
+    0 12px 26px rgba(120, 70, 210, 0.22),
+    0 0 0 3px rgba(255,255,255,0.10);
 }
+
+/* ✅ 클릭 시: “눌리는” 느낌 */
+.quick-card:active{
+  transform: translateY(0px) scale(0.99);
+  filter: brightness(0.98);
+}
+
+
+/* 모바일에서도 글씨 작아지지 않게 */
 @media (max-width: 520px){
-  .home-quick-nav{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quick-card{
+    font-size: 17px;
+    height: 48px;
+  }
 }
+
+
 
 /* Weather */
 .weather-wide{ margin-bottom: 10px; }
@@ -2090,42 +2186,55 @@ a:hover { text-decoration: none; }
   height: 40px;
   border-radius: 999px;
   font-weight: 950;
-  cursor:pointer;
-  border: 1px solid rgba(214,200,255,0.95);
-  background: rgba(255,255,255,0.92);
+  cursor: pointer;
+  border: 2px solid rgba(226,232,240,0.9);
+  background: #fff;
   color:#2a1236;
-  box-shadow: 0 10px 18px rgba(0,0,0,0.06);
+  box-shadow: 0 12px 22px rgba(0,0,0,0.08);
 }
 .fp-btn:hover{ transform: translateY(-1px); transition: 160ms ease; }
-.fp-btn.ghost{ box-shadow: 0 10px 18px rgba(0,0,0,0.06), 0 0 0 3px rgba(59,130,246,0.08); }
+.fp-btn:active{ transform: translateY(0); }
+.fp-btn.ghost{
+  background: rgba(255,255,255,0.92);
+  border-color: rgba(168,85,247,0.25);
+  box-shadow: 0 12px 22px rgba(0,0,0,0.08), 0 0 0 3px rgba(59,130,246,0.08);
+}
 .fp-btn.pink{
+  border: 2px solid rgba(255,255,255,0.85);
   background: linear-gradient(90deg,#ff4fa1,#a855f7);
   color:#fff;
-  border: 2px solid rgba(255,255,255,0.85);
   box-shadow: 0 14px 28px rgba(168,85,247,0.22), 0 0 0 3px rgba(244,114,182,0.12);
 }
 
-/* Floating Support */
+/* Floating support */
 .floating-support-btn{
   position: fixed;
   right: 18px;
   bottom: 18px;
-  width: 126px;
-  height: 58px;
-  border-radius: 20px;
-  border: 2px solid rgba(255,255,255,0.86);
-  background: linear-gradient(135deg, rgba(249,115,184,0.92), rgba(168,85,247,0.90));
-  box-shadow: 0 18px 40px rgba(0,0,0,0.22);
-  color:#fff;
+  z-index: 90;
+  border: none;
+  cursor: pointer;
+  border-radius: 18px;
+  padding: 12px 14px;
+  color: #fff;
   font-weight: 950;
   display:flex;
   flex-direction: column;
-  align-items:center;
-  justify-content:center;
   gap: 2px;
-  cursor:pointer;
-  z-index: 90;
+  background: linear-gradient(135deg, rgba(249,115,184,0.95), rgba(168,85,247,0.95));
+  box-shadow: 0 18px 40px rgba(0,0,0,0.18), 0 0 0 3px rgba(244,114,182,0.12);
 }
-.floating-support-btn:hover{ transform: translateY(-1px); transition: 180ms ease; }
-.floating-support-btn span{ font-size: 13px; line-height: 1.05; }
+.floating-support-btn:hover{ transform: translateY(-2px); transition: 180ms ease; filter: brightness(1.02); }
+.floating-support-btn span:first-child{ font-size: 13px; opacity: .95; }
+.floating-support-btn span:last-child{ font-size: 14px; }
+
+/* Responsive friends actions */
+@media (max-width: 860px){
+  .friend-row{ flex-direction: column; align-items: stretch; gap: 10px; }
+  .friend-actions{ justify-content: space-between; }
+  .fa-pill{ min-width: 0; flex: 1; }
+  .fa-cheer{ min-width: 0; }
+  .friends-right{ flex-wrap: wrap; justify-content: flex-end; }
+  .friends-search{ width: 160px; }
+}
 `;

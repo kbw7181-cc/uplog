@@ -1,18 +1,18 @@
-// ✅ 파일: src/app/admin/users/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-
+import { getAvatarSrc } from '@/lib/getAvatarSrc';
 
 type ProfileRow = {
   user_id: string;
   email: string | null;
   name: string | null;
+  nickname?: string | null;
+  avatar_url?: string | null;
   role: string | null; // user/admin/suspended...
   created_at: string | null;
-  nickname?: string | null;
 };
 
 type MonthlyBadgeReportRow = {
@@ -74,10 +74,16 @@ function monthRangeLabel(now = new Date()) {
   return `${y}.${String(m).padStart(2, '0')} 월`;
 }
 
-function getMonthStartEndISO(now = new Date()) {
-  const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-  return { startISO: start.toISOString(), endISO: end.toISOString() };
+function getMonthStartEndYMD(now = new Date()) {
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const ymd = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  return { startYMD: ymd(start), endYMD: ymd(end) };
 }
 
 function isActiveSanction(s: SanctionRow) {
@@ -150,9 +156,10 @@ export default function AdminUsersPage() {
     setLoading(true);
     setErr(null);
 
+    // ✅ avatar_url 포함 (프로필 이미지 깨짐 해결)
     const first = await supabase
       .from('profiles')
-      .select('user_id,email,name,nickname,role,created_at')
+      .select('user_id,email,name,nickname,avatar_url,role,created_at')
       .order('created_at', { ascending: false });
 
     if (!first.error) {
@@ -162,6 +169,7 @@ export default function AdminUsersPage() {
           email: x.email ?? null,
           name: x.name ?? null,
           nickname: x.nickname ?? null,
+          avatar_url: x.avatar_url ?? null,
           role: x.role ?? null,
           created_at: x.created_at ?? null,
         }))
@@ -170,9 +178,10 @@ export default function AdminUsersPage() {
       return;
     }
 
+    // fallback
     const second = await supabase
       .from('profiles')
-      .select('user_id,email,name,role,created_at')
+      .select('user_id,email,name,avatar_url,role,created_at')
       .order('created_at', { ascending: false });
 
     if (second.error) {
@@ -184,6 +193,7 @@ export default function AdminUsersPage() {
           user_id: x.user_id,
           email: x.email ?? null,
           name: x.name ?? null,
+          avatar_url: x.avatar_url ?? null,
           role: x.role ?? null,
           created_at: x.created_at ?? null,
         }))
@@ -193,20 +203,22 @@ export default function AdminUsersPage() {
     setLoading(false);
   }
 
+  // ✅ 월간 배지는 month_start/month_end가 date일 가능성이 높음 → YYYY-MM-DD로 딱 맞춰 조회
   async function fetchMonthlyBadgesWithReason(userId: string) {
     setBadgeLoading(true);
     setBadgeErr(null);
     setBadges([]);
     setBadgeSource('none');
 
-    const { startISO, endISO } = getMonthStartEndISO(new Date());
+    const { startYMD, endYMD } = getMonthStartEndYMD(new Date());
 
+    // 1) reason 포함 뷰 우선
     const report = await supabase
       .from('monthly_badge_winners_report')
       .select('badge_code,badge_name,winner_user_id,month_start,month_end,reason')
       .eq('winner_user_id', userId)
-      .gte('month_start', startISO)
-      .lte('month_end', endISO)
+      .eq('month_start', startYMD)
+      .eq('month_end', endYMD)
       .order('badge_name', { ascending: true });
 
     if (!report.error) {
@@ -216,12 +228,13 @@ export default function AdminUsersPage() {
       return;
     }
 
+    // 2) 기본 테이블 fallback
     const basic = await supabase
       .from('monthly_badges')
       .select('badge_code,badge_name,winner_user_id,month_start,month_end')
       .eq('winner_user_id', userId)
-      .gte('month_start', startISO)
-      .lte('month_end', endISO)
+      .eq('month_start', startYMD)
+      .eq('month_end', endYMD)
       .order('badge_name', { ascending: true });
 
     if (basic.error) {
@@ -281,7 +294,13 @@ export default function AdminUsersPage() {
     const s = q.trim().toLowerCase();
     if (!s) return rows;
     return rows.filter((r) => {
-      const hay = [safeStr(r.user_id), safeStr(r.email), safeStr(r.name), safeStr(r.nickname ?? null), safeStr(r.role)]
+      const hay = [
+        safeStr(r.user_id),
+        safeStr(r.email),
+        safeStr(r.name),
+        safeStr(r.nickname ?? null),
+        safeStr(r.role),
+      ]
         .join(' ')
         .toLowerCase();
       return hay.includes(s);
@@ -332,7 +351,6 @@ export default function AdminUsersPage() {
     const ends_at = days === null ? null : addDaysISO(days);
     const note = safeStr(grantNote) || null;
 
-    // ✅ 핵심: type 필수 컬럼 대응 (soft/hard)
     const payload = {
       user_id: selected.user_id,
       scope,
@@ -417,22 +435,37 @@ export default function AdminUsersPage() {
             const displayName = safeStr(p.nickname ?? null) || safeStr(p.name) || '사용자';
             const email = safeStr(p.email) || '(이메일 없음)';
             const meta = roleMeta(p.role);
+            const avatarSrc = getAvatarSrc(p.avatar_url);
 
             return (
               <div key={p.user_id} className="card">
                 <div className="cardTop">
                   <div className="who">
-                    <div className="nameRow">
-                      <div className="name">{displayName}</div>
-                      <div className={meta.cls}>{meta.label}</div>
-                    </div>
+                    <div className="whoRow">
+                      {/* ✅ 리스트에서도 프로필 이미지 노출 */}
+                      <img
+                        className="miniAvatar"
+                        src={avatarSrc}
+                        alt="profile"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = '/upzzu1.png';
+                        }}
+                      />
 
-                    <div className="email">{email}</div>
+                      <div className="whoText">
+                        <div className="nameRow">
+                          <div className="name">{displayName}</div>
+                          <div className={meta.cls}>{meta.label}</div>
+                        </div>
 
-                    <div className="metaRow">
-                      <span className="uid">UID: {p.user_id}</span>
-                      <span className="dot">·</span>
-                      <span className="date">가입: {fmtDate(p.created_at) || '-'}</span>
+                        <div className="email">{email}</div>
+
+                        <div className="metaRow">
+                          <span className="uid">UID: {p.user_id}</span>
+                          <span className="dot">·</span>
+                          <span className="date">가입: {fmtDate(p.created_at) || '-'}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -484,11 +517,21 @@ export default function AdminUsersPage() {
               const displayName = safeStr(selected.nickname ?? null) || safeStr(selected.name) || '사용자';
               const email = safeStr(selected.email) || '(이메일 없음)';
               const meta = roleMeta(selected.role);
+              const avatarSrc = getAvatarSrc(selected.avatar_url);
 
               return (
                 <>
                   <div className="heroCard">
-                    <div className="avatar">{displayName.slice(0, 1).toUpperCase()}</div>
+                    {/* ✅ 상세에서도 실제 이미지 */}
+                    <img
+                      className="heroAvatar"
+                      src={avatarSrc}
+                      alt="profile"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = '/upzzu1.png';
+                      }}
+                    />
+
                     <div className="heroInfo">
                       <div className="heroTop">
                         <div className="heroName">{displayName}</div>
@@ -709,7 +752,7 @@ const styles = `
   min-height:100vh;
   width:100%;
   overflow:hidden;
-  color:#1f1230;
+  color:#0b0b0f; /* ✅ 더 진한 글씨 */
 }
 .bg{
   position:absolute;
@@ -736,17 +779,17 @@ const styles = `
   justify-content:space-between;
   gap:12px;
 }
-.h1{ font-size:28px; font-weight:950; letter-spacing:-0.6px; color:#2a0f3c; }
-.sub{ margin-top:6px; font-size:14px; font-weight:800; color:#3a2450; opacity:0.95; }
+.h1{ font-size:28px; font-weight:950; letter-spacing:-0.6px; color:#12061a; }
+.sub{ margin-top:6px; font-size:14px; font-weight:900; color:#1b1026; opacity:0.92; }
 
 .navBtns{ display:flex; gap:10px; flex-wrap:wrap; }
 .navBtn{
-  border:1px solid rgba(60,30,90,0.18);
-  background: rgba(255,255,255,0.78);
+  border:1px solid rgba(18,6,26,0.16);
+  background: rgba(255,255,255,0.82);
   padding:10px 14px;
   border-radius:999px;
-  font-weight:900;
-  color:#2a1236;
+  font-weight:950;
+  color:#12061a;
   box-shadow: 0 10px 28px rgba(40,10,70,0.08);
 }
 .navBtn.strong{
@@ -765,19 +808,19 @@ const styles = `
   width:100%;
   height:44px;
   border-radius:14px;
-  border:1px solid rgba(60,30,90,0.18);
-  background: rgba(255,255,255,0.86);
+  border:1px solid rgba(18,6,26,0.16);
+  background: rgba(255,255,255,0.90);
   padding: 0 14px;
   font-size:17px;
-  font-weight:800;
-  color:#1f1230;
+  font-weight:900;
+  color:#0b0b0f;
   outline:none;
   box-shadow: 0 12px 30px rgba(40,10,70,0.08);
 }
-.search::placeholder{ color: rgba(55,30,80,0.55); font-weight:800; }
+.search::placeholder{ color: rgba(11,11,15,0.45); font-weight:900; }
 
-.error{ position:relative; max-width:1120px; margin:0 auto; padding: 10px 18px; color:#5b1230; font-weight:900; }
-.loading, .empty{ position:relative; max-width:1120px; margin: 14px auto 0; padding: 18px; font-weight:900; color:#2a1236; }
+.error{ position:relative; max-width:1120px; margin:0 auto; padding: 10px 18px; color:#6b1024; font-weight:950; }
+.loading, .empty{ position:relative; max-width:1120px; margin: 14px auto 0; padding: 18px; font-weight:950; color:#12061a; }
 
 .grid{
   position:relative;
@@ -794,8 +837,8 @@ const styles = `
 }
 
 .card{
-  background: rgba(255,255,255,0.82);
-  border: 1px solid rgba(60,30,90,0.14);
+  background: rgba(255,255,255,0.86);
+  border: 1px solid rgba(18,6,26,0.12);
   border-radius: 20px;
   box-shadow: 0 18px 40px rgba(40,10,70,0.10);
   padding: 14px 14px 12px;
@@ -803,23 +846,34 @@ const styles = `
 }
 .cardTop{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .who{ flex:1; min-width:0; }
+.whoRow{ display:flex; gap:12px; align-items:flex-start; }
+.miniAvatar{
+  width:48px; height:48px;
+  border-radius: 16px;
+  object-fit: cover;
+  background:#fff;
+  border: 1px solid rgba(18,6,26,0.10);
+  flex: 0 0 auto;
+}
+.whoText{ flex:1; min-width:0; }
+
 .nameRow{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-.name{ font-size:20px; font-weight:950; color:#210a34; letter-spacing:-0.3px; }
-.email{ margin-top:4px; font-size:14px; font-weight:900; color:#3a2450; opacity:0.92; word-break:break-all; }
+.name{ font-size:20px; font-weight:1000; color:#0b0b0f; letter-spacing:-0.3px; }
+.email{ margin-top:4px; font-size:14px; font-weight:950; color:#15101f; opacity:0.92; word-break:break-all; }
 .metaRow{
   margin-top:8px;
   display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-  font-size:12px; font-weight:900; color: rgba(40,10,70,0.72);
+  font-size:12px; font-weight:950; color: rgba(11,11,15,0.70);
 }
 .dot{ opacity:0.5; }
 
 .viewBtn{
   border-radius: 14px;
   padding: 10px 12px;
-  border:1px solid rgba(60,30,90,0.16);
+  border:1px solid rgba(18,6,26,0.14);
   background: linear-gradient(135deg, rgba(255,79,216,0.18), rgba(185,130,255,0.18));
-  font-weight:950;
-  color:#230b35;
+  font-weight:1000;
+  color:#0b0b0f;
   box-shadow: 0 12px 24px rgba(40,10,70,0.10);
   white-space:nowrap;
 }
@@ -829,9 +883,9 @@ const styles = `
   padding: 6px 10px;
   border-radius: 999px;
   font-size: 12px;
-  font-weight: 950;
-  border: 1px solid rgba(60,30,90,0.16);
-  color:#2a1236;
+  font-weight: 1000;
+  border: 1px solid rgba(18,6,26,0.14);
+  color:#0b0b0f;
 }
 .pillUser{ background: rgba(73,183,255,0.16); border-color: rgba(73,183,255,0.25); }
 .pillAdmin{ background: rgba(255,79,216,0.18); border-color: rgba(255,79,216,0.30); }
@@ -843,17 +897,17 @@ const styles = `
   flex:1;
   height:40px;
   border-radius: 14px;
-  border: 1px solid rgba(60,30,90,0.16);
-  font-weight: 950;
-  color:#1f1230;
-  background: rgba(255,255,255,0.85);
+  border: 1px solid rgba(18,6,26,0.14);
+  font-weight: 1000;
+  color:#0b0b0f;
+  background: rgba(255,255,255,0.90);
   box-shadow: 0 12px 24px rgba(40,10,70,0.08);
 }
 .actBtn.user{ background: linear-gradient(135deg, rgba(73,183,255,0.14), rgba(143,215,255,0.10)); }
 .actBtn.admin{ background: linear-gradient(135deg, rgba(255,79,216,0.16), rgba(185,130,255,0.14)); }
 .actBtn.suspended{ background: linear-gradient(135deg, rgba(255,94,122,0.14), rgba(255,154,174,0.10)); }
 .actBtn:disabled{ opacity:0.6; cursor:not-allowed; }
-.saving{ margin-top:10px; font-size:12px; font-weight:950; color: rgba(40,10,70,0.72); }
+.saving{ margin-top:10px; font-size:12px; font-weight:950; color: rgba(11,11,15,0.65); }
 
 /* panel */
 .panelScrim{
@@ -869,8 +923,8 @@ const styles = `
   position:fixed; top:0; right:0;
   height:100vh;
   width:min(520px, 92vw);
-  background: rgba(255,255,255,0.90);
-  border-left: 1px solid rgba(60,30,90,0.14);
+  background: rgba(255,255,255,0.92);
+  border-left: 1px solid rgba(18,6,26,0.12);
   box-shadow: -18px 0 40px rgba(40,10,70,0.14);
   transform: translateX(104%);
   transition: transform .22s ease;
@@ -888,46 +942,45 @@ const styles = `
   justify-content:space-between;
   gap:10px;
 }
-.panelTitle{ font-size:18px; font-weight:950; color:#230b35; letter-spacing:-0.2px; }
+.panelTitle{ font-size:18px; font-weight:1000; color:#0b0b0f; letter-spacing:-0.2px; }
 .panelClose{
   width:38px; height:38px;
   border-radius: 12px;
-  border:1px solid rgba(60,30,90,0.16);
-  background: rgba(255,255,255,0.85);
-  font-weight:950;
-  color:#230b35;
+  border:1px solid rgba(18,6,26,0.14);
+  background: rgba(255,255,255,0.90);
+  font-weight:1000;
+  color:#0b0b0f;
   box-shadow: 0 10px 22px rgba(40,10,70,0.10);
 }
 .panelBody{ padding: 0 16px 16px; overflow:auto; }
-.panelEmpty{ padding: 16px; font-weight:900; color:#2a1236; }
+.panelEmpty{ padding: 16px; font-weight:950; color:#0b0b0f; }
 
 .heroCard{
   margin-top: 6px;
   border-radius: 18px;
-  border:1px solid rgba(60,30,90,0.14);
-  background: rgba(255,255,255,0.78);
+  border:1px solid rgba(18,6,26,0.12);
+  background: rgba(255,255,255,0.84);
   box-shadow: 0 14px 30px rgba(40,10,70,0.10);
   padding: 14px;
   display:flex;
   gap:12px;
   align-items:flex-start;
 }
-.avatar{
+.heroAvatar{
   width:64px; height:64px;
   border-radius: 18px;
-  display:flex; align-items:center; justify-content:center;
-  font-size:22px; font-weight:950;
-  color:#230b35;
-  background: linear-gradient(135deg, rgba(255,79,216,0.20), rgba(185,130,255,0.18));
-  border:1px solid rgba(255,79,216,0.22);
+  object-fit: cover;
+  background:#fff;
+  border: 1px solid rgba(18,6,26,0.10);
+  flex: 0 0 auto;
 }
 .heroInfo{ flex:1; min-width:0; }
 .heroTop{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-.heroName{ font-size:18px; font-weight:950; color:#210a34; }
+.heroName{ font-size:18px; font-weight:1000; color:#0b0b0f; }
 .heroEmail{
   margin-top:4px;
-  font-size:13px; font-weight:900;
-  color:#3a2450;
+  font-size:13px; font-weight:950;
+  color:#111019;
   word-break:break-all;
   opacity:0.92;
 }
@@ -936,25 +989,25 @@ const styles = `
   display:grid;
   gap:6px;
   font-size:12px;
-  font-weight:900;
-  color: rgba(40,10,70,0.72);
+  font-weight:950;
+  color: rgba(11,11,15,0.70);
 }
 
 .panelSection{
   margin-top: 12px;
   border-radius: 18px;
-  border:1px solid rgba(60,30,90,0.14);
-  background: rgba(255,255,255,0.78);
+  border:1px solid rgba(18,6,26,0.12);
+  background: rgba(255,255,255,0.84);
   box-shadow: 0 14px 30px rgba(40,10,70,0.10);
   padding: 12px;
 }
-.secTitle{ font-size:14px; font-weight:950; color:#230b35; }
-.secSub{ margin-left:6px; font-size:12px; font-weight:900; color: rgba(40,10,70,0.62); }
+.secTitle{ font-size:14px; font-weight:1000; color:#0b0b0f; }
+.secSub{ margin-left:6px; font-size:12px; font-weight:950; color: rgba(11,11,15,0.62); }
 
-.tinyInfo{ margin-top:6px; font-size:11px; font-weight:900; color: rgba(40,10,70,0.55); }
-.miniMsg{ margin-top:10px; font-size:13px; font-weight:900; color: rgba(40,10,70,0.72); }
-.miniErr{ margin-top:10px; font-size:13px; font-weight:950; color:#5b1230; }
-.miniHint{ margin-top:6px; font-size:12px; font-weight:900; color: rgba(60,20,60,0.65); }
+.tinyInfo{ margin-top:6px; font-size:11px; font-weight:950; color: rgba(11,11,15,0.55); }
+.miniMsg{ margin-top:10px; font-size:13px; font-weight:950; color: rgba(11,11,15,0.70); }
+.miniErr{ margin-top:10px; font-size:13px; font-weight:1000; color:#6b1024; }
+.miniHint{ margin-top:6px; font-size:12px; font-weight:950; color: rgba(11,11,15,0.65); }
 
 /* badges */
 .badgeList{ margin-top:10px; display:grid; gap:8px; }
@@ -962,23 +1015,23 @@ const styles = `
   display:flex; gap:10px; align-items:flex-start;
   padding: 10px;
   border-radius: 14px;
-  border:1px solid rgba(60,30,90,0.12);
-  background: rgba(255,255,255,0.72);
+  border:1px solid rgba(18,6,26,0.10);
+  background: rgba(255,255,255,0.78);
 }
 .badgeDot{
   width:10px; height:10px; margin-top:5px;
   border-radius: 999px;
   background: linear-gradient(135deg, rgba(255,79,216,0.9), rgba(185,130,255,0.9));
 }
-.badgeName{ font-size:13px; font-weight:950; color:#230b35; }
+.badgeName{ font-size:13px; font-weight:1000; color:#0b0b0f; }
 .badgeReason{
   margin-top:4px;
   font-size:12px;
-  font-weight:900;
-  color: rgba(40,10,70,0.78);
+  font-weight:950;
+  color: rgba(11,11,15,0.78);
   line-height:1.35;
 }
-.badgeCode{ margin-top:3px; font-size:11px; font-weight:900; color: rgba(40,10,70,0.55); }
+.badgeCode{ margin-top:3px; font-size:11px; font-weight:950; color: rgba(11,11,15,0.55); }
 
 /* sanctions */
 .sanList{ margin-top:10px; display:grid; gap:10px; }
@@ -988,39 +1041,39 @@ const styles = `
   align-items:flex-start;
   padding: 10px;
   border-radius: 14px;
-  border:1px solid rgba(60,30,90,0.12);
-  background: rgba(255,255,255,0.72);
+  border:1px solid rgba(18,6,26,0.10);
+  background: rgba(255,255,255,0.78);
 }
 .sanPill{
   padding:6px 10px;
   border-radius:999px;
   font-size:11px;
-  font-weight:950;
-  border:1px solid rgba(60,30,90,0.14);
+  font-weight:1000;
+  border:1px solid rgba(18,6,26,0.12);
   white-space:nowrap;
 }
 .sanPill.soft{
   background: rgba(255,79,216,0.12);
   border-color: rgba(255,79,216,0.22);
-  color:#3a0f55;
+  color:#0b0b0f;
 }
 .sanPill.hard{
   background: rgba(255,94,122,0.14);
   border-color: rgba(255,94,122,0.26);
-  color:#5b1230;
+  color:#0b0b0f;
 }
 .sanMain{ flex:1; min-width:0; }
-.sanLine{ font-size:13px; font-weight:950; color:#230b35; }
-.sanTime{ margin-top:4px; font-size:12px; font-weight:900; color: rgba(40,10,70,0.70); }
-.sanNote{ margin-top:6px; font-size:12px; font-weight:900; color: rgba(40,10,70,0.75); line-height:1.35; }
+.sanLine{ font-size:13px; font-weight:1000; color:#0b0b0f; }
+.sanTime{ margin-top:4px; font-size:12px; font-weight:950; color: rgba(11,11,15,0.70); }
+.sanNote{ margin-top:6px; font-size:12px; font-weight:950; color: rgba(11,11,15,0.75); line-height:1.35; }
 .sanKill{
   height:34px;
   padding: 0 10px;
   border-radius: 12px;
-  border:1px solid rgba(60,30,90,0.14);
-  background: rgba(255,255,255,0.88);
-  font-weight:950;
-  color:#5b1230;
+  border:1px solid rgba(18,6,26,0.12);
+  background: rgba(255,255,255,0.92);
+  font-weight:1000;
+  color:#0b0b0f;
   box-shadow: 0 10px 18px rgba(40,10,70,0.08);
 }
 
@@ -1028,8 +1081,8 @@ const styles = `
 .grantHint{
   margin-top:6px;
   font-size:12px;
-  font-weight:900;
-  color: rgba(40,10,70,0.65);
+  font-weight:950;
+  color: rgba(11,11,15,0.65);
 }
 .grantRow{
   margin-top:10px;
@@ -1040,23 +1093,19 @@ const styles = `
 }
 .lbl{
   font-size:12px;
-  font-weight:950;
-  color:#2a1236;
+  font-weight:1000;
+  color:#0b0b0f;
   padding-top: 8px;
 }
-.seg{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-}
+.seg{ display:flex; gap:8px; flex-wrap:wrap; }
 .chip{
   height:34px;
   padding: 0 12px;
   border-radius: 999px;
-  border:1px solid rgba(60,30,90,0.16);
-  background: rgba(255,255,255,0.84);
-  font-weight:950;
-  color:#2a1236;
+  border:1px solid rgba(18,6,26,0.14);
+  background: rgba(255,255,255,0.90);
+  font-weight:1000;
+  color:#0b0b0f;
   box-shadow: 0 10px 18px rgba(40,10,70,0.06);
 }
 .chip.on{
@@ -1067,49 +1116,45 @@ const styles = `
 .toggle{
   height:36px;
   border-radius: 14px;
-  border:1px solid rgba(60,30,90,0.16);
-  background: rgba(255,255,255,0.86);
-  font-weight:950;
-  color:#2a1236;
+  border:1px solid rgba(18,6,26,0.14);
+  background: rgba(255,255,255,0.92);
+  font-weight:1000;
+  color:#0b0b0f;
   box-shadow: 0 10px 18px rgba(40,10,70,0.06);
 }
 .toggle.on{
   background: linear-gradient(135deg, rgba(255,94,122,0.18), rgba(255,154,174,0.14));
   border-color: rgba(255,94,122,0.26);
-  color:#5b1230;
+  color:#0b0b0f;
 }
 .toggleHint{
   font-size:12px;
-  font-weight:900;
-  color: rgba(40,10,70,0.65);
+  font-weight:950;
+  color: rgba(11,11,15,0.65);
 }
 .ta{
   width:100%;
   min-height: 76px;
   border-radius: 14px;
-  border:1px solid rgba(60,30,90,0.16);
-  background: rgba(255,255,255,0.88);
+  border:1px solid rgba(18,6,26,0.14);
+  background: rgba(255,255,255,0.92);
   padding: 10px 12px;
   font-size:13px;
-  font-weight:900;
-  color:#1f1230;
+  font-weight:950;
+  color:#0b0b0f;
   outline:none;
   box-shadow: 0 12px 24px rgba(40,10,70,0.08);
   resize: vertical;
 }
-.grantBtns{
-  margin-top: 10px;
-  display:flex;
-  gap:10px;
-}
+.grantBtns{ margin-top: 10px; display:flex; gap:10px; }
 .grantBtn{
   flex:1;
   height:44px;
   border-radius: 16px;
-  border:1px solid rgba(60,30,90,0.16);
+  border:1px solid rgba(18,6,26,0.14);
   background: linear-gradient(135deg, rgba(255,79,216,0.20), rgba(185,130,255,0.18));
-  font-weight:950;
-  color:#230b35;
+  font-weight:1000;
+  color:#0b0b0f;
   box-shadow: 0 14px 30px rgba(40,10,70,0.10);
 }
 .grantBtn:disabled{ opacity:0.6; cursor:not-allowed; }
@@ -1117,17 +1162,17 @@ const styles = `
   height:44px;
   padding: 0 12px;
   border-radius: 16px;
-  border:1px solid rgba(60,30,90,0.14);
-  background: rgba(255,255,255,0.86);
-  font-weight:950;
-  color:#2a1236;
+  border:1px solid rgba(18,6,26,0.12);
+  background: rgba(255,255,255,0.92);
+  font-weight:1000;
+  color:#0b0b0f;
   box-shadow: 0 12px 24px rgba(40,10,70,0.06);
 }
 .grantMsg{
   margin-top:10px;
   font-size:13px;
-  font-weight:950;
-  color:#2a1236;
+  font-weight:1000;
+  color:#0b0b0f;
 }
 
 /* role buttons inside panel */
@@ -1136,10 +1181,10 @@ const styles = `
   flex:1;
   height:40px;
   border-radius: 14px;
-  border: 1px solid rgba(60,30,90,0.16);
-  font-weight: 950;
-  color:#1f1230;
-  background: rgba(255,255,255,0.85);
+  border: 1px solid rgba(18,6,26,0.14);
+  font-weight: 1000;
+  color:#0b0b0f;
+  background: rgba(255,255,255,0.92);
   box-shadow: 0 12px 24px rgba(40,10,70,0.08);
 }
 .pAct.user{ background: linear-gradient(135deg, rgba(73,183,255,0.14), rgba(143,215,255,0.10)); }
@@ -1152,10 +1197,10 @@ const styles = `
   width:100%;
   height:44px;
   border-radius: 16px;
-  border:1px solid rgba(60,30,90,0.16);
+  border:1px solid rgba(18,6,26,0.14);
   background: linear-gradient(135deg, rgba(255,79,216,0.16), rgba(185,130,255,0.14));
-  font-weight: 950;
-  color:#230b35;
+  font-weight: 1000;
+  color:#0b0b0f;
   box-shadow: 0 14px 30px rgba(40,10,70,0.10);
 }
 `;
