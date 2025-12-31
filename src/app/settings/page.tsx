@@ -1,19 +1,20 @@
-// ✅ 파일: src/app/settings/page.tsx
+// ✅✅✅ 전체복붙: src/app/settings/page.tsx
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-// ✅ 프로필 이미지 src 안전 처리(스토리지 경로면 public url로 변환)
+// ✅ 프로필 이미지 src 안전 처리(스토리지 경로면 public url로 변환) + 캐시버스트
 function getAvatarSrc(avatarUrl?: string | null) {
   if (!avatarUrl) return '';
   const v = avatarUrl.trim();
   if (!v) return '';
-  if (v.startsWith('http://') || v.startsWith('https://')) return v;
+  if (v.startsWith('http://') || v.startsWith('https://')) return `${v}${v.includes('?') ? '&' : '?'}v=${Date.now()}`;
   try {
     const { data } = supabase.storage.from('avatars').getPublicUrl(v);
-    return data?.publicUrl || '';
+    const u = data?.publicUrl || '';
+    return u ? `${u}${u.includes('?') ? '&' : '?'}v=${Date.now()}` : '';
   } catch {
     return '';
   }
@@ -82,6 +83,114 @@ async function safeCount(fn: () => Promise<number>) {
   } catch {
     return 0;
   }
+}
+
+/** ✅ KPI: RPC 없이 테이블 직접 집계 + 계약 집계 강화(고객 stage + 스케줄 fallback) */
+async function calcCounts(uid: string) {
+  // ✅ 신규(고객 수)
+  const newCount = await safeCount(async () => {
+    const { count, error } = await supabase.from('customers').select('id', { count: 'exact', head: true }).eq('user_id', uid);
+    if (error) throw error;
+    return count ?? 0;
+  });
+
+  // ✅ 계약(강화): customers.stage 다양한 케이스 OR로 잡고, 0이면 schedules로 fallback
+  const contractCount = await safeCount(async () => {
+    // 1) customers.stage 기반 (계약1/2/3, 계약, "계약 1", "고객 계약" 등까지)
+    const { count: c1, error: e1 } = await supabase
+      .from('customers')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', uid)
+      .or(
+        [
+          'stage.ilike.계약%', // 계약1, 계약2, 계약3, 계약완료 등
+          'stage.ilike.%계약%', // "고객 계약", "계약 1" 같은 변형
+          'stage.eq.계약',
+          'stage.eq.계약1',
+          'stage.eq.계약2',
+          'stage.eq.계약3',
+          'stage.eq.계약 1',
+          'stage.eq.계약 2',
+          'stage.eq.계약 3',
+        ].join(',')
+      );
+
+    if (!e1 && (c1 ?? 0) > 0) return c1 ?? 0;
+
+    // 2) fallback: schedules에서 category/title에 계약 키워드가 있는 일정 카운트
+    // (대표님 구조상 “계약 등록”을 달력 스케줄로만 쌓는 케이스 대응)
+    const { count: c2, error: e2 } = await supabase
+      .from('schedules')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', uid)
+      .or(['category.ilike.계약%', 'category.ilike.%계약%', 'title.ilike.%계약%'].join(','));
+
+    if (e2) throw e2;
+    return c2 ?? 0;
+  });
+
+  // ✅ 게시글: community_posts.user_id 기준
+  const posts = await safeCount(async () => {
+    const { count, error } = await supabase
+      .from('community_posts')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', uid);
+    if (error) throw error;
+    return count ?? 0;
+  });
+
+  // ✅ 받은 좋아요: post_likes → community_posts 2단계(안전)
+  const likeReceived = await safeCount(async () => {
+    const { data: myPosts, error: pErr } = await supabase
+      .from('community_posts')
+      .select('id')
+      .eq('user_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(400); // 넉넉히
+    if (pErr) throw pErr;
+
+    const ids = (myPosts || []).map((r: any) => r.id).filter(Boolean);
+    if (ids.length === 0) return 0;
+
+    const { count, error: lErr } = await supabase
+      .from('post_likes')
+      .select('id', { count: 'exact', head: true })
+      .in('post_id', ids);
+    if (lErr) throw lErr;
+    return count ?? 0;
+  });
+
+  // ✅ 응원: cheers(to_user_id) 우선, 없으면 cheer_logs도 시도
+  const cheers = await safeCount(async () => {
+    const { count, error } = await supabase.from('cheers').select('id', { count: 'exact', head: true }).eq('to_user_id', uid);
+    if (!error) return count ?? 0;
+
+    const { count: c2, error: e2 } = await supabase
+      .from('cheer_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('to_user_id', uid);
+    if (e2) throw e2;
+    return c2 ?? 0;
+  });
+
+  // ✅ 피드백
+  const feedbacks = await safeCount(async () => {
+    const { count, error } = await supabase
+      .from('objection_feedbacks')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', uid);
+    if (error) throw error;
+    return count ?? 0;
+  });
+
+  return {
+    likes: likeReceived,
+    posts,
+    feedbacks,
+    cheers,
+    newCount,
+    contractCount,
+  };
 }
 
 export default function SettingsPage() {
@@ -231,43 +340,11 @@ export default function SettingsPage() {
       const avatarSrc = getAvatarSrc(next.avatar_url);
       setAvatarPreview(avatarSrc);
 
-      // ✅ 활동량 집계(없으면 0)
       const uid = user.id;
 
-      const likes = await safeCount(async () => {
-        const { count } = await supabase.from('post_likes').select('id', { count: 'exact', head: true }).eq('user_id', uid);
-        return count ?? 0;
-      });
-
-      const posts = await safeCount(async () => {
-        const { count } = await supabase.from('community_posts').select('id', { count: 'exact', head: true }).eq('user_id', uid);
-        return count ?? 0;
-      });
-
-      const feedbacks = await safeCount(async () => {
-        const { count } = await supabase
-          .from('objection_feedbacks')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', uid);
-        return count ?? 0;
-      });
-
-      const cheers = await safeCount(async () => {
-        const { count } = await supabase.from('cheers').select('id', { count: 'exact', head: true }).eq('to_user_id', uid);
-        return count ?? 0;
-      });
-
-      const newCount = await safeCount(async () => {
-        const { count } = await supabase.from('customers').select('id', { count: 'exact', head: true }).eq('user_id', uid);
-        return count ?? 0;
-      });
-
-      const contractCount = await safeCount(async () => {
-        const { count } = await supabase.from('performances').select('id', { count: 'exact', head: true }).eq('user_id', uid);
-        return count ?? 0;
-      });
-
-      setCounts({ likes, posts, feedbacks, cheers, newCount, contractCount });
+      // ✅ KPI 집계(계약 강화 포함)
+      const c = await calcCounts(uid);
+      setCounts(c);
 
       // ✅ 배지
       const badgeRows: { name: string; code: string }[] = [];
@@ -294,13 +371,13 @@ export default function SettingsPage() {
       });
 
       const emojiFromCode = (code: string) => {
-        const c = (code || '').toLowerCase();
-        if (c.includes('top') || c.includes('king') || c.includes('mvp')) return '👑';
-        if (c.includes('attendance') || c.includes('streak')) return '🔥';
-        if (c.includes('likes')) return '❤️';
-        if (c.includes('posts')) return '📝';
-        if (c.includes('amount')) return '💎';
-        if (c.includes('count')) return '📈';
+        const c2 = (code || '').toLowerCase();
+        if (c2.includes('top') || c2.includes('king') || c2.includes('mvp')) return '👑';
+        if (c2.includes('attendance') || c2.includes('streak')) return '🔥';
+        if (c2.includes('likes')) return '❤️';
+        if (c2.includes('posts')) return '📝';
+        if (c2.includes('amount')) return '💎';
+        if (c2.includes('count')) return '📈';
         return '✨';
       };
 
@@ -398,7 +475,6 @@ export default function SettingsPage() {
   };
 
   const deleteAccount = async () => {
-    // 요청형(대표님 기존 방향 유지)
     showToast('⚠️ 탈퇴 요청이 접수되도록 연결이 필요해요.');
   };
 
@@ -424,7 +500,6 @@ export default function SettingsPage() {
         {toast && <div className="toast">{toast}</div>}
 
         <div className="grid">
-          {/* 좌측: 프로필/입력 */}
           <section className="card">
             <div className="cardTitle">프로필 설정</div>
             <div className="cardSub">닉네임/개인정보/주소를 저장하면 날씨 지역도 자동으로 바뀝니다.</div>
@@ -518,7 +593,6 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* 우측: 배지/로그아웃/탈퇴 */}
           <section className="card side">
             <div className="cardTitle">배지 & 활동</div>
             <div className="cardSub">배지 이름과 이모지를 구분해서 깔끔하게 보여줘요.</div>
@@ -747,17 +821,17 @@ const styles = `
 .input{
   width:100%;
   margin-top:8px;
-  height: 38px;               /* ✅ 입력창 사이즈만 줄임 */
-  padding: 0 12px;            /* ✅ */
-  border-radius: 12px;        /* ✅ */
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 12px;
   border: 1px solid rgba(124,58,237,0.16);
   background: rgba(255,255,255,0.94);
   box-shadow: 0 10px 18px rgba(0,0,0,0.06);
   outline: none;
-  font-size: 14px;            /* ✅ */
+  font-size: 14px;
   font-weight: 900;
   color: #23123a;
-  box-sizing: border-box;     /* ✅ 오른쪽 집나감 방지 */
+  box-sizing: border-box;
 }
 .input::placeholder{ color: rgba(35,18,58,0.45); font-weight:900; }
 
@@ -770,18 +844,18 @@ const styles = `
 }
 .select{
   width:100%;
-  height:38px;                /* ✅ */
-  padding: 0 12px;            /* ✅ */
-  border-radius: 12px;        /* ✅ */
+  height:38px;
+  padding: 0 12px;
+  border-radius: 12px;
   border: 1px solid rgba(124,58,237,0.16);
   background: rgba(255,255,255,0.94);
   box-shadow: 0 10px 18px rgba(0,0,0,0.06);
   outline: none;
-  font-size: 14px;            /* ✅ */
+  font-size: 14px;
   font-weight: 900;
   color: #23123a;
   appearance: none;
-  box-sizing: border-box;     /* ✅ */
+  box-sizing: border-box;
 }
 
 .actions{
