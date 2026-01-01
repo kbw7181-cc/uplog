@@ -1,9 +1,8 @@
-// src/components/ShareRebuttalButton.tsx
+// ✅✅✅ 전체복붙: src/components/ShareRebuttalButton.tsx
 'use client';
 
 import { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { shareRebuttalToChat } from '../lib/uplogApi';
 
 type Props = {
   rebuttalId: string;
@@ -14,6 +13,7 @@ export default function ShareRebuttalButton({ rebuttalId, chatId }: Props) {
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // ✅ 임시 비활성: 빌드 막는 미구현 함수 호출 제거
   async function handleShare() {
     try {
       setSending(true);
@@ -28,11 +28,13 @@ export default function ShareRebuttalButton({ rebuttalId, chatId }: Props) {
         return;
       }
 
-      await shareRebuttalToChat(rebuttalId, chatId, user.id);
-      setMsg('채팅방으로 전송되었습니다.');
+      // ✅ TODO: 나중에 채팅 공유 기능 붙일 때 구현
+      // await shareRebuttalToChat(rebuttalId, chatId, user.id);
+
+      setMsg('현재 베타에서는 채팅 공유 기능을 준비 중입니다.');
     } catch (e: any) {
       console.error(e);
-      setMsg(e.message ?? '전송 중 오류가 발생했습니다.');
+      setMsg(e?.message ?? '전송 중 오류가 발생했습니다.');
     } finally {
       setSending(false);
     }
