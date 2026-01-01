@@ -814,7 +814,7 @@ export default function HomePage() {
             <div className="home-header-left">
               <div className="home-logo-row">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/lolo.png" alt="UPLOG 로고" className="home-logo" />
+                <img src="/gogo.png" alt="UPLOG 로고" className="home-logo" />
 
                 <div className="home-logo-text-wrap">
                   <div className="wave-text" aria-label="UPLOG">
@@ -950,7 +950,7 @@ export default function HomePage() {
 
               <div className="coach-mascot-wrap" aria-hidden="true">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className="coach-mascot-img" src="/assets/upzzu1.png" alt="" />
+                <img className="coach-mascot-img" src="/upzzu1.png" alt="" />
                 <span className="coach-sparkle s1">✨</span>
                 <span className="coach-sparkle s2">✨</span>
               </div>

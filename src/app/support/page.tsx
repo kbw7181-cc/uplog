@@ -27,7 +27,7 @@ const PAGE_TITLE = '문의하기';
 const BRAND_TAG = 'UPLOG · SUPPORT';
 
 const LOGO_SRC = '/lolo.png'; // ✅ public/lolo.png 고정
-const MASCOT_SRC = '/assets/upzzu4.png'; // ✅ 문의하기=upzzu4.png (public/assets)
+const MASCOT_SRC = '/upzzu4.png'; // ✅ 문의하기=upzzu4.png (public/assets)
 
 const BENEFIT_TITLE = '이번달 UPLOG 혜택';
 const BENEFIT_DESC = '신규 회원 3개월 구독 무료 (이벤트 조건 적용)';

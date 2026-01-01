@@ -41,6 +41,7 @@ type MonthlyBadgeRow = {
 };
 
 type DailyTask = { id: string; content: string; done: boolean; task_date: string };
+type MonthTaskStats = { total: number; done: number; days: number };
 
 type UpLogRow = {
   id: string;
@@ -234,6 +235,8 @@ function buildAiAdvice(slots: WeatherSlot[], when: Date) {
   return lines.slice(0, 4);
 }
 
+// ✅✅✅ 추가(빨간줄 원인 해결): loadSchedules(uid, monthCursor)
+// (이 함수가 없어서 const sch = await loadSchedules(...) 가 빨간줄 뜹니다)
 async function loadSchedules(uid: string, monthCursor: Date) {
   const from = fmtYMD(startOfMonth(monthCursor));
   const to = fmtYMD(endOfMonth(monthCursor));
@@ -243,27 +246,87 @@ async function loadSchedules(uid: string, monthCursor: Date) {
     .select('id, user_id, title, schedule_date, schedule_time, category, created_at')
     .eq('user_id', uid)
     .gte('schedule_date', from)
-    .lte('schedule_date', to)
-    .order('schedule_date', { ascending: true });
+    .lte('schedule_date', to);
 
   if (error) return { rows: [] as ScheduleRow[], error: error.message };
-  return { rows: (data || []) as ScheduleRow[], error: null as any };
+
+  const rows = ((data || []) as ScheduleRow[]).slice().sort((a, b) => {
+    const ad = String(a.schedule_date || '');
+    const bd = String(b.schedule_date || '');
+    if (ad !== bd) return ad.localeCompare(bd);
+
+    const at = String(a.schedule_time || '');
+    const bt = String(b.schedule_time || '');
+    if (at !== bt) return at.localeCompare(bt);
+
+    const ac = String(a.created_at || '');
+    const bc = String(b.created_at || '');
+    return ac.localeCompare(bc);
+  });
+
+  return { rows, error: null as any };
 }
 
+// ✅✅✅ 교체: loadUpLogs(uid, monthCursor)
+// (기존 loadUpLogs 함수 통째로 아래로 바꿔주세요)
 async function loadUpLogs(uid: string, monthCursor: Date) {
   const from = fmtYMD(startOfMonth(monthCursor));
   const to = fmtYMD(endOfMonth(monthCursor));
 
+  // ✅ 서버 order(log_date) 제거 → 400 방지
   const { data, error } = await supabase
     .from('up_logs')
     .select('id, user_id, log_date, mood, day_goal, week_goal, month_goal, good, bad, tomorrow, created_at')
     .eq('user_id', uid)
     .gte('log_date', from)
-    .lte('log_date', to)
-    .order('log_date', { ascending: true });
+    .lte('log_date', to);
 
   if (error) return { rows: [] as UpLogRow[], error: error.message };
-  return { rows: (data || []) as UpLogRow[], error: null as any };
+
+  // ✅ 프론트에서 안전 정렬 (log_date → created_at fallback)
+  const rows = ((data || []) as UpLogRow[]).slice().sort((a, b) => {
+    const ad = String(a.log_date || '');
+    const bd = String(b.log_date || '');
+    if (ad && bd) return ad.localeCompare(bd);
+    if (ad && !bd) return -1;
+    if (!ad && bd) return 1;
+
+    const ac = String(a.created_at || '');
+    const bc = String(b.created_at || '');
+    return ac.localeCompare(bc);
+  });
+
+  return { rows, error: null as any };
+}
+
+// ✅✅✅ 회고 전용 로드
+async function loadReflection(uid: string, date: string) {
+  const { data, error } = await supabase.from('up_reflections').select('good, bad, tomorrow').eq('user_id', uid).eq('log_date', date).maybeSingle();
+
+  if (error) return { row: null as any, error: error.message };
+  return {
+    row: data
+      ? { good: String((data as any).good ?? ''), bad: String((data as any).bad ?? ''), tomorrow: String((data as any).tomorrow ?? '') }
+      : null,
+    error: null as any,
+  };
+}
+
+// ✅✅✅ 회고 전용 저장(upsert)
+async function saveReflection(uid: string, date: string, payload: { good: string; bad: string; tomorrow: string }) {
+  const { error } = await supabase.from('up_reflections').upsert(
+    {
+      user_id: uid,
+      log_date: date,
+      good: payload.good.trim() || null,
+      bad: payload.bad.trim() || null,
+      tomorrow: payload.tomorrow.trim() || null,
+    },
+    { onConflict: 'user_id,log_date' }
+  );
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, error: null as any };
 }
 
 async function loadDailyTasks(uid: string, date: string) {
@@ -271,12 +334,40 @@ async function loadDailyTasks(uid: string, date: string) {
     .from('daily_tasks')
     .select('id, task_date, content, done')
     .eq('user_id', uid)
-    .eq('task_date', date)
-    .order('id', { ascending: true });
+    .eq('task_date', date);
 
   if (error) return { rows: [] as DailyTask[], error: error.message };
-  const rows = (data || []).map((t: any) => ({ id: t.id, task_date: t.task_date, content: t.content ?? '', done: !!t.done })) as DailyTask[];
+
+  const rows = ((data || []) as any[])
+    .map((t) => ({ id: t.id, task_date: t.task_date, content: t.content ?? '', done: !!t.done }) as DailyTask)
+    .slice()
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+
   return { rows, error: null as any };
+}
+
+// ✅✅✅ 이번달 체크리스트 통계(카운트 배지용)
+async function loadMonthlyTaskStats(uid: string, monthCursor: Date) {
+  const from = fmtYMD(startOfMonth(monthCursor));
+  const to = fmtYMD(endOfMonth(monthCursor));
+
+  const { data, error } = await supabase.from('daily_tasks').select('task_date, done').eq('user_id', uid).gte('task_date', from).lte('task_date', to);
+
+  if (error) return { stats: { total: 0, done: 0, days: 0 } as MonthTaskStats, error: error.message };
+
+  const rows = (data || []) as any[];
+  let total = 0;
+  let done = 0;
+  const daySet = new Set<string>();
+
+  rows.forEach((r) => {
+    const d = String(r.task_date || '').slice(0, 10);
+    if (d) daySet.add(d);
+    total += 1;
+    if (r.done) done += 1;
+  });
+
+  return { stats: { total, done, days: daySet.size }, error: null as any };
 }
 
 /**
@@ -335,12 +426,7 @@ async function safeUpsertUpLog(uid: string, ymd: string, payload: Record<string,
 
     const lower = msg.toLowerCase();
     const looksLikeConflictSpec =
-      lower.includes('on conflict') ||
-      lower.includes('conflict') ||
-      lower.includes('unique') ||
-      lower.includes('exclusion constraint') ||
-      lower.includes('no unique') ||
-      lower.includes('42p10');
+      lower.includes('on conflict') || lower.includes('conflict') || lower.includes('unique') || lower.includes('exclusion constraint') || lower.includes('no unique') || lower.includes('42p10');
 
     if (looksLikeConflictSpec) {
       try {
@@ -394,6 +480,8 @@ export default function MyUpPage() {
   const [todayWeather, setTodayWeather] = useState<WeatherSlot[]>([]);
   const [weatherLabel, setWeatherLabel] = useState('서울');
 
+  const [monthTaskStats, setMonthTaskStats] = useState<MonthTaskStats>({ total: 0, done: 0, days: 0 });
+
   const [err, setErr] = useState<string | null>(null);
 
   // ✅ 입력 상태(스케줄)
@@ -415,8 +503,6 @@ export default function MyUpPage() {
   const [taskInput, setTaskInput] = useState('');
 
   const reflectKey = useMemo(() => (userId ? `uplog_reflect_${userId}_${selectedYMD}` : `uplog_reflect__${selectedYMD}`), [userId, selectedYMD]);
-
-  // ✅ 목표 로컬 fallback 키 (DB 저장 막혀도 “저장된 것처럼” 유지)
   const goalsKey = useMemo(() => (userId ? `uplog_goals_${userId}_${selectedYMD}` : `uplog_goals__${selectedYMD}`), [userId, selectedYMD]);
 
   const gridDays = useMemo(() => {
@@ -455,11 +541,31 @@ export default function MyUpPage() {
 
   const aiAdvice = useMemo(() => buildAiAdvice(todayWeather, new Date()), [todayWeather]);
 
+  // ✅ 이번달 업로그 “기록일수” (카운트 배지)
+  const monthLogDays = useMemo(() => {
+    const set = new Set<string>();
+    (upLogs || []).forEach((u) => {
+      const d = String(u.log_date || '').slice(0, 10);
+      if (!d) return;
+
+      const hasAny =
+        !!(u.mood && String(u.mood).trim()) ||
+        !!(u.day_goal && String(u.day_goal).trim()) ||
+        !!(u.week_goal && String(u.week_goal).trim()) ||
+        !!(u.month_goal && String(u.month_goal).trim()) ||
+        !!(u.good && String(u.good).trim()) ||
+        !!(u.bad && String(u.bad).trim()) ||
+        !!(u.tomorrow && String(u.tomorrow).trim());
+
+      if (hasAny) set.add(d);
+    });
+    return set.size;
+  }, [upLogs]);
+
   // ✅ selectedDate 변경 시: 해당 날짜 up_logs 값으로 입력칸 동기화(+ 회고/목표 로컬 fallback)
   useEffect(() => {
     const row = upByDate[selectedYMD];
 
-    // ✅ 목표: DB row가 비어있으면 로컬 fallback
     const localGoals = lsGetJson<{ day_goal: string; week_goal: string; month_goal: string }>(goalsKey, { day_goal: '', week_goal: '', month_goal: '' });
 
     const nextMood = (row?.mood ?? '🙂') as string;
@@ -471,27 +577,56 @@ export default function MyUpPage() {
     setMood(nextMood || '🙂');
     setDayGoal(nextDay);
     setWeekGoal(nextWeek);
-    setMonthGoal(nextMonth);
 
-    const local = lsGetJson<{ good: string; bad: string; tomorrow: string }>(reflectKey, { good: '', bad: '', tomorrow: '' });
+    // ✅✅✅ ASI 꼬임 방지
+    ;setMonthGoal(nextMonth);
 
-    setGood(String((row as any)?.good ?? local.good ?? ''));
-    setBad(String((row as any)?.bad ?? local.bad ?? ''));
-    setTomorrowPlan(String((row as any)?.tomorrow ?? local.tomorrow ?? ''));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedYMD, upByDate, goalsKey]);
+    // ✅ 회고: DB(up_reflections) 우선, 없으면 로컬 fallback
+    ;(async () => {
+      try {
+        if (!userId) {
+          const local = lsGetJson<{ good: string; bad: string; tomorrow: string }>(reflectKey, { good: '', bad: '', tomorrow: '' });
+          setGood(String(local.good ?? ''));
+          setBad(String(local.bad ?? ''));
+          setTomorrowPlan(String(local.tomorrow ?? ''));
+          return;
+        }
+
+        const r = await loadReflection(userId, selectedYMD);
+        if (r.row) {
+          setGood(r.row.good);
+          setBad(r.row.bad);
+          setTomorrowPlan(r.row.tomorrow);
+          return;
+        }
+
+        const local = lsGetJson<{ good: string; bad: string; tomorrow: string }>(reflectKey, { good: '', bad: '', tomorrow: '' });
+        setGood(String(local.good ?? ''));
+        setBad(String(local.bad ?? ''));
+        setTomorrowPlan(String(local.tomorrow ?? ''));
+      } catch {
+        const local = lsGetJson<{ good: string; bad: string; tomorrow: string }>(reflectKey, { good: '', bad: '', tomorrow: '' });
+        setGood(String(local.good ?? ''));
+        setBad(String(local.bad ?? ''));
+        setTomorrowPlan(String(local.tomorrow ?? ''));
+      }
+    })();
+  }, [selectedYMD, upByDate, goalsKey, userId, reflectKey]);
 
   // ✅ 선택 날짜 변경 시: 그 날짜 tasks 로드
   useEffect(() => {
     if (!userId) return;
     (async () => {
       const t = await loadDailyTasks(userId, selectedYMD);
-      if (t.error) setTasks([]);
-      else setTasks(t.rows);
+      if (t.error) {
+        setTasks([]);
+      } else {
+        setTasks(t.rows);
+      }
     })();
   }, [userId, selectedYMD]);
 
-  // ✅ 최초 로드 + monthCursor 변경 시: schedules/up_logs 로드
+  // ✅ 최초 로드 + monthCursor 변경 시: schedules/up_logs + 월간 체크리스트 통계 로드
   useEffect(() => {
     let alive = true;
 
@@ -579,6 +714,11 @@ export default function MyUpPage() {
       if (!alive) return;
       setUpLogs(up.rows);
 
+      const ms = await loadMonthlyTaskStats(uid, monthCursor);
+      if (!alive) return;
+      if (ms.error) setMonthTaskStats({ total: 0, done: 0, days: 0 });
+      else setMonthTaskStats(ms.stats);
+
       try {
         const live = await fetchLiveWeatherSlots(region.lat, region.lon);
         if (!alive) return;
@@ -612,6 +752,12 @@ export default function MyUpPage() {
     return { work, attend, etc };
   }, [schedules]);
 
+  const todayTaskMini = useMemo(() => {
+    const total = tasks.length;
+    const done = tasks.filter((t) => t.done).length;
+    return { total, done };
+  }, [tasks]);
+
   async function addSchedule() {
     if (!userId) return;
     const title = scheduleTitle.trim();
@@ -638,7 +784,7 @@ export default function MyUpPage() {
       return;
     }
 
-    setSchedules((prev) => [...prev, (data as any)].sort((a, b) => (a.schedule_date > b.schedule_date ? 1 : -1)));
+    setSchedules((prev) => [...prev, data as any].sort((a, b) => (a.schedule_date > b.schedule_date ? 1 : -1)));
     setScheduleTitle('');
     setScheduleTime(nowHHMM());
   }
@@ -676,13 +822,14 @@ export default function MyUpPage() {
       month_goal: monthGoal.trim() || null,
     };
 
-    // ✅ 로컬은 항상 저장 (DB 막혀도 “저장됨” 유지)
+    // ✅ 로컬 저장 (즉시 반영용)
     lsSetJson(goalsKey, {
       day_goal: payload.day_goal ?? '',
       week_goal: payload.week_goal ?? '',
       month_goal: payload.month_goal ?? '',
     });
 
+    // ✅ upLogs 상태만 갱신 (스케줄 건드리지 않음!!)
     setUpLogs((prev) => {
       const next = prev.slice();
       const idx = next.findIndex((x) => (x.log_date || '').slice(0, 10) === selectedYMD);
@@ -691,34 +838,33 @@ export default function MyUpPage() {
       return next;
     });
 
+    // ✅ DB 저장
     const res = await safeUpsertUpLog(userId, selectedYMD, payload);
-    if (!res.ok) setErr(`목표 저장은 로컬로 저장됨 (DB 정책/제약 확인 필요): ${res.reason || 'unknown'}`);
+    if (!res.ok) {
+      setErr(`목표 저장은 로컬로 저장됨 (DB 정책/제약 확인 필요): ${res.reason || 'unknown'}`);
+    }
   }
 
   async function saveReflect() {
     if (!userId) return;
     setErr(null);
 
+    // ✅ 로컬도 항상 저장(혹시 네트워크/정책 실패 대비)
     lsSetJson(reflectKey, { good, bad, tomorrow: tomorrowPlan });
 
-    const payload: any = {
-      good: good.trim() || null,
-      bad: bad.trim() || null,
-      tomorrow: tomorrowPlan.trim() || null,
-    };
-
-    setUpLogs((prev) => {
-      const next = prev.slice();
-      const idx = next.findIndex((x) => (x.log_date || '').slice(0, 10) === selectedYMD);
-      if (idx >= 0) next[idx] = { ...next[idx], ...payload };
-      else next.push({ id: `local_${selectedYMD}`, user_id: userId, log_date: selectedYMD, ...payload } as any);
-      return next;
+    // ✅ DB 저장: up_reflections에 날짜별로 업서트
+    const res = await saveReflection(userId, selectedYMD, {
+      good,
+      bad,
+      tomorrow: tomorrowPlan,
     });
 
-    const res = await safeUpsertUpLog(userId, selectedYMD, payload);
     if (!res.ok) {
-      setErr(`회고 저장은 로컬로 저장됨 (DB 컬럼/정책 확인 필요)`);
+      setErr(`회고 저장 실패 (DB): ${res.error}`);
+      return;
     }
+
+    setErr('회고 저장 완료 ✨');
   }
 
   async function addTask() {
@@ -744,7 +890,13 @@ export default function MyUpPage() {
       return;
     }
 
-    setTasks((prev) => prev.map((t) => (t.id === optimisticId ? ({ id: data!.id, task_date: data!.task_date, content: data!.content ?? '', done: !!data!.done } as any) : t)));
+    setTasks((prev) =>
+      prev.map((t) => (t.id === optimisticId ? ({ id: data!.id, task_date: data!.task_date, content: data!.content ?? '', done: !!data!.done } as any) : t))
+    );
+
+    // ✅✅✅ 정확히 재계산(날짜 days 포함)
+    const ms = await loadMonthlyTaskStats(userId, monthCursor);
+    if (!ms.error) setMonthTaskStats(ms.stats);
   }
 
   async function toggleTask(task: DailyTask) {
@@ -752,17 +904,30 @@ export default function MyUpPage() {
     const nextDone = !task.done;
 
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t)));
+    setMonthTaskStats((prev) => ({ ...prev, done: prev.done + (nextDone ? 1 : -1) }));
 
     const { error } = await supabase.from('daily_tasks').update({ done: nextDone }).eq('id', task.id).eq('user_id', userId);
     if (error) {
       setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: task.done } : t)));
+      setMonthTaskStats((prev) => ({ ...prev, done: prev.done + (task.done ? 1 : -1) })); // 롤백
       setErr(`체크 저장 실패: ${error.message}`);
     }
   }
 
   async function deleteTask(id: string) {
     if (!userId) return;
+
+    const target = tasks.find((t) => t.id === id);
     setTasks((prev) => prev.filter((t) => t.id !== id));
+
+    if (target) {
+      setMonthTaskStats((prev) => ({
+        ...prev,
+        total: Math.max(0, prev.total - 1),
+        done: Math.max(0, prev.done - (target.done ? 1 : 0)),
+      }));
+    }
+
     const { error } = await supabase.from('daily_tasks').delete().eq('id', id).eq('user_id', userId);
     if (error) setErr(`할 일 삭제 실패: ${error.message}`);
   }
@@ -797,7 +962,6 @@ export default function MyUpPage() {
       position: 'relative',
       minHeight: 92,
     },
-    // ✅ 꼬리 제거 (요청사항)
     bubbleSub: { marginTop: 6, fontSize: 12, opacity: 0.78, fontWeight: 900 },
     mascot: {
       width: 110,
@@ -1058,19 +1222,54 @@ export default function MyUpPage() {
               <div style={S.bubble}>
                 <div style={{ fontSize: 14, fontWeight: 950 }}>오늘 가이드</div>
                 <div style={{ marginTop: 6 }}>{coachLine}</div>
-                {/* ✅ 꼬리 제거 */}
                 <div style={S.bubbleSub}>멘탈 한 줄: {mentalLine}</div>
               </div>
 
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="/assets/upzzu6.png"
+                src="/upzzu6.png"
                 onError={(e: any) => {
                   e.currentTarget.src = '/lolo.png';
                 }}
                 alt="upzzu"
                 style={S.mascot}
               />
+            </div>
+          </div>
+        </div>
+
+        {/* ✅✅✅ 이번달 활동 카운트 배지 */}
+        <div style={{ ...S.card, marginTop: 12 }}>
+          <div style={S.pad}>
+            <div style={S.sectionTitle}>이번달 활동 카운트</div>
+            <div style={S.sectionSub}>“기록/체크/스케줄”을 한눈에 배지처럼 보여줍니다.</div>
+
+            <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <span style={S.pill}>
+                🗓️ 기록일수 <b style={{ marginLeft: 6 }}>{monthLogDays}</b>
+              </span>
+              <span style={S.pill}>
+                ✅ 체크리스트 <b style={{ marginLeft: 6 }}>{monthTaskStats.done}</b> / {monthTaskStats.total}
+              </span>
+              <span style={S.pill}>
+                📌 스케줄 <b style={{ marginLeft: 6 }}>{schedules.length}</b>
+              </span>
+              <span style={S.pill}>
+                🟢 업무 <b style={{ marginLeft: 6 }}>{monthLegendCounts.work}</b>
+              </span>
+              <span style={S.pill}>
+                🟠 근태 <b style={{ marginLeft: 6 }}>{monthLegendCounts.attend}</b>
+              </span>
+              <span style={S.pill}>
+                💗 기타 <b style={{ marginLeft: 6 }}>{monthLegendCounts.etc}</b>
+              </span>
+
+              <span style={{ ...S.pill, opacity: 0.88 }}>
+                오늘 체크 <b style={{ marginLeft: 6 }}>{todayTaskMini.done}</b> / {todayTaskMini.total}
+              </span>
+              <span style={{ ...S.pill, opacity: 0.88 }}>
+                오늘 스케줄 <b style={{ marginLeft: 6 }}>{selectedSchedules.length}</b>
+              </span>
             </div>
           </div>
         </div>
@@ -1169,7 +1368,12 @@ export default function MyUpPage() {
               <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>오늘 할 일 입력</div>
 
               <div style={S.taskRow}>
-                <input style={{ ...S.input, flex: '1 1 280px' }} value={taskInput} onChange={(e) => setTaskInput(e.target.value)} placeholder="할 일 한 줄 입력 (예: 해피콜 10명)" />
+                <input
+                  style={{ ...S.input, flex: '1 1 280px' }}
+                  value={taskInput}
+                  onChange={(e) => setTaskInput(e.target.value)}
+                  placeholder="할 일 한 줄 입력 (예: 해피콜 10명)"
+                />
                 <button type="button" style={S.taskBtn} onClick={addTask}>
                   추가
                 </button>
@@ -1185,7 +1389,16 @@ export default function MyUpPage() {
                         <button type="button" style={S.checkBtn} onClick={() => toggleTask(t)} aria-label="체크">
                           {t.done ? '✓' : ''}
                         </button>
-                        <div style={{ fontWeight: 950, textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.55 : 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div
+                          style={{
+                            fontWeight: 950,
+                            textDecoration: t.done ? 'line-through' : 'none',
+                            opacity: t.done ? 0.55 : 1,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
                           {t.content}
                         </div>
                       </div>

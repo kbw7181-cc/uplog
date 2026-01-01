@@ -15,7 +15,7 @@ type Support = {
 type Message = {
   id: string;
   sender: 'user' | 'admin';
-  content: string;
+  message: string;
   created_at: string;
 };
 
@@ -39,7 +39,7 @@ export default function AdminSupportDetailPage() {
     const load = async () => {
       setLoading(true);
 
-      // 1) 문의 본문(티켓)
+      // 1) 문의 정보
       const { data: s } = await supabase
         .from('supports')
         .select('id,user_id,title,status,created_at')
@@ -48,14 +48,14 @@ export default function AdminSupportDetailPage() {
 
       setSupport(s ?? null);
 
-      // 2) 메시지
+      // 2) 메시지 목록 (message 컬럼 기준)
       const { data: m } = await supabase
         .from('support_messages')
-        .select('id,sender,content,created_at')
+        .select('id,sender,message,created_at')
         .eq('support_id', id)
         .order('created_at', { ascending: true });
 
-      setMessages(m ?? []);
+      setMessages((m ?? []) as Message[]);
 
       // 3) 관리자 읽음 처리
       await supabase.from('supports').update({ is_read_admin: true }).eq('id', id);
@@ -67,60 +67,56 @@ export default function AdminSupportDetailPage() {
   }, [id]);
 
   const sendAndClose = async () => {
-    if (!reply.trim()) return;
-    if (sending) return;
+    if (!reply.trim() || sending) return;
 
     try {
       setSending(true);
 
-      // 1) 관리자 답변 메시지 저장
+      const { data: sessionData } = await supabase.auth.getSession();
+      const adminUid = sessionData?.session?.user?.id;
+      if (!adminUid) throw new Error('NO ADMIN SESSION');
+
+      // 1) 관리자 메시지 저장
       const { error: insErr } = await supabase.from('support_messages').insert({
         support_id: id,
+        user_id: adminUid,
         sender: 'admin',
-        content: reply,
+        message: reply,
       });
       if (insErr) throw insErr;
 
-      // 2) 답변과 동시에 티켓 완료 처리(목록에서 빠지게)
+      // 2) 문의 완료 처리
       const { error: upErr } = await supabase
         .from('supports')
         .update({
           status: 'closed',
           is_read_admin: true,
-          last_message_at: new Date().toISOString(),
         })
         .eq('id', id);
 
       if (upErr) throw upErr;
 
-      // 3) 목록으로 복귀
       router.replace('/admin/support');
     } catch (e) {
       console.error(e);
-      alert('답변 저장 중 오류가 발생했어요. 콘솔 확인!');
+      alert('답변 저장 중 오류 발생 (콘솔 확인)');
     } finally {
       setSending(false);
     }
   };
 
   const reopen = async () => {
-    await supabase
-      .from('supports')
-      .update({ status: 'open', last_message_at: new Date().toISOString() })
-      .eq('id', id);
-
+    await supabase.from('supports').update({ status: 'open' }).eq('id', id);
     location.reload();
   };
 
-  if (loading) return null;
-  if (!support) return null;
+  if (loading || !support) return null;
 
   const isClosed = (support.status ?? 'open') === 'closed';
 
   return (
     <div className="min-h-screen bg-[#F7F8FF] px-6 py-6">
       <div className="max-w-4xl mx-auto">
-
         {/* 상단 */}
         <div className="flex items-center justify-between mb-5">
           <button
@@ -168,7 +164,7 @@ export default function AdminSupportDetailPage() {
                   : 'bg-white text-[#111827] border border-[#E6DEFF]'
               }`}
             >
-              <div className="whitespace-pre-wrap">{m.content}</div>
+              <div className="whitespace-pre-wrap">{m.message}</div>
               <div className="mt-1 text-[12px] text-gray-400 text-right">
                 {fmt(m.created_at)}
               </div>
@@ -204,7 +200,6 @@ export default function AdminSupportDetailPage() {
             </button>
           </div>
         </div>
-
       </div>
     </div>
   );

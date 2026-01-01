@@ -1,296 +1,449 @@
+// ✅✅✅ 전체복붙: src/app/admin/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-type ProfileRow = {
-  user_id: string;
-  role: string | null;
-  created_at: string | null;
-  grade?: string | null;
-  tier?: string | null;
+type Stat = {
+  users_total: number;
+  users_new7: number;
+
+  supports_total: number;
+  supports_unread: number;
+  supports_open: number;
+
+  badges_month: number;
+
+  admins_total?: number;
+  rebuttals_total?: number;
+  community_posts_total?: number;
 };
 
-type SupportRow = {
-  id: string;
-  status: string | null;
-  is_read_admin: boolean | null;
-};
+type Tone =
+  | 'violet'
+  | 'violetSoft'
+  | 'pink'
+  | 'pinkSoft'
+  | 'blue'
+  | 'mint'
+  | 'mintSoft'
+  | 'amber'
+  | 'amberSoft';
 
-export default function AdminPage() {
+export default function AdminHomePage() {
   const router = useRouter();
 
-  const [meEmail, setMeEmail] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [stat, setStat] = useState<Stat>({
+    users_total: 0,
+    users_new7: 0,
+    supports_total: 0,
+    supports_unread: 0,
+    supports_open: 0,
+    badges_month: 0,
+    admins_total: 0,
+    rebuttals_total: 0,
+    community_posts_total: 0,
+  });
 
-  const [totalUsers, setTotalUsers] = useState(0);
-  const [new7d, setNew7d] = useState(0);
-  const [adminCount, setAdminCount] = useState(0);
-  const [suspendedCount, setSuspendedCount] = useState(0);
-
-  const [paid1, setPaid1] = useState(0);
-  const [paid2, setPaid2] = useState(0);
-  const [paid3, setPaid3] = useState(0);
-
-  const [unreadSupport, setUnreadSupport] = useState(0);
-  const [activeSupport, setActiveSupport] = useState(0);
-
-  const [monthlyBadgeCount, setMonthlyBadgeCount] = useState(0);
-
-  const now = useMemo(() => new Date(), []);
-  const since7dISO = useMemo(() => {
+  const monthLabel = useMemo(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return d.toISOString();
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    return `${y}년 ${m}월`;
   }, []);
 
   useEffect(() => {
+    let alive = true;
+
     (async () => {
       setLoading(true);
 
-      const auth = await supabase.auth.getUser();
-      setMeEmail(auth.data.user?.email ?? '');
-
-      // 1) 회원 수/신규/role/등급
-      // grade/tier 컬럼은 프로젝트마다 달라서 "있으면 집계, 없으면 0" 처리
-      const prof = await supabase
-        .from('profiles')
-        .select('user_id,role,created_at,grade,tier')
-        .order('created_at', { ascending: false });
-
-      const profRows = ((prof.data as any[]) ?? []) as ProfileRow[];
-
-      setTotalUsers(profRows.length);
-
-      const new7 = profRows.filter((r) => {
-        if (!r.created_at) return false;
-        const t = new Date(r.created_at).toISOString();
-        return t >= since7dISO;
-      }).length;
-      setNew7d(new7);
-
-      const admins = profRows.filter((r) => (r.role ?? '').toLowerCase() === 'admin').length;
-      const suspended = profRows.filter((r) => (r.role ?? '').toLowerCase() === 'suspended').length;
-      setAdminCount(admins);
-      setSuspendedCount(suspended);
-
-      // ✅ 유료 1/2/3단계: grade 또는 tier 중 하나라도 있으면 그걸로 집계
-      const pickLevel = (r: ProfileRow) => {
-        const v = (r.tier ?? r.grade ?? '').toString().trim();
-        // 허용 패턴: "1" "2" "3" "paid1" "유료1" 등 섞여도 최대한 맞춤
-        if (v.includes('3')) return 3;
-        if (v.includes('2')) return 2;
-        if (v.includes('1')) return 1;
-        return 0;
+      const safeCount = async (fn: () => any) => {
+        try {
+          const r: any = await fn();
+          if (r?.error) {
+            console.log('[admin home] count error:', r.error);
+            return 0;
+          }
+          return (r?.count ?? 0) as number;
+        } catch (e) {
+          console.log('[admin home] count exception:', e);
+          return 0;
+        }
       };
 
-      const p1 = profRows.filter((r) => pickLevel(r) === 1).length;
-      const p2 = profRows.filter((r) => pickLevel(r) === 2).length;
-      const p3 = profRows.filter((r) => pickLevel(r) === 3).length;
-      setPaid1(p1);
-      setPaid2(p2);
-      setPaid3(p3);
+      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-      // 2) 문의: 미열람 우선(is_read_admin=false), 진행중(status open/pending)
-      const sup = await supabase.from('supports').select('id,status,is_read_admin');
-      const supRows = ((sup.data as any[]) ?? []) as SupportRow[];
+      const users_total = await safeCount(() =>
+        supabase.from('profiles').select('user_id', { count: 'exact', head: true })
+      );
 
-      const unread = supRows.filter((s) => s.is_read_admin === false).length;
-      const active = supRows.filter((s) => ['open', 'pending'].includes((s.status ?? '').toLowerCase())).length;
-      setUnreadSupport(unread);
-      setActiveSupport(active);
+      const users_new7 = await safeCount(() =>
+        supabase.from('profiles').select('user_id', { count: 'exact', head: true }).gte('created_at', since)
+      );
 
-      // 3) 월간 배지 수
-      const mb = await supabase.from('monthly_badges').select('badge_code', { count: 'exact', head: true });
-      // @ts-ignore
-      setMonthlyBadgeCount(mb.count ?? 0);
+      const admins_total = await safeCount(() =>
+        supabase.from('profiles').select('user_id', { count: 'exact', head: true }).eq('role', 'admin')
+      );
+
+      const supports_total = await safeCount(() =>
+        supabase.from('supports').select('id', { count: 'exact', head: true })
+      );
+
+      const supports_unread = await safeCount(() =>
+        supabase.from('supports').select('id', { count: 'exact', head: true }).eq('is_read_admin', false)
+      );
+
+      const supports_open = await safeCount(() =>
+        supabase.from('supports').select('id', { count: 'exact', head: true }).in('status', ['open', 'pending'])
+      );
+
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = now.getMonth() + 1;
+      const mm = String(m).padStart(2, '0');
+      const month_start = `${y}-${mm}-01`;
+      const month_end = `${y}-${mm}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+
+      const badges_month = await safeCount(() =>
+        supabase
+          .from('monthly_badges')
+          .select('badge_code', { count: 'exact', head: true })
+          .eq('month_start', month_start)
+          .eq('month_end', month_end)
+      );
+
+      const rebuttals_total = await safeCount(() =>
+        supabase.from('rebuttals').select('id', { count: 'exact', head: true })
+      );
+
+      const community_posts_total = await safeCount(() =>
+        supabase.from('community_posts').select('id', { count: 'exact', head: true })
+      );
+
+      if (!alive) return;
+
+      setStat({
+        users_total,
+        users_new7,
+        supports_total,
+        supports_unread,
+        supports_open,
+        badges_month,
+        admins_total,
+        rebuttals_total,
+        community_posts_total,
+      });
 
       setLoading(false);
     })();
-  }, [since7dISO]);
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
-    <div className="page">
-      <div className="bg" />
-      <div className="wrap">
-        <div className="topRow">
+    <div style={page()}>
+      <div style={wrap()}>
+        {/* 헤더 */}
+        <div style={header()}>
           <div>
-            <div className="title">관리자 대시보드</div>
-            <div className="sub">
-              관리자: <b>{meEmail || '(이메일 없음)'}</b>
-            </div>
+            <div style={title()}>관리자 홈</div>
+            <div style={sub()}>신규 이슈 · 핵심만</div>
           </div>
 
-          <div className="nav">
-            <button className="navBtn" onClick={() => router.push('/admin/users')}>회원관리</button>
-            <button className="navBtn" onClick={() => router.push('/admin/support')}>문의관리</button>
-            <button className="navBtn" onClick={() => router.push('/admin/badges')}>배지관리</button>
-            <button className="navBtn ghost" onClick={() => router.push('/home')}>홈으로</button>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button type="button" style={topPill()} onClick={() => router.push('/admin')}>
+              관리자 홈
+            </button>
+            <button type="button" style={topPill()} onClick={() => router.push('/home')}>
+              서비스 홈
+            </button>
+            <button type="button" style={topPill()} onClick={() => window.location.reload()}>
+              새로고침
+            </button>
           </div>
         </div>
 
-        <div className="kpis">
-          <Kpi title="전체 회원" value={totalUsers} desc="profiles 기준 전체 사용자 수" tone="pink" />
-          <Kpi title="신규 가입(7일)" value={new7d} desc="최근 7일 생성된 계정" tone="purple" />
-          <Kpi title="미열람 문의" value={unreadSupport} desc="is_read_admin=false 우선" tone="yellow" onClick={() => router.push('/admin/support?tab=unread')} />
-          <Kpi title="진행중 문의" value={activeSupport} desc="status=open/pending" tone="blue" onClick={() => router.push('/admin/support')} />
-
-          <Kpi title="유료 1단계" value={paid1} desc="grade/tier 기반(없으면 0)" tone="mint" />
-          <Kpi title="유료 2단계" value={paid2} desc="grade/tier 기반(없으면 0)" tone="mint2" />
-          <Kpi title="유료 3단계" value={paid3} desc="grade/tier 기반(없으면 0)" tone="mint3" />
-          <Kpi title="월간 배지" value={monthlyBadgeCount} desc="monthly_badges 레코드 수" tone="violet" />
+        {/* 메뉴 */}
+        <div className="mgrid" style={menuGrid()}>
+          <MenuCard tone="violet" title="회원 관리" desc="전체 / 신규" onClick={() => router.push('/admin/users')} />
+          <MenuCard tone="pink" title="문의 관리" desc="전체 / 미열람 / 진행중" onClick={() => router.push('/admin/support')} />
+          <MenuCard tone="blue" title="배지 관리" desc="월간 수상자 / 내역" onClick={() => router.push('/admin/badges')} />
         </div>
 
-        <div className="bigCards">
-          <BigCard title="회원 리스트" desc="검색/정보/정지/복구/권한(관리자)" onClick={() => router.push('/admin/users')} />
-          <BigCard title="최근 문의" desc="미열람/답변/상태(open→pending→closed)" onClick={() => router.push('/admin/support')} />
-          <BigCard title="배지/활동량" desc="일정·활동·실적 기반 배지 부여/확인" onClick={() => router.push('/admin/badges')} />
+        {/* 핵심 통계만 (대시보드 메뉴/버튼 자체 제거) */}
+        <div className="sgrid" style={grid()}>
+          <StatCard
+            tone="violet"
+            label="👥 전체 회원"
+            value={stat.users_total}
+            subLabel={`최근 7일 신규 ${stat.users_new7}`}
+            glow
+            loading={loading}
+            onClick={() => router.push('/admin/users')}
+          />
+          <StatCard
+            tone="amber"
+            label="✨ 신규 회원 (7일)"
+            value={stat.users_new7}
+            subLabel="최근 7일 기준"
+            loading={loading}
+            glow={stat.users_new7 > 0}
+            onClick={() => router.push('/admin/users')}
+          />
+          <StatCard
+            tone="pink"
+            label="🚨 미열람 문의"
+            value={stat.supports_unread}
+            subLabel="확인 필요"
+            glow={stat.supports_unread > 0}
+            loading={loading}
+            onClick={() => router.push('/admin/support?tab=unread')}
+          />
+          <StatCard
+            tone="mintSoft"
+            label="🧩 진행중 문의"
+            value={stat.supports_open}
+            subLabel="open / pending"
+            glow={stat.supports_open > 0}
+            loading={loading}
+            onClick={() => router.push('/admin/support')}
+          />
+          <StatCard
+            tone="blue"
+            label="👑 이번달 배지"
+            value={stat.badges_month}
+            subLabel={monthLabel}
+            glow={stat.badges_month > 0}
+            loading={loading}
+            onClick={() => router.push('/admin/badges')}
+          />
+          <StatCard
+            tone="violetSoft"
+            label="🛡️ 관리자 수"
+            value={stat.admins_total ?? 0}
+            subLabel="role=admin"
+            loading={loading}
+          />
+          <StatCard
+            tone="mint"
+            label="📚 반론 자산"
+            value={stat.rebuttals_total ?? 0}
+            subLabel="rebuttals"
+            loading={loading}
+            glow={(stat.rebuttals_total ?? 0) > 0}
+            onClick={() => router.push('/rebuttal')}
+          />
+          <StatCard
+            tone="amberSoft"
+            label="📝 커뮤니티 글"
+            value={stat.community_posts_total ?? 0}
+            subLabel="community_posts"
+            loading={loading}
+            glow={(stat.community_posts_total ?? 0) > 0}
+            onClick={() => router.push('/community')}
+          />
         </div>
 
-        {loading ? <div className="loading">불러오는 중…</div> : null}
+        <style jsx>{`
+          @media (max-width: 980px) {
+            .mgrid {
+              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+            .sgrid {
+              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+          }
+          @media (max-width: 520px) {
+            .mgrid {
+              grid-template-columns: 1fr !important;
+            }
+            .sgrid {
+              grid-template-columns: 1fr !important;
+            }
+          }
+        `}</style>
       </div>
-
-      <style jsx>{styles}</style>
     </div>
   );
 }
 
-function Kpi({
-  title,
-  value,
-  desc,
+/* ---------------- components ---------------- */
+
+function MenuCard({
   tone,
+  title,
+  desc,
   onClick,
 }: {
+  tone: Tone;
   title: string;
-  value: number;
   desc: string;
-  tone: 'pink' | 'purple' | 'yellow' | 'blue' | 'mint' | 'mint2' | 'mint3' | 'violet';
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" onClick={onClick} style={menuCard(tone)}>
+      <div style={{ fontWeight: 1000, fontSize: 16, color: '#12071a' }}>{title}</div>
+      <div style={{ marginTop: 6, fontSize: 13, fontWeight: 900, color: 'rgba(18,7,26,0.58)' }}>{desc}</div>
+    </button>
+  );
+}
+
+function StatCard({
+  tone,
+  label,
+  value,
+  subLabel,
+  glow,
+  loading,
+  onClick,
+}: {
+  tone: Tone;
+  label: string;
+  value: number;
+  subLabel?: string;
+  glow?: boolean;
+  loading?: boolean;
   onClick?: () => void;
 }) {
   return (
-    <div className={`kpi ${tone} ${onClick ? 'click' : ''}`} onClick={onClick}>
-      <div className="kTop">
-        <div className="kTitle">{title}</div>
-        <div className="live">LIVE</div>
+    <button type="button" onClick={onClick} style={statCard(tone, glow, !!onClick)}>
+      <div style={{ fontWeight: 950, fontSize: 14, color: '#12071a' }}>{label}</div>
+
+      <div style={{ marginTop: 10, display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ fontWeight: 1000, fontSize: 30, color: '#12071a' }}>{loading ? '…' : value}</div>
+        <div style={{ fontWeight: 900, fontSize: 12, color: 'rgba(18,7,26,0.52)' }}>{subLabel ?? ''}</div>
       </div>
-      <div className="kVal">{value}</div>
-      <div className="kDesc">{desc}</div>
-    </div>
+    </button>
   );
 }
 
-function BigCard({ title, desc, onClick }: { title: string; desc: string; onClick: () => void }) {
-  return (
-    <div className="big" onClick={onClick}>
-      <div>
-        <div className="bTitle">{title}</div>
-        <div className="bDesc">{desc}</div>
-      </div>
-      <button className="open">열기</button>
-    </div>
-  );
+/* ---------------- styles ---------------- */
+
+function page(): React.CSSProperties {
+  return {
+    minHeight: '100vh',
+    padding: 24,
+    background:
+      'radial-gradient(1200px 700px at 20% 0%, rgba(255,160,220,.25), transparent 60%), radial-gradient(1200px 700px at 80% 20%, rgba(170,160,255,.28), transparent 55%), #f7f6ff',
+  };
+}
+function wrap(): React.CSSProperties {
+  return { maxWidth: 1120, margin: '0 auto' };
+}
+function header(): React.CSSProperties {
+  return {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 16,
+    flexWrap: 'wrap',
+  };
+}
+function title(): React.CSSProperties {
+  return { fontSize: 28, fontWeight: 1000, color: '#12071a', letterSpacing: -0.3 };
+}
+function sub(): React.CSSProperties {
+  return { fontSize: 13, fontWeight: 900, color: 'rgba(18,7,26,0.55)', marginTop: 4 };
+}
+function topPill(): React.CSSProperties {
+  return {
+    height: 42,
+    padding: '0 16px',
+    borderRadius: 999,
+    border: '1px solid rgba(18,7,26,0.14)',
+    background: 'rgba(255,255,255,0.86)',
+    boxShadow: '0 14px 30px rgba(40,10,70,0.10)',
+    fontWeight: 1000,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    color: '#12071a',
+  };
 }
 
-const styles = `
-.page{
-  position:relative;
-  min-height:100vh;
-  background:#f7f3ff;
-  color:#111;
-}
-.bg{
-  position:absolute; inset:0;
-  background:
-    radial-gradient(1200px 700px at 12% 15%, rgba(255,160,220,0.35), transparent 60%),
-    radial-gradient(1200px 700px at 80% 20%, rgba(170,160,255,0.35), transparent 60%),
-    linear-gradient(180deg, #fbf7ff 0%, #f6f8ff 55%, #fbf7ff 100%);
-}
-.wrap{ position:relative; max-width:1120px; margin:0 auto; padding:24px 18px 70px; }
-
-.topRow{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-.title{ font-size:30px; font-weight:950; letter-spacing:-0.6px; color:#111; }
-.sub{ margin-top:6px; font-size:14px; font-weight:900; color:#111; opacity:.8; }
-
-.nav{ display:flex; gap:10px; flex-wrap:wrap; }
-.navBtn{
-  height:42px; padding:0 14px; border-radius:999px;
-  border:1px solid rgba(30,20,60,0.18);
-  background: rgba(255,255,255,0.9);
-  color:#111; font-weight:950;
-  box-shadow: 0 10px 26px rgba(40,10,70,0.10);
-  cursor:pointer;
-}
-.navBtn.ghost{ background: rgba(255,255,255,0.7); }
-
-.kpis{
-  margin-top:16px;
-  display:grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap:12px;
-}
-@media (max-width: 980px){ .kpis{ grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-
-.kpi{
-  border-radius: 18px;
-  padding: 14px;
-  border: 1px solid rgba(20,10,40,0.10);
-  box-shadow: 0 16px 34px rgba(40,10,70,0.10);
-  background: rgba(255,255,255,0.80);
-  color:#111;
-  backdrop-filter: blur(8px);
-}
-.kpi.click{ cursor:pointer; }
-.kTop{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
-.kTitle{ font-size:14px; font-weight:950; color:#111; }
-.live{ font-size:12px; font-weight:950; color:#111; opacity:0.55; }
-.kVal{ margin-top:10px; font-size:34px; font-weight:950; color:#111; }
-.kDesc{ margin-top:6px; font-size:12px; font-weight:900; color:#111; opacity:0.65; }
-
-.kpi.pink{ background: linear-gradient(135deg, rgba(255,180,220,0.50), rgba(255,255,255,0.75)); }
-.kpi.purple{ background: linear-gradient(135deg, rgba(205,180,255,0.50), rgba(255,255,255,0.75)); }
-.kpi.yellow{ background: linear-gradient(135deg, rgba(255,230,170,0.55), rgba(255,255,255,0.75)); }
-.kpi.blue{ background: linear-gradient(135deg, rgba(175,220,255,0.55), rgba(255,255,255,0.75)); }
-.kpi.mint{ background: linear-gradient(135deg, rgba(175,255,220,0.45), rgba(255,255,255,0.75)); }
-.kpi.mint2{ background: linear-gradient(135deg, rgba(170,245,255,0.45), rgba(255,255,255,0.75)); }
-.kpi.mint3{ background: linear-gradient(135deg, rgba(190,255,240,0.45), rgba(255,255,255,0.75)); }
-.kpi.violet{ background: linear-gradient(135deg, rgba(220,200,255,0.55), rgba(255,255,255,0.75)); }
-
-.bigCards{
-  margin-top: 16px;
-  display:grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap:12px;
-}
-@media (max-width: 980px){ .bigCards{ grid-template-columns: 1fr; } }
-
-.big{
-  border-radius: 22px;
-  padding: 16px;
-  border: 1px solid rgba(20,10,40,0.10);
-  background: rgba(0,0,0,0.25);
-  box-shadow: 0 18px 40px rgba(40,10,70,0.12);
-  color:#fff;
-  cursor:pointer;
-  display:flex;
-  flex-direction:column;
-  justify-content:space-between;
-  min-height:150px;
-}
-.bTitle{ font-size:18px; font-weight:950; }
-.bDesc{ margin-top:6px; font-size:13px; font-weight:900; opacity:0.9; line-height:1.35; }
-.open{
-  margin-top:12px;
-  height:44px;
-  border-radius: 16px;
-  border:0;
-  font-weight:950;
-  color:#fff;
-  cursor:pointer;
-  background: linear-gradient(90deg, rgba(236,72,153,0.95), rgba(168,85,247,0.95));
-  box-shadow: 0 16px 34px rgba(168,85,247,0.22);
+function menuGrid(): React.CSSProperties {
+  return {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: 14,
+    marginBottom: 16,
+  };
 }
 
-.loading{ margin-top:16px; font-weight:950; color:#111; opacity:0.75; }
-`;
+function menuCard(tone: Tone): React.CSSProperties {
+  const base: React.CSSProperties = {
+    padding: 16,
+    borderRadius: 18,
+    background: 'rgba(255,255,255,0.82)',
+    border: '1px solid rgba(18,7,26,0.12)',
+    boxShadow: '0 18px 40px rgba(40,10,70,0.10)',
+    cursor: 'pointer',
+    userSelect: 'none',
+    position: 'relative',
+    zIndex: 1,
+    textAlign: 'left',
+    width: '100%',
+  };
+
+  const toneMap: Record<Tone, string> = {
+    violet: 'rgba(168,85,247,0.22)',
+    violetSoft: 'rgba(168,85,247,0.12)',
+    pink: 'rgba(236,72,153,0.22)',
+    pinkSoft: 'rgba(236,72,153,0.12)',
+    blue: 'rgba(73,183,255,0.18)',
+    mint: 'rgba(34,197,94,0.16)',
+    mintSoft: 'rgba(34,197,94,0.10)',
+    amber: 'rgba(245,158,11,0.18)',
+    amberSoft: 'rgba(245,158,11,0.10)',
+  };
+
+  base.boxShadow = `0 18px 40px rgba(40,10,70,0.10), 0 0 0 2px ${toneMap[tone]}`;
+  return base;
+}
+
+function grid(): React.CSSProperties {
+  return {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: 14,
+    paddingBottom: 28,
+  };
+}
+
+function statCard(tone: Tone, glow?: boolean, clickable?: boolean): React.CSSProperties {
+  const base: React.CSSProperties = {
+    padding: 18,
+    borderRadius: 20,
+    background: 'rgba(255,255,255,0.86)',
+    border: '1px solid rgba(18,7,26,0.12)',
+    boxShadow: '0 18px 42px rgba(40,10,70,0.10)',
+    textAlign: 'left',
+    width: '100%',
+    cursor: clickable ? 'pointer' : 'default',
+  };
+
+  const glowMap: Record<Tone, { ring: string; neon: string }> = {
+    violet: { ring: 'rgba(168,85,247,0.24)', neon: 'rgba(168,85,247,0.55)' },
+    violetSoft: { ring: 'rgba(168,85,247,0.14)', neon: 'rgba(168,85,247,0.25)' },
+    pink: { ring: 'rgba(236,72,153,0.26)', neon: 'rgba(236,72,153,0.60)' },
+    pinkSoft: { ring: 'rgba(236,72,153,0.16)', neon: 'rgba(236,72,153,0.28)' },
+    blue: { ring: 'rgba(73,183,255,0.22)', neon: 'rgba(73,183,255,0.55)' },
+    mint: { ring: 'rgba(34,197,94,0.18)', neon: 'rgba(34,197,94,0.45)' },
+    mintSoft: { ring: 'rgba(34,197,94,0.12)', neon: 'rgba(34,197,94,0.26)' },
+    amber: { ring: 'rgba(245,158,11,0.16)', neon: 'rgba(245,158,11,0.45)' },
+    amberSoft: { ring: 'rgba(245,158,11,0.10)', neon: 'rgba(245,158,11,0.22)' },
+  };
+
+  const t = glowMap[tone];
+
+  base.boxShadow = glow
+    ? `0 18px 42px rgba(40,10,70,0.10), 0 0 0 2px ${t.ring}, 0 0 22px ${t.neon}`
+    : `0 18px 42px rgba(40,10,70,0.10), 0 0 0 2px ${t.ring}`;
+
+  return base;
+}

@@ -187,7 +187,7 @@ export default function CommunityPage() {
   const [cat, setCat] = useState<'전체' | CommunityCategory>('전체');
 
   // ✅✅✅ 커뮤니티 마스코트(고정) + 캐시 방지
-  const UPZZU_COMMUNITY_SRC = '/assets/upzzu3.png';
+  const UPZZU_COMMUNITY_SRC = '/upzzu3.png';
   const mascotSrc = `${UPZZU_COMMUNITY_SRC}?v=${Date.now()}`;
 
   const [thumbMap, setThumbMap] = useState<Record<string, string>>({});

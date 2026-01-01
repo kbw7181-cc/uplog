@@ -145,7 +145,7 @@ export default function CommunityWritePage() {
   const [existingImageUrl, setExistingImageUrl] = useState<string>('');
 
   // ✅ 말풍선 안 up5
-  const UPZZU_WRITE_SRC = '/assets/up5.png';
+  const UPZZU_WRITE_SRC = '/up5.png';
 
   const SLIDES = useMemo(() => {
     const base = [

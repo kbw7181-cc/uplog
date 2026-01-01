@@ -1,3 +1,4 @@
+// ✅✅✅ 전체복붙: src/app/admin/_componts/AdminGuard.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -33,33 +34,26 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
         return;
       }
 
+      // ✅ profiles RLS 무한재귀 터질 때를 대비: role 조회는 "단일 select"로 유지
       setState({ status: 'checking', msg: '관리자 권한 확인 중…' });
 
-      const r = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('user_id', uid)
-        .maybeSingle();
-
+      const r = await supabase.from('profiles').select('role').eq('user_id', uid).maybeSingle();
       if (!alive) return;
 
       if (r.error) {
-        // ✅ 여기서 절대 router.replace 하지 않음 (원인 화면 고정)
         setState({
           status: 'blocked',
-          msg: '관리자 확인 실패 (RLS/권한/컬럼 문제 가능)',
+          msg: '관리자 확인 실패 (profiles RLS/정책 무한재귀 가능)',
           detail: r.error.message,
         });
-        console.log('[AdminGuard] profile role fetch error:', r.error);
         return;
       }
 
-      const role = (r.data?.role ?? 'user').toLowerCase();
-
+      const role = String(r.data?.role ?? 'user').toLowerCase();
       if (role !== 'admin') {
         setState({
           status: 'blocked',
-          msg: '관리자만 접근 가능합니다. (현재 role이 admin이 아님)',
+          msg: '관리자만 접근 가능합니다.',
           detail: `현재 role: ${role}`,
         });
         return;
@@ -96,9 +90,7 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
       >
         <div style={{ fontSize: 18, fontWeight: 950 }}>{title}</div>
 
-        <div style={{ marginTop: 10, fontSize: 14, opacity: 0.9 }}>
-          {state.msg}
-        </div>
+        <div style={{ marginTop: 10, fontSize: 14, opacity: 0.9 }}>{state.msg}</div>
 
         {'detail' in state && state.detail ? (
           <div
@@ -120,28 +112,15 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
         ) : null}
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
-          <button
-            onClick={() => router.push('/login')}
-            style={btn('pink')}
-          >
+          <button onClick={() => router.push('/login')} style={btn('pink')}>
             로그인으로
           </button>
-          <button
-            onClick={() => router.push('/home')}
-            style={btn('sky')}
-          >
+          <button onClick={() => router.push('/home')} style={btn('sky')}>
             홈으로
           </button>
-          <button
-            onClick={() => window.location.reload()}
-            style={btn('white')}
-          >
+          <button onClick={() => window.location.reload()} style={btn('white')}>
             새로고침
           </button>
-        </div>
-
-        <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
-          ✅ 이제 안 튕기고 “왜 막혔는지(detail)”가 그대로 남습니다.
         </div>
       </div>
     </div>
@@ -158,6 +137,7 @@ function btn(kind: 'pink' | 'sky' | 'white'): React.CSSProperties {
     boxShadow: '0 12px 24px rgba(40,10,70,0.08)',
     color: '#230b35',
     background: 'rgba(255,255,255,0.9)',
+    cursor: 'pointer',
   };
 
   if (kind === 'pink') {

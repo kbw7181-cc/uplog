@@ -1366,7 +1366,7 @@ export default function CustomersPage() {
 
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="/assets/upzzu9.png"
+                src="/upzzu9.png"
                 onError={(e: any) => {
                   e.currentTarget.src = '/lolo.png';
                 }}

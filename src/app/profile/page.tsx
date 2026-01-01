@@ -1,366 +1,272 @@
-// ✅✅✅ 전체복붙: src/app/settings/page.tsx
+// ✅✅✅ 전체복붙: src/app/profile/page.tsx
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import ClientShell from '../components/ClientShell';
 import { supabase } from '@/lib/supabaseClient';
-
-// ✅ 프로필 이미지 src 안전 처리(스토리지 경로면 public url로 변환) + 캐시버스트
-function getAvatarSrc(avatarUrl?: string | null) {
-  if (!avatarUrl) return '';
-  const v = avatarUrl.trim();
-  if (!v) return '';
-  if (v.startsWith('http://') || v.startsWith('https://')) return `${v}${v.includes('?') ? '&' : '?'}v=${Date.now()}`;
-  try {
-    const { data } = supabase.storage.from('avatars').getPublicUrl(v);
-    const u = data?.publicUrl || '';
-    return u ? `${u}${u.includes('?') ? '&' : '?'}v=${Date.now()}` : '';
-  } catch {
-    return '';
-  }
-}
-
-type Me = {
-  user_id: string;
-  email: string | null;
-};
+import { getAvatarSrc } from '@/lib/getAvatarSrc';
 
 type ProfileRow = {
   user_id: string;
-  nickname: string | null;
   name: string | null;
-  phone: string | null;
+  nickname: string | null;
   industry: string | null;
+  grade: string | null;
+  career: string | null;
   company: string | null;
   department: string | null;
   team: string | null;
-  career: string | null;
   avatar_url: string | null;
-
-  address_text: string | null;
-  lat: number | null;
-  lon: number | null;
+  main_goal: string | null;
 };
 
-type KpisRow = {
-  month_start: string;
-  month_end: string;
-
-  contract_count_month?: number | null;
-  contract_count_total?: number | null;
-
-  cheer_count_month?: number | null;
-  cheer_count_total?: number | null;
-
-  like_received_month?: number | null;
-  like_received_total?: number | null;
-
-  posts_month?: number | null;
-  posts_total?: number | null;
+type MonthlyBadgeRow = {
+  badge_code: string | null;
+  badge_name: string | null;
+  winner_user_id: string | null;
+  month_start: string | null; // YYYY-MM-DD
+  month_end: string | null; // YYYY-MM-DD
 };
 
-// ✅ 주소에 포함된 키워드로 자동 매핑(표시는 안 함)
-const REGION_MAP: { keys: string[]; label: string; lat: number; lon: number }[] = [
-  { keys: ['서울', '서울특별시'], label: '서울', lat: 37.5665, lon: 126.978 },
-  { keys: ['부산', '부산광역시'], label: '부산', lat: 35.1796, lon: 129.0756 },
-  { keys: ['대구', '대구광역시'], label: '대구', lat: 35.8714, lon: 128.6014 },
-  { keys: ['인천', '인천광역시'], label: '인천', lat: 37.4563, lon: 126.7052 },
-  { keys: ['광주', '광주광역시'], label: '광주', lat: 35.1595, lon: 126.8526 },
-  { keys: ['대전', '대전광역시'], label: '대전', lat: 36.3504, lon: 127.3845 },
-  { keys: ['울산', '울산광역시'], label: '울산', lat: 35.5384, lon: 129.3114 },
-  { keys: ['세종', '세종특별자치시'], label: '세종', lat: 36.4801, lon: 127.289 },
-  { keys: ['경기', '경기도'], label: '경기도', lat: 37.4138, lon: 127.5183 },
-  { keys: ['강원', '강원도', '강원특별자치도'], label: '강원', lat: 37.8228, lon: 128.1555 },
-  { keys: ['충북', '충청북도'], label: '충북', lat: 36.6357, lon: 127.4917 },
-  { keys: ['충남', '충청남도'], label: '충남', lat: 36.6588, lon: 126.6728 },
-  { keys: ['전북', '전라북도', '전북특별자치도'], label: '전북', lat: 35.7175, lon: 127.153 },
-  { keys: ['전남', '전라남도'], label: '전남', lat: 34.8161, lon: 126.4629 },
-  { keys: ['경북', '경상북도'], label: '경북', lat: 36.4919, lon: 128.8889 },
-  { keys: ['경남', '경상남도'], label: '경남', lat: 35.4606, lon: 128.2132 },
-  { keys: ['제주', '제주도', '제주특별자치도'], label: '제주', lat: 33.4996, lon: 126.5312 },
-];
-
-function autoMapLatLon(addressText: string) {
-  const t = (addressText || '').replace(/\s+/g, ' ').trim();
-  if (!t) return { lat: null as number | null, lon: null as number | null, region: '' };
-
-  const hit = REGION_MAP.find((r) => r.keys.some((k) => t.includes(k)));
-  if (!hit) return { lat: null, lon: null, region: '' };
-  return { lat: hit.lat, lon: hit.lon, region: hit.label };
+function yyyymmFromDateStr(d: string | null | undefined) {
+  const s = String(d || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  return s.slice(0, 7); // YYYY-MM
 }
 
-function pickName(p?: { nickname?: string | null; name?: string | null; email?: string | null }) {
-  if (!p) return '대표님';
-  return p.nickname || p.name || (p.email ? p.email.split('@')[0] : '대표님');
+function badgeIcon(code: string) {
+  const c = (code || '').toLowerCase();
+  if (c.includes('top')) return '👑';
+  if (c.includes('streak')) return '🔥';
+  if (c.includes('likes')) return '💖';
+  if (c.includes('mvp') && c.includes('amount')) return '💎';
+  if (c.includes('mvp')) return '🏆';
+  if (c.includes('attendance')) return '📅';
+  if (c.includes('posts')) return '📝';
+  return '✨';
 }
 
-async function safeCount(fn: () => Promise<number>) {
-  try {
-    return await fn();
-  } catch {
-    return 0;
-  }
+function badgeDesc(code: string, name: string) {
+  const c = (code || '').toLowerCase();
+  // ✅ 배지 설명(프로필에서 항상 보여주기)
+  if (c.includes('monthly_top')) return '이번 달 전체 1등(대체/종합) 기준으로 수상';
+  if (c.includes('streak')) return '연속 기록/활동(스트릭) 기반 수상';
+  if (c.includes('most_likes')) return '받은 좋아요 수가 가장 많아 수상';
+  if (c.includes('most_posts')) return '커뮤니티 게시글 수가 가장 많아 수상';
+  if (c.includes('mvp_count')) return '실적 “건수” 기준 MVP 수상';
+  if (c.includes('mvp_amount')) return '실적 “금액” 기준 MVP 수상';
+  if (c.includes('attendance')) return '출석/활동일수 기준 MVP 수상';
+  // name 기반 fallback
+  if ((name || '').includes('출석')) return '출석/활동일수 기준 MVP 수상';
+  if ((name || '').includes('좋아요')) return '받은 좋아요 수가 가장 많아 수상';
+  if ((name || '').includes('게시')) return '게시글 수가 가장 많아 수상';
+  if ((name || '').includes('금액')) return '실적 “금액” 기준 MVP 수상';
+  if ((name || '').includes('건수')) return '실적 “건수” 기준 MVP 수상';
+  return '이번 달 활동/성과 기준으로 수상';
 }
 
-export default function SettingsPage() {
+export default function ProfilePage() {
   const router = useRouter();
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const [booting, setBooting] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<string>('');
-  const toastTimer = useRef<any>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
-  const [me, setMe] = useState<Me | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
 
-  // 입력 상태
+  // 입력값(폼)
   const [nickname, setNickname] = useState('');
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
   const [industry, setIndustry] = useState('');
+  const [grade, setGrade] = useState('');
+  const [career, setCareer] = useState('');
   const [company, setCompany] = useState('');
   const [department, setDepartment] = useState('');
   const [team, setTeam] = useState('');
+  const [mainGoal, setMainGoal] = useState(''); // ✅ 최종목표 입력란
 
-  // 경력: 드롭다운 + 기타 직접입력
-  const [careerSel, setCareerSel] = useState('');
-  const [careerCustom, setCareerCustom] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
-  // 주소 입력만 → lat/lon 자동(표시 X)
-  const [addressText, setAddressText] = useState('');
-  const mapped = useMemo(() => autoMapLatLon(addressText), [addressText]);
+  // 배지(누적)
+  const [badgeRows, setBadgeRows] = useState<MonthlyBadgeRow[]>([]);
+  const [err, setErr] = useState<string | null>(null);
 
-  // 이미지 업로드
-  const [avatarPreview, setAvatarPreview] = useState<string>('');
-  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarSrc = useMemo(() => {
+    // ✅ 기본 이미지는 public/upzzu1.png (문구/경고는 제거)
+    const raw = avatarUrl || '';
+    const src = raw ? getAvatarSrc(raw) : '/upzzu1.png';
+    // 캐시 버스팅(설정 직후 즉시 반영)
+    return `${src}${src.includes('?') ? '&' : '?'}v=${Date.now()}`;
+  }, [avatarUrl]);
 
-  // 활동량
-  const [counts, setCounts] = useState({
-    likes: 0, // ✅ 받은 좋아요(총)
-    posts: 0, // ✅ 작성글(총)
-    feedbacks: 0,
-    cheers: 0, // ✅ 받은 응원(총)
-    newCount: 0,
-    contractCount: 0, // ✅ 계약(총) = schedules 고객관리/계약
-  });
+  const badgeAgg = useMemo(() => {
+    const map = new Map<string, { code: string; name: string; count: number; months: string[] }>();
+    (badgeRows || []).forEach((r) => {
+      const code = String(r.badge_code || '').trim();
+      const name = String(r.badge_name || r.badge_code || '').trim();
+      if (!code && !name) return;
 
-  // 배지
-  const [badges, setBadges] = useState<{ name: string; emoji: string }[]>([]);
+      const key = `${code}|${name}`;
+      const month = yyyymmFromDateStr(r.month_start);
+      if (!map.has(key)) map.set(key, { code, name, count: 0, months: [] });
 
-  function showToast(msg: string) {
-    setToast(msg);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(''), 2400);
-  }
+      const it = map.get(key)!;
+      it.count += 1;
+      if (month) it.months.push(month);
+    });
 
-  // ✅ 하드 로그아웃(대표님 기존 로직 유지)
-  const hardLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.error('signOut error', e);
-    }
+    const list = Array.from(map.values()).map((x) => {
+      const uniqMonths = Array.from(new Set(x.months)).sort().reverse();
+      return { ...x, months: uniqMonths };
+    });
 
-    try {
-      if (typeof window !== 'undefined') {
-        const wipe = (s: Storage) => {
-          for (let i = s.length - 1; i >= 0; i--) {
-            const k = s.key(i);
-            if (!k) continue;
-            if (k.startsWith('sb-') || k.includes('supabase')) s.removeItem(k);
-          }
-        };
-        wipe(localStorage);
-        wipe(sessionStorage);
-      }
-    } catch (e) {
-      console.error('wipe token error', e);
-    }
+    // 많이 받은 순 → 최신 월 우선
+    list.sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      const am = a.months[0] || '';
+      const bm = b.months[0] || '';
+      return bm.localeCompare(am);
+    });
 
-    window.location.href = '/login';
-  };
+    const totalEarned = (badgeRows || []).length;
+    const uniqueBadges = list.length;
 
-  const fetchKpis = async (uid: string): Promise<KpisRow | null> => {
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    const p_today = `${yyyy}-${mm}-${dd}`;
-
-    const tries: any[] = [
-      { p_uid: uid, p_today },
-      { uid, today: p_today },
-    ];
-
-    for (const args of tries) {
-      const { data, error } = await supabase.rpc('get_user_kpis', args);
-      if (!error && data) {
-        const row = Array.isArray(data) ? data[0] : data;
-        return (row as any) as KpisRow;
-      }
-    }
-    return null;
-  };
+    return { list, totalEarned, uniqueBadges };
+  }, [badgeRows]);
 
   useEffect(() => {
-    const init = async () => {
-      const { data, error } = await supabase.auth.getUser();
-      const user = data?.user;
+    let alive = true;
 
-      if (error || !user) {
+    (async () => {
+      setLoading(true);
+      setErr(null);
+
+      const { data: u, error: uErr } = await supabase.auth.getUser();
+      if (!alive) return;
+
+      if (uErr || !u?.user) {
         router.replace('/login');
         return;
       }
 
-      setMe({ user_id: user.id, email: user.email ?? null });
+      const uid = u.user.id;
+      setUserId(uid);
 
-      // ✅ profile 로드
-      const { data: p } = await supabase
+      // 프로필 로드
+      const { data: p, error: pErr } = await supabase
         .from('profiles')
-        .select(
-          'user_id, nickname, name, phone, industry, company, department, team, career, avatar_url, address_text, lat, lon'
-        )
-        .eq('user_id', user.id)
+        .select('user_id, name, nickname, industry, grade, career, company, department, team, avatar_url, main_goal')
+        .eq('user_id', uid)
         .maybeSingle();
 
-      const pr = (p as any) as ProfileRow | null;
+      if (!alive) return;
 
-      const next: ProfileRow = {
-        user_id: user.id,
-        nickname: pr?.nickname ?? null,
-        name: pr?.name ?? null,
-        phone: pr?.phone ?? null,
-        industry: pr?.industry ?? null,
-        company: pr?.company ?? null,
-        department: pr?.department ?? null,
-        team: pr?.team ?? null,
-        career: pr?.career ?? null,
-        avatar_url: pr?.avatar_url ?? null,
-        address_text: pr?.address_text ?? null,
-        lat: pr?.lat ?? null,
-        lon: pr?.lon ?? null,
-      };
-
-      setProfile(next);
-
-      // 입력값 초기화
-      setNickname(next.nickname ?? '');
-      setName(next.name ?? '');
-      setPhone(next.phone ?? '');
-      setIndustry(next.industry ?? '');
-      setCompany(next.company ?? '');
-      setDepartment(next.department ?? '');
-      setTeam(next.team ?? '');
-
-      // 경력 분리
-      const cv = (next.career ?? '').trim();
-      const preset = ['0-1', '2', '3', '4-5', '6-9', '10+', '5+', '1+', '신입', '기타'];
-      if (!cv) {
-        setCareerSel('');
-        setCareerCustom('');
-      } else if (preset.includes(cv)) {
-        setCareerSel(cv);
-        setCareerCustom('');
-      } else {
-        setCareerSel('기타');
-        setCareerCustom(cv);
+      if (pErr) {
+        setErr(`프로필 로드 실패: ${pErr.message}`);
       }
 
-      setAddressText(next.address_text ?? '');
-
-      const avatarSrc = getAvatarSrc(next.avatar_url);
-      setAvatarPreview(avatarSrc);
-
-      const uid = user.id;
-
-      // ✅ KPI 함수 기준으로 "계약/받은좋아요/받은응원/작성글" 통일
-      const kpis = await fetchKpis(uid);
-
-      // ✅ 나머지 지표는 기존 안전집계 유지(없으면 0)
-      const feedbacks = await safeCount(async () => {
-        const { count } = await supabase
-          .from('objection_feedbacks')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', uid);
-        return count ?? 0;
-      });
-
-      const newCount = await safeCount(async () => {
-        const { count } = await supabase.from('customers').select('id', { count: 'exact', head: true }).eq('user_id', uid);
-        return count ?? 0;
-      });
-
-      setCounts({
-        likes: Number(kpis?.like_received_total ?? 0),
-        posts: Number(kpis?.posts_total ?? 0),
-        feedbacks,
-        cheers: Number(kpis?.cheer_count_total ?? 0),
-        newCount,
-        contractCount: Number(kpis?.contract_count_total ?? 0),
-      });
-
-      // ✅ 배지
-      const badgeRows: { name: string; code: string }[] = [];
-
-      await safeCount(async () => {
-        const { data } = await supabase
-          .from('monthly_badges')
-          .select('badge_name, badge_code')
-          .eq('winner_user_id', uid)
-          .order('month_start', { ascending: false });
-        (data || []).forEach((r: any) => badgeRows.push({ name: r.badge_name || '월간 배지', code: r.badge_code || '' }));
-        return (data || []).length;
-      });
-
-      await safeCount(async () => {
-        const { data } = await supabase
-          .from('weekly_badges')
-          .select('badge_name, badge_code')
-          .eq('winner_user_id', uid)
-          .order('week_start', { ascending: false })
-          .limit(6);
-        (data || []).forEach((r: any) => badgeRows.push({ name: r.badge_name || '주간 배지', code: r.badge_code || '' }));
-        return (data || []).length;
-      });
-
-      const emojiFromCode = (code: string) => {
-        const c = (code || '').toLowerCase();
-        if (c.includes('top') || c.includes('king') || c.includes('mvp')) return '👑';
-        if (c.includes('attendance') || c.includes('streak')) return '🔥';
-        if (c.includes('likes')) return '❤️';
-        if (c.includes('posts')) return '📝';
-        if (c.includes('amount')) return '💎';
-        if (c.includes('count')) return '📈';
-        return '✨';
+      const row: ProfileRow = {
+        user_id: uid,
+        name: (p as any)?.name ?? null,
+        nickname: (p as any)?.nickname ?? null,
+        industry: (p as any)?.industry ?? null,
+        grade: (p as any)?.grade ?? null,
+        career: (p as any)?.career ?? null,
+        company: (p as any)?.company ?? null,
+        department: (p as any)?.department ?? null,
+        team: (p as any)?.team ?? null,
+        avatar_url: (p as any)?.avatar_url ?? null,
+        main_goal: (p as any)?.main_goal ?? null,
       };
 
-      const uniq = new Map<string, { name: string; emoji: string }>();
-      badgeRows.forEach((b) => {
-        const key = `${b.name}`;
-        if (!uniq.has(key)) uniq.set(key, { name: b.name, emoji: emojiFromCode(b.code) });
-      });
-      setBadges(Array.from(uniq.values()).slice(0, 12));
+      setProfile(row);
 
-      setBooting(false);
+      setNickname(String(row.nickname ?? ''));
+      setName(String(row.name ?? ''));
+      setIndustry(String(row.industry ?? ''));
+      setGrade(String(row.grade ?? ''));
+      setCareer(String(row.career ?? ''));
+      setCompany(String(row.company ?? ''));
+      setDepartment(String(row.department ?? ''));
+      setTeam(String(row.team ?? ''));
+      setMainGoal(String(row.main_goal ?? ''));
+
+      setAvatarUrl(row.avatar_url ?? null);
+
+      // ✅ 배지 누적 로드(월간 배지 히스토리)
+      try {
+        const { data: mb, error: mbErr } = await supabase
+          .from('monthly_badges')
+          .select('badge_code, badge_name, winner_user_id, month_start, month_end')
+          .eq('winner_user_id', uid)
+          .order('month_start', { ascending: false });
+
+        if (!alive) return;
+        if (mbErr) {
+          setBadgeRows([]);
+        } else {
+          setBadgeRows(((mb || []) as MonthlyBadgeRow[]) || []);
+        }
+      } catch {
+        if (!alive) return;
+        setBadgeRows([]);
+      }
+
+      setLoading(false);
+    })();
+
+    return () => {
+      alive = false;
     };
-
-    init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
-  const careerFinal = useMemo(() => {
-    if (careerSel === '기타') return careerCustom.trim();
-    return careerSel.trim();
-  }, [careerSel, careerCustom]);
+  async function onSaveProfile(e: FormEvent) {
+    e.preventDefault();
+    if (!userId) return;
 
-  const onPickAvatar = async (file?: File | null) => {
-    if (!file || !me?.user_id) return;
+    setSaving(true);
+    setErr(null);
+
+    const payload: any = {
+      user_id: userId,
+      nickname: nickname.trim() || null,
+      name: name.trim() || null,
+      industry: industry.trim() || null,
+      grade: grade.trim() || null,
+      career: career.trim() || null,
+      company: company.trim() || null,
+      department: department.trim() || null,
+      team: team.trim() || null,
+      main_goal: mainGoal.trim() || null, // ✅ 최종목표 저장
+      avatar_url: avatarUrl || null,
+    };
+
+    const { error } = await supabase.from('profiles').upsert(payload, { onConflict: 'user_id' });
+
+    if (error) {
+      setErr(`저장 실패: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    setProfile((prev) => (prev ? ({ ...prev, ...payload } as any) : (payload as any)));
+    setSaving(false);
+    setErr('저장 완료 ✨');
+  }
+
+  async function onPickAvatar(file: File) {
+    if (!userId) return;
+
+    setAvatarUploading(true);
+    setErr(null);
 
     try {
-      setAvatarUploading(true);
-
       const ext = (file.name.split('.').pop() || 'png').toLowerCase();
-      const path = `avatars/${me.user_id}/${Date.now()}.${ext}`;
+      const safeExt = ['png', 'jpg', 'jpeg', 'webp'].includes(ext) ? ext : 'png';
+      const path = `avatars/${userId}/${Date.now()}.${safeExt}`;
 
       const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, {
         cacheControl: '3600',
@@ -369,567 +275,379 @@ export default function SettingsPage() {
       });
 
       if (upErr) {
-        console.error(upErr);
-        showToast('❌ 이미지 업로드 실패');
+        setErr(`이미지 업로드 실패: ${upErr.message}`);
+        setAvatarUploading(false);
         return;
       }
 
-      const { error: pErr } = await supabase.from('profiles').update({ avatar_url: path }).eq('user_id', me.user_id);
+      // ✅ DB에는 “경로(avatars/...)” 저장, 화면은 getAvatarSrc로 Public URL 변환
+      setAvatarUrl(path);
+
+      // 저장까지 바로 반영
+      const { error: pErr } = await supabase.from('profiles').upsert(
+        {
+          user_id: userId,
+          avatar_url: path,
+        },
+        { onConflict: 'user_id' }
+      );
+
       if (pErr) {
-        console.error(pErr);
-        showToast('❌ 프로필 저장 실패');
+        setErr(`프로필 반영 실패: ${pErr.message}`);
+        setAvatarUploading(false);
         return;
       }
 
-      const src = getAvatarSrc(path);
-      setAvatarPreview(src);
-      setProfile((prev) => (prev ? { ...prev, avatar_url: path } : prev));
-      showToast('✅ 이미지 변경 완료');
+      setErr('프로필 이미지 변경 완료 ✨');
+    } catch (e: any) {
+      setErr(`이미지 처리 실패: ${String(e?.message || e)}`);
     } finally {
       setAvatarUploading(false);
     }
+  }
+
+  const S: any = {
+    page: { maxWidth: 980, margin: '0 auto', padding: '18px 14px 90px' },
+    top: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
+    title: { fontSize: 26, fontWeight: 950, letterSpacing: -0.6, color: '#2a0f3a' },
+
+    card: {
+      borderRadius: 22,
+      background: 'rgba(255,255,255,0.92)',
+      border: '1px solid rgba(60,30,90,0.12)',
+      boxShadow: '0 18px 40px rgba(40,10,70,0.10)',
+      overflow: 'hidden',
+    },
+    headerCard: {
+      borderRadius: 26,
+      border: '2px solid rgba(255,80,170,0.28)',
+      background:
+        'radial-gradient(900px 420px at 18% 18%, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0) 58%), linear-gradient(135deg, rgba(255,219,239,0.85), rgba(226,214,255,0.85))',
+      boxShadow: '0 18px 46px rgba(255,80,170,0.12), 0 22px 48px rgba(40,10,70,0.10)',
+      overflow: 'hidden',
+    },
+    pad: { padding: 14 },
+
+    sectionTitle: { fontSize: 16, fontWeight: 950, color: '#2a0f3a', letterSpacing: -0.3 },
+    sectionSub: { marginTop: 4, fontSize: 12, fontWeight: 900, opacity: 0.72, color: '#2a0f3a' },
+
+    row: { display: 'flex', gap: 14, alignItems: 'center' },
+
+    // ✅ 입력란 가로 너무 긴 문제 해결: 중앙 정렬 + maxWidth + 2열 그리드
+    formWrap: { marginTop: 12, maxWidth: 740, marginLeft: 'auto', marginRight: 'auto' },
+    grid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
+    gridFull: { gridColumn: '1 / -1' },
+
+    label: { fontSize: 12, fontWeight: 950, color: '#2a0f3a', opacity: 0.82, marginBottom: 6 },
+    input: {
+      width: '100%',
+      padding: '11px 12px',
+      borderRadius: 14,
+      border: '1px solid rgba(60,30,90,0.12)',
+      background: 'rgba(255,255,255,0.92)',
+      fontWeight: 900,
+      fontSize: 14,
+      color: '#2a0f3a',
+      outline: 'none',
+      boxSizing: 'border-box' as const,
+    },
+    saveBtn: {
+      padding: '11px 14px',
+      borderRadius: 14,
+      border: '1px solid rgba(255,60,130,0.25)',
+      background: 'linear-gradient(180deg, rgba(255,120,178,0.95), rgba(255,78,147,0.95))',
+      color: '#fff',
+      fontWeight: 950,
+      fontSize: 14,
+      cursor: 'pointer',
+      boxShadow: '0 14px 26px rgba(255,60,130,0.18)',
+      whiteSpace: 'nowrap' as const,
+    },
+    ghostBtn: {
+      padding: '11px 14px',
+      borderRadius: 14,
+      border: '1px solid rgba(60,30,90,0.12)',
+      background: 'rgba(255,255,255,0.92)',
+      color: '#2a0f3a',
+      fontWeight: 950,
+      fontSize: 14,
+      cursor: 'pointer',
+      boxShadow: '0 14px 26px rgba(40,10,70,0.10)',
+      whiteSpace: 'nowrap' as const,
+    },
+
+    avatarWrap: {
+      display: 'flex',
+      gap: 14,
+      alignItems: 'center',
+      padding: 14,
+    },
+    avatar: {
+      width: 92,
+      height: 92,
+      borderRadius: 22,
+      objectFit: 'cover' as const,
+      background: 'rgba(255,255,255,0.9)',
+      border: '1px solid rgba(255,90,200,0.22)',
+      boxShadow: '0 14px 22px rgba(180,76,255,0.14)',
+      flex: '0 0 auto',
+    },
+    pill: {
+      padding: '8px 12px',
+      borderRadius: 999,
+      border: '1px solid rgba(255,90,200,0.22)',
+      background: 'linear-gradient(180deg, rgba(255,246,252,0.95), rgba(246,240,255,0.9))',
+      color: '#2a0f3a',
+      fontWeight: 950,
+      fontSize: 13,
+      boxShadow: '0 10px 20px rgba(255,120,190,0.12)',
+      whiteSpace: 'nowrap',
+    },
+    warn: {
+      marginTop: 10,
+      padding: '10px 12px',
+      borderRadius: 14,
+      background: 'rgba(255,235,245,0.9)',
+      border: '1px solid rgba(255,80,160,0.18)',
+      color: '#6a1140',
+      fontWeight: 950,
+      fontSize: 13,
+    },
+
+    badgeGrid: { marginTop: 10, display: 'grid', gap: 10 },
+    badgeCard: {
+      padding: '12px 12px',
+      borderRadius: 16,
+      border: '1px solid rgba(60,30,90,0.10)',
+      background: 'rgba(255,255,255,0.85)',
+      color: '#2a0f3a',
+      boxShadow: '0 10px 20px rgba(40,10,70,0.06)',
+    },
+    badgeTop: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+    badgeName: { display: 'flex', alignItems: 'center', gap: 10, fontWeight: 950 },
+    badgeSub: { marginTop: 6, fontSize: 12, fontWeight: 900, opacity: 0.78, lineHeight: 1.35 },
+    badgeMonths: { marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' as const },
+    mini: { fontSize: 12, fontWeight: 950, opacity: 0.75 },
   };
 
-  const saveProfile = async () => {
-    if (!me?.user_id) return;
-
-    setSaving(true);
-    try {
-      const nextLat = mapped.lat ?? null;
-      const nextLon = mapped.lon ?? null;
-
-      const payload: any = {
-        nickname: nickname.trim() || null,
-        name: name.trim() || null,
-        phone: phone.trim() || null,
-        industry: industry.trim() || null,
-        company: company.trim() || null,
-        department: department.trim() || null,
-        team: team.trim() || null,
-        career: careerFinal || null,
-
-        address_text: addressText.trim() || null,
-        lat: nextLat,
-        lon: nextLon,
-      };
-
-      const { error } = await supabase.from('profiles').update(payload).eq('user_id', me.user_id);
-      if (error) {
-        console.error(error);
-        showToast('❌ 저장 중 오류가 발생했어요.');
-        return;
-      }
-
-      setProfile((prev) => (prev ? { ...prev, ...payload } : prev));
-      showToast('✅ 저장 완료!');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const deleteAccount = async () => {
-    // 요청형(대표님 기존 방향 유지)
-    showToast('⚠️ 탈퇴 요청이 접수되도록 연결이 필요해요.');
-  };
-
-  if (booting) {
+  if (loading) {
     return (
-      <div className="set-root">
-        <div className="set-loading">설정을 불러오는 중…</div>
-        <style jsx>{styles}</style>
-      </div>
+      <ClientShell>
+        <div style={S.page}>
+          <div style={S.top}>
+            <div style={S.title}>프로필 설정</div>
+          </div>
+          <div style={{ ...S.card, padding: 14, fontWeight: 950, opacity: 0.7, color: '#2a0f3a' }}>불러오는 중...</div>
+        </div>
+      </ClientShell>
     );
   }
 
-  const displayName = pickName({ nickname, name, email: me?.email ?? null });
-
   return (
-    <div className="set-root">
-      <div className="set-wrap">
-        <header className="set-head">
-          <div className="set-title">설정</div>
-          <div className="set-sub">{displayName} 님의 프로필, 활동량, 배지, 로그아웃/탈퇴를 관리해요.</div>
-        </header>
+    <ClientShell>
+      <div style={S.page}>
+        <div style={S.top}>
+          <div style={S.title}>프로필 설정</div>
+          <button type="button" style={S.ghostBtn} onClick={() => router.back()}>
+            뒤로
+          </button>
+        </div>
 
-        {toast && <div className="toast">{toast}</div>}
-
-        <div className="grid">
-          {/* 좌측: 프로필/입력 */}
-          <section className="card">
-            <div className="cardTitle">프로필 설정</div>
-            <div className="cardSub">닉네임/개인정보/주소를 저장하면 날씨 지역도 자동으로 바뀝니다.</div>
-
-            <div className="profileTop">
-              <div className="avatarBox">
-                <div className="avatarRing">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img className="avatar" src={avatarPreview || '/assets/upzzu1.png'} alt="avatar" />
-                </div>
-
-                <label className={`btn ghost ${avatarUploading ? 'disabled' : ''}`}>
-                  {avatarUploading ? '업로드 중…' : '이미지 변경'}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => onPickAvatar(e.target.files?.[0])}
-                    style={{ display: 'none' }}
-                    disabled={avatarUploading}
-                  />
-                </label>
+        {/* 상단 카드 */}
+        <div style={S.headerCard}>
+          <div style={S.avatarWrap}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={avatarSrc}
+              alt="avatar"
+              style={S.avatar}
+              onError={(e: any) => {
+                e.currentTarget.src = '/upzzu1.png';
+              }}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 950, color: '#2a0f3a' }}>
+                {nickname?.trim() ? nickname.trim() : '닉네임을 설정해 주세요'}
+              </div>
+              <div style={{ marginTop: 6, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <span style={S.pill}>🏷️ 누적 배지 {badgeAgg.totalEarned}</span>
+                <span style={S.pill}>✨ 배지 종류 {badgeAgg.uniqueBadges}</span>
+                <span style={{ ...S.pill, opacity: 0.9 }}>🎯 최종목표 {mainGoal?.trim() ? '설정됨' : '미설정'}</span>
               </div>
 
-              <div className="who">
-                <div className="whoName">{displayName}</div>
-                <div className="whoEmail">{me?.email || '-'}</div>
-
-                <div className="kpis">
-                  <Kpi title="좋아요" value={counts.likes} />
-                  <Kpi title="게시글" value={counts.posts} />
-                  <Kpi title="피드백" value={counts.feedbacks} />
-                  <Kpi title="응원" value={counts.cheers} />
-                </div>
-                <div className="kpis2">
-                  <Kpi title="신규" value={counts.newCount} accent />
-                  <Kpi title="계약" value={counts.contractCount} accent />
-                </div>
-              </div>
-            </div>
-
-            <div className="formGrid">
-              <Field label="닉네임" value={nickname} onChange={setNickname} placeholder="예: 신입입니다" />
-              <Field label="이름" value={name} onChange={setName} placeholder="예: 강보원" />
-              <Field label="전화번호" value={phone} onChange={setPhone} placeholder="예: 010-0000-0000" />
-              <Field label="업종" value={industry} onChange={setIndustry} placeholder="예: 뷰티/보험/교육…" />
-              <Field label="회사명" value={company} onChange={setCompany} placeholder="예: 올무" />
-              <Field label="부서명" value={department} onChange={setDepartment} placeholder="예: UP" />
-              <Field label="팀명" value={team} onChange={setTeam} placeholder="예: 1팀" />
-
-              <div className="field">
-                <div className="label">경력</div>
-                <div className="careerRow">
-                  <select className="select" value={careerSel} onChange={(e) => setCareerSel(e.target.value)}>
-                    <option value="">선택해주세요</option>
-                    <option value="신입">신입</option>
-                    <option value="0-1">0~1년</option>
-                    <option value="2">2년</option>
-                    <option value="3">3년</option>
-                    <option value="4-5">4~5년</option>
-                    <option value="6-9">6~9년</option>
-                    <option value="10+">10년 이상</option>
-                    <option value="기타">기타(직접입력)</option>
-                  </select>
-
-                  {careerSel === '기타' && (
-                    <input
-                      className="input"
-                      value={careerCustom}
-                      onChange={(e) => setCareerCustom(e.target.value)}
-                      placeholder="예: 12년 / 2년6개월 / 프리랜서"
-                    />
-                  )}
-                </div>
-              </div>
-
-              <div className="field full">
-                <div className="label">주소(날씨 지역)</div>
+              <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <input
-                  className="input"
-                  value={addressText}
-                  onChange={(e) => setAddressText(e.target.value)}
-                  placeholder="예: 대전시 서구 / 서울특별시 강남구 / 부산 해운대구"
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const f = e.currentTarget.files?.[0];
+                    if (f) onPickAvatar(f);
+                    e.currentTarget.value = '';
+                  }}
                 />
+                <button type="button" style={S.saveBtn} onClick={() => fileRef.current?.click()} disabled={avatarUploading}>
+                  {avatarUploading ? '업로드 중…' : '프로필 이미지 변경'}
+                </button>
+                <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.75, color: '#2a0f3a', alignSelf: 'center' }}>
+                  기본 이미지: <b>public/upzzu1.png</b>
+                </div>
               </div>
             </div>
+          </div>
+        </div>
 
-            <div className="actions">
-              <button className={`btn primary ${saving ? 'disabled' : ''}`} onClick={saveProfile} disabled={saving}>
-                {saving ? '저장 중…' : '저장하기'}
-              </button>
-            </div>
-          </section>
+        {/* 프로필 입력 */}
+        <div style={{ ...S.card, marginTop: 12 }}>
+          <div style={S.pad}>
+            <div style={S.sectionTitle}>기본 정보</div>
+            <div style={S.sectionSub}>입력란 폭을 줄이고, 여유 간격을 넉넉히 잡았어요.</div>
 
-          {/* 우측: 배지/로그아웃/탈퇴 */}
-          <section className="card side">
-            <div className="cardTitle">배지 & 활동</div>
-            <div className="cardSub">배지 이름과 이모지를 구분해서 깔끔하게 보여줘요.</div>
-
-            <div className="badgeBox">
-              {badges.length === 0 ? (
-                <div className="empty">아직 표시할 배지가 없어요 ✨</div>
-              ) : (
-                <div className="badgeList">
-                  {badges.map((b, idx) => (
-                    <div key={`${b.name}-${idx}`} className="badge">
-                      <div className="badgeEmoji">{b.emoji}</div>
-                      <div className="badgeName">{b.name}</div>
-                    </div>
-                  ))}
+            <form onSubmit={onSaveProfile} style={S.formWrap}>
+              <div style={S.grid}>
+                <div>
+                  <div style={S.label}>닉네임</div>
+                  <input style={S.input} value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="예: 세일즈킹업쮸" />
                 </div>
-              )}
-            </div>
+                <div>
+                  <div style={S.label}>이름(실명)</div>
+                  <input style={S.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 김OO" />
+                </div>
 
-            <div className="divider" />
+                <div>
+                  <div style={S.label}>업종</div>
+                  <input style={S.input} value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="예: 보험 / 화장품 / 금융" />
+                </div>
+                <div>
+                  <div style={S.label}>등급</div>
+                  <input style={S.input} value={grade} onChange={(e) => setGrade(e.target.value)} placeholder="예: A / B / VIP" />
+                </div>
 
-            <div className="cardTitle">로그아웃</div>
-            <div className="cardSub">이 기기에서 세션/토큰까지 정리하고 로그아웃합니다.</div>
-            <button className="btn danger" onClick={hardLogout}>
-              로그아웃
-            </button>
+                <div>
+                  <div style={S.label}>경력</div>
+                  <input style={S.input} value={career} onChange={(e) => setCareer(e.target.value)} placeholder="예: 3년차" />
+                </div>
+                <div>
+                  <div style={S.label}>회사</div>
+                  <input style={S.input} value={company} onChange={(e) => setCompany(e.target.value)} placeholder="예: UPLOG" />
+                </div>
 
-            <div className="divider" />
+                <div>
+                  <div style={S.label}>부서</div>
+                  <input style={S.input} value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="예: 영업본부" />
+                </div>
+                <div>
+                  <div style={S.label}>팀</div>
+                  <input style={S.input} value={team} onChange={(e) => setTeam(e.target.value)} placeholder="예: 1팀" />
+                </div>
 
-            <div className="cardTitle">탈퇴하기</div>
-            <div className="cardSub">탈퇴 요청 형태로 연결합니다.</div>
-            <button className="btn danger2" onClick={deleteAccount}>
-              탈퇴하기(요청)
-            </button>
-          </section>
+                <div style={S.gridFull}>
+                  <div style={S.label}>✅ 최종 목표(메인에 노출되는 목표)</div>
+                  <input style={S.input} value={mainGoal} onChange={(e) => setMainGoal(e.target.value)} placeholder="예: 월 계약 30건 / 월 매출 1,000만" />
+                </div>
+              </div>
+
+              <div style={{ marginTop: 14, display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                <button type="submit" style={S.saveBtn} disabled={saving}>
+                  {saving ? '저장 중…' : '저장'}
+                </button>
+              </div>
+
+              {err ? <div style={S.warn}>{err}</div> : null}
+            </form>
+          </div>
+        </div>
+
+        {/* 배지 설명 + 누적 배지 */}
+        <div style={{ ...S.card, marginTop: 12 }}>
+          <div style={S.pad}>
+            <div style={S.sectionTitle}>배지 목록(누적) + 설명</div>
+            <div style={S.sectionSub}>활동량에 따라 부여된 배지를 “누적 횟수 + 받은 월”까지 표시합니다.</div>
+
+            {badgeAgg.list.length === 0 ? (
+              <div style={{ marginTop: 10, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>아직 수상 배지가 없어요. 이번 달 기록부터 쌓아봐요 ✨</div>
+            ) : (
+              <div style={S.badgeGrid}>
+                {badgeAgg.list.map((b) => (
+                  <div key={`${b.code}|${b.name}`} style={S.badgeCard}>
+                    <div style={S.badgeTop}>
+                      <div style={S.badgeName}>
+                        <span style={{ fontSize: 18 }}>{badgeIcon(b.code)}</span>
+                        <span>{b.name || b.code}</span>
+                      </div>
+                      <span style={S.pill}>누적 {b.count}회</span>
+                    </div>
+
+                    <div style={S.badgeSub}>설명: {badgeDesc(b.code, b.name)}</div>
+
+                    <div style={S.badgeMonths}>
+                      <span style={S.mini}>받은 월:</span>
+                      {b.months.length === 0 ? (
+                        <span style={{ ...S.mini, opacity: 0.7 }}>월 정보 없음</span>
+                      ) : (
+                        b.months.slice(0, 12).map((m) => (
+                          <span key={`${b.code}-${m}`} style={{ ...S.pill, padding: '6px 10px', fontSize: 12, boxShadow: '0 8px 14px rgba(255,120,190,0.10)' }}>
+                            {m}
+                          </span>
+                        ))
+                      )}
+                      {b.months.length > 12 ? <span style={{ ...S.mini, opacity: 0.7 }}>+{b.months.length - 12}개월</span> : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* (선택) 원본 월간 배지 히스토리: 디버깅용으로 깔끔히 */}
+        <div style={{ ...S.card, marginTop: 12 }}>
+          <div style={S.pad}>
+            <div style={S.sectionTitle}>월간 배지 수상 히스토리</div>
+            <div style={S.sectionSub}>월별로 어떤 배지를 받았는지 한 줄로 확인합니다.</div>
+
+            {badgeRows.length === 0 ? (
+              <div style={{ marginTop: 10, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>표시할 히스토리가 없어요.</div>
+            ) : (
+              <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                {badgeRows.slice(0, 30).map((r, idx) => {
+                  const code = String(r.badge_code || '');
+                  const name = String(r.badge_name || r.badge_code || '');
+                  const month = yyyymmFromDateStr(r.month_start) || 'YYYY-MM';
+                  return (
+                    <div key={`${code}-${month}-${idx}`} style={{ ...S.badgeCard, padding: '10px 12px' }}>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontWeight: 950 }}>
+                          <span style={{ fontSize: 16 }}>{badgeIcon(code)}</span>
+                          <span style={{ opacity: 0.9 }}>{month}</span>
+                          <span>{name}</span>
+                        </div>
+                        <span style={{ ...S.mini, opacity: 0.72 }}>{code}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <style jsx>{styles}</style>
-    </div>
+      <style jsx>{`
+        :global(*),
+        :global(*::before),
+        :global(*::after) {
+          box-sizing: border-box;
+        }
+
+        @media (max-width: 820px) {
+          /* 모바일에서 1열로 */
+          :global(.profile-grid) {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
+    </ClientShell>
   );
 }
-
-function Kpi({ title, value, accent }: { title: string; value: number; accent?: boolean }) {
-  return (
-    <div className={`kpi ${accent ? 'accent' : ''}`}>
-      <div className="kpiT">{title}</div>
-      <div className="kpiV">{value}</div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <div className="field">
-      <div className="label">{label}</div>
-      <input className="input" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
-    </div>
-  );
-}
-
-const styles = `
-.set-root{
-  min-height:100vh;
-  padding:22px;
-  box-sizing:border-box;
-  background:
-    radial-gradient(900px 520px at 18% 12%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 62%),
-    radial-gradient(900px 560px at 82% 18%, rgba(243,232,255,0.55) 0%, rgba(243,232,255,0) 64%),
-    linear-gradient(180deg, #fff3fb 0%, #f6f2ff 45%, #eef8ff 100%);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color:#201235;
-}
-.set-wrap{ max-width:1060px; margin:0 auto; }
-.set-head{
-  border-radius:24px;
-  padding:18px 18px;
-  background: linear-gradient(135deg, rgba(236,72,153,0.74), rgba(124,58,237,0.70));
-  color:#fff;
-  box-shadow: 0 16px 28px rgba(0,0,0,0.14);
-  border:1px solid rgba(255,255,255,0.35);
-}
-.set-title{ font-size:24px; font-weight:950; letter-spacing:-0.3px; }
-.set-sub{ margin-top:6px; font-size:15px; font-weight:900; opacity:0.92; }
-
-.toast{
-  margin-top:12px;
-  border-radius:16px;
-  padding:12px 14px;
-  background: rgba(255,255,255,0.92);
-  border: 1px solid rgba(236,72,153,0.22);
-  box-shadow: 0 14px 22px rgba(0,0,0,0.10);
-  font-weight:950;
-  color:#3a1b5a;
-}
-
-.grid{
-  margin-top:14px;
-  display:grid;
-  grid-template-columns: 1.5fr 0.8fr;
-  gap:14px;
-}
-@media (max-width: 980px){
-  .grid{ grid-template-columns:1fr; }
-}
-
-.card{
-  border-radius:22px;
-  padding:16px 16px;
-  background: rgba(255,255,255,0.96);
-  box-shadow: 0 14px 26px rgba(0,0,0,0.10);
-  border: 1px solid rgba(229,221,255,0.85);
-  min-width: 0;
-}
-.card.side{
-  position: sticky;
-  top: 14px;
-  align-self: start;
-}
-@media (max-width: 980px){
-  .card.side{ position: static; }
-}
-
-.cardTitle{ font-size:20px; font-weight:950; color:#5d3bdb; letter-spacing:-0.2px; }
-.cardSub{ margin-top:6px; font-size:14px; color:#7a69c4; font-weight:900; line-height:1.35; }
-
-.profileTop{
-  margin-top:14px;
-  display:grid;
-  grid-template-columns: 220px minmax(0,1fr);
-  gap:14px;
-  align-items:start;
-}
-@media (max-width: 760px){
-  .profileTop{ grid-template-columns: 1fr; }
-}
-
-.avatarBox{
-  border-radius:22px;
-  padding:14px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(243,232,255,0.55));
-  border: 1px solid rgba(168,85,247,0.22);
-  box-shadow: 0 16px 28px rgba(0,0,0,0.08);
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:10px;
-}
-.avatarRing{
-  width: 156px;
-  height: 156px;
-  border-radius: 999px;
-  padding: 5px;
-  background: linear-gradient(135deg, rgba(236,72,153,0.95), rgba(124,58,237,0.90));
-  box-shadow: 0 14px 26px rgba(236,72,153,0.20);
-}
-.avatar{
-  width: 100%;
-  height: 100%;
-  border-radius: 999px;
-  object-fit: cover;
-  background: #fff;
-}
-.who{ padding: 4px 2px; min-width: 0; }
-.whoName{ font-size:24px; font-weight:950; color:#241336; word-break: break-word; }
-.whoEmail{ margin-top:4px; font-size:13px; font-weight:900; color:#6a58b3; word-break: break-word; }
-
-.kpis{
-  margin-top:10px;
-  display:grid;
-  grid-template-columns: repeat(4, minmax(0,1fr));
-  gap:10px;
-}
-.kpis2{
-  margin-top:10px;
-  display:grid;
-  grid-template-columns: repeat(2, minmax(0,1fr));
-  gap:10px;
-}
-@media (max-width: 520px){
-  .kpis{ grid-template-columns: repeat(2, minmax(0,1fr)); }
-}
-
-.kpi{
-  border-radius:16px;
-  padding:10px 10px;
-  border: 1px solid rgba(124,58,237,0.14);
-  background: rgba(255,255,255,0.90);
-  box-shadow: 0 10px 18px rgba(0,0,0,0.06);
-  min-width: 0;
-}
-.kpi.accent{
-  border-color: rgba(236,72,153,0.24);
-  box-shadow: 0 12px 22px rgba(236,72,153,0.10);
-}
-.kpiT{ font-size:12px; font-weight:950; color:#6a58b3; }
-.kpiV{ margin-top:4px; font-size:18px; font-weight:950; color:#e11d48; }
-
-.formGrid{
-  margin-top:14px;
-  display:grid;
-  grid-template-columns: repeat(2, minmax(0,1fr));
-  gap:12px 12px;
-}
-@media (max-width: 860px){
-  .formGrid{ grid-template-columns: 1fr; }
-}
-.field{ min-width: 0; }
-.field.full{ grid-column: 1 / -1; }
-
-.label{
-  font-size:14px;
-  font-weight:950;
-  color:#3a1b5a;
-}
-.input{
-  width:100%;
-  margin-top:8px;
-  height: 38px;
-  padding: 0 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(124,58,237,0.16);
-  background: rgba(255,255,255,0.94);
-  box-shadow: 0 10px 18px rgba(0,0,0,0.06);
-  outline: none;
-  font-size: 14px;
-  font-weight: 900;
-  color: #23123a;
-  box-sizing: border-box;
-}
-.input::placeholder{ color: rgba(35,18,58,0.45); font-weight:900; }
-
-.careerRow{
-  display:flex;
-  gap:10px;
-  margin-top:8px;
-  align-items:center;
-  min-width: 0;
-}
-.select{
-  width:100%;
-  height:38px;
-  padding: 0 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(124,58,237,0.16);
-  background: rgba(255,255,255,0.94);
-  box-shadow: 0 10px 18px rgba(0,0,0,0.06);
-  outline: none;
-  font-size: 14px;
-  font-weight: 900;
-  color: #23123a;
-  appearance: none;
-  box-sizing: border-box;
-}
-
-.actions{
-  margin-top:14px;
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-}
-.btn{
-  height:42px;
-  padding:0 16px;
-  border-radius:999px;
-  border:1px solid rgba(124,58,237,0.22);
-  background:#fff;
-  color:#2a1236;
-  font-weight:950;
-  cursor:pointer;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  text-decoration:none;
-  box-shadow: 0 12px 18px rgba(0,0,0,0.10);
-  transition: transform .14s ease, box-shadow .14s ease, filter .14s ease;
-}
-.btn:hover{
-  transform: translateY(-1px);
-  box-shadow: 0 16px 24px rgba(0,0,0,0.14);
-  filter: brightness(1.01);
-}
-.btn.primary{
-  background: linear-gradient(135deg, rgba(244,114,182,0.92), rgba(168,85,247,0.90));
-  color:#fff;
-  border-color: rgba(255,255,255,0.55);
-}
-.btn.ghost{
-  background: rgba(0,0,0,0.55);
-  color:#fff;
-  border-color: rgba(255,255,255,0.25);
-  width: 100%;
-}
-.btn.danger{
-  width:100%;
-  background: linear-gradient(135deg, rgba(255,77,141,0.92), rgba(255,122,69,0.88));
-  color:#fff;
-  border-color: rgba(255,255,255,0.55);
-}
-.btn.danger2{
-  width:100%;
-  background: linear-gradient(135deg, rgba(17,24,39,0.88), rgba(124,58,237,0.72));
-  color:#fff;
-  border-color: rgba(255,255,255,0.20);
-}
-.btn.disabled{
-  opacity: 0.6;
-  pointer-events: none;
-}
-
-.divider{
-  margin: 14px 0;
-  height:1px;
-  background: rgba(124,58,237,0.12);
-}
-
-.badgeBox{
-  margin-top:12px;
-}
-.badgeList{
-  display:grid;
-  grid-template-columns: 1fr;
-  gap:10px;
-}
-.badge{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  border-radius:16px;
-  padding:12px 12px;
-  border:1px solid rgba(236,72,153,0.18);
-  background: rgba(255,255,255,0.92);
-  box-shadow: 0 12px 18px rgba(236,72,153,0.08);
-  min-width: 0;
-}
-.badgeEmoji{
-  width:40px;
-  height:40px;
-  border-radius:14px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background: linear-gradient(135deg, rgba(236,72,153,0.16), rgba(124,58,237,0.14));
-  font-size:20px;
-  flex: 0 0 auto;
-}
-.badgeName{
-  font-size:15px;
-  font-weight:950;
-  color:#241336;
-  min-width: 0;
-  word-break: break-word;
-}
-.empty{
-  border-radius:16px;
-  padding:12px 12px;
-  border:1px dashed rgba(124,58,237,0.22);
-  color:#6a58b3;
-  font-weight:950;
-  background: rgba(255,255,255,0.80);
-}
-
-.set-loading{
-  max-width: 620px;
-  margin: 80px auto;
-  border-radius: 22px;
-  padding: 18px;
-  background: rgba(255,255,255,0.92);
-  border:1px solid rgba(124,58,237,0.16);
-  box-shadow: 0 16px 24px rgba(0,0,0,0.10);
-  font-weight:950;
-  color:#241336;
-}
-`;

@@ -711,7 +711,7 @@ export default function SmsHelperPage() {
 
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="/assets/upzzu2.png"
+                src="/upzzu2.png"
                 onError={(e: any) => {
                   e.currentTarget.src = '/lolo.png';
                 }}

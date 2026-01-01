@@ -164,7 +164,7 @@ export default function SupportChatPage() {
 
               <img
                 className="mascot"
-                src="/assets/upzzu4.png"
+                src="/upzzu4.png"
                 alt="업쮸"
                 draggable={false}
               />

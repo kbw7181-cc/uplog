@@ -1,81 +1,191 @@
-/* ✅ 파일: src/app/admin/admin.module.css */
+/* ✅✅✅ 전체복붙: src/app/admin/admin.module.css */
 
-/* ====== page ====== */
+/* ====== layout wrapper ====== */
 .page{
   position: relative;
-  max-width: 1120px;
+  max-width: 1040px;
   margin: 0 auto;
-  padding: 28px 18px 70px;
-  font-size: 18px;
-  line-height: 1.45;
-  color: #fdf2ff;
+  padding: 22px 18px 70px;
+  font-size: 16px;
+  line-height: 1.5;
 }
 
-/* 배경 (support 톤 통일) */
+/* 배경 */
 .page::before{
   content:'';
   position: fixed;
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(circle at 12% 10%, rgba(168,85,247,0.22) 0%, rgba(0,0,0,0) 44%),
-    radial-gradient(circle at 86% 18%, rgba(236,72,153,0.18) 0%, rgba(0,0,0,0) 45%),
-    radial-gradient(circle at 40% 92%, rgba(56,189,248,0.10) 0%, rgba(0,0,0,0) 52%),
-    linear-gradient(180deg, rgba(14,6,28,1) 0%, rgba(9,3,20,1) 100%);
+    radial-gradient(circle at 14% 10%, rgba(168,85,247,0.22) 0%, transparent 44%),
+    radial-gradient(circle at 86% 16%, rgba(236,72,153,0.18) 0%, transparent 45%),
+    radial-gradient(circle at 42% 92%, rgba(56,189,248,0.10) 0%, transparent 52%),
+    linear-gradient(180deg, rgba(245,240,255,1) 0%, rgba(240,242,255,1) 100%);
 }
 
-/* ====== card ====== */
+/* ====== page inner (page.tsx wrapper) ====== */
+.inner{
+  width: 100%;
+}
+
+/* 공통 카드 */
 .card{
-  margin: 18px auto 0;
+  margin-top: 16px;
   border-radius: 22px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.16);
-  box-shadow: 0 18px 55px rgba(0,0,0,0.35);
-  padding: 18px 18px 16px;
+  background: #fff;
+  border: 1px solid rgba(20,10,40,0.08);
+  box-shadow: 0 18px 40px rgba(40,10,70,0.12);
+  padding: 18px;
 }
 
-/* ====== title ====== */
-.h1{
-  font-size: 26px;
+/* 헤더 */
+.header{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.title{
+  font-size: 22px;
   font-weight: 950;
-  letter-spacing: -0.6px;
+  color: #1f102e;
 }
 
 .sub{
-  margin-top: 8px;
-  font-size: 16px;
+  margin-top: 6px;
+  font-size: 13px;
   font-weight: 850;
-  opacity: 0.85;
+  color: rgba(31,16,46,0.75);
 }
 
-/* ====== nav buttons ====== */
+/* 네비 버튼 */
 .nav{
   display:flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-top: 16px;
 }
 
 .navBtn{
-  height: 44px;
-  padding: 0 16px;
+  height: 34px;
+  padding: 0 12px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.16);
-  color: #fdf2ff;
-  font-weight: 950;
+  background: #fff;
+  border: 1px solid rgba(31,16,46,0.14);
+  color: #1f102e;
+  font-weight: 900;
+  font-size: 13px;
   cursor: pointer;
-  box-shadow: 0 12px 24px rgba(0,0,0,0.18);
-  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 8px 18px rgba(40,10,70,0.12);
 }
 
-.navBtn:hover{
-  transform: translateY(-1px);
-  background: rgba(255,255,255,0.12);
-  border-color: rgba(255,255,255,0.22);
-  box-shadow: 0 16px 32px rgba(0,0,0,0.24);
+/* 섹션 타이틀 */
+.section{
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 950;
+  color: rgba(31,16,46,0.8);
 }
 
-.navBtn:active{
-  transform: scale(0.98);
+/* KPI 그리드 */
+.kpiGrid{
+  margin-top: 12px;
+  display:grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+@media (max-width: 900px){
+  .kpiGrid{ grid-template-columns: repeat(2, 1fr); }
+}
+
+/* KPI 카드 */
+.kpi{
+  border-radius: 18px;
+  padding: 14px;
+  border: 1px solid rgba(31,16,46,0.1);
+  box-shadow: 0 14px 30px rgba(40,10,70,0.12);
+}
+
+.kpiTitle{
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(31,16,46,0.8);
+}
+
+.kpiValue{
+  margin-top: 8px;
+  font-size: 26px;
+  font-weight: 950;
+  color: #1f102e;
+}
+
+.kpiDesc{
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  color: rgba(31,16,46,0.6);
+}
+
+/* 색상 포인트 (✅ module class로 분리) */
+.pink{ background: linear-gradient(135deg, #ffe3f1, #ffffff); }
+.purple{ background: linear-gradient(135deg, #efe6ff, #ffffff); }
+.blue{ background: linear-gradient(135deg, #e7f4ff, #ffffff); }
+.amber{ background: linear-gradient(135deg, #fff3d6, #ffffff); }
+
+/* 네온 강조 */
+.neon{
+  box-shadow:
+    0 0 0 1px rgba(168,85,247,0.25),
+    0 0 18px rgba(168,85,247,0.45),
+    0 14px 30px rgba(40,10,70,0.18);
+  animation: pulse 1.8s ease-in-out infinite;
+}
+@keyframes pulse{
+  0%,100%{ box-shadow: 0 0 0 1px rgba(168,85,247,0.25),0 0 14px rgba(168,85,247,0.35); }
+  50%{ box-shadow: 0 0 0 1px rgba(236,72,153,0.35),0 0 22px rgba(236,72,153,0.55); }
+}
+
+/* 하단 카드 */
+.bigGrid{
+  margin-top: 14px;
+  display:grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+@media (max-width: 900px){
+  .bigGrid{ grid-template-columns: 1fr; }
+}
+
+.big{
+  border-radius: 20px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid rgba(31,16,46,0.1);
+  box-shadow: 0 16px 36px rgba(40,10,70,0.14);
+  cursor: pointer;
+}
+
+.bigTitle{
+  font-size: 15px;
+  font-weight: 950;
+  color: #1f102e;
+}
+
+.bigDesc{
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 850;
+  color: rgba(31,16,46,0.7);
+}
+
+.open{
+  margin-top: 10px;
+  height: 36px;
+  border-radius: 14px;
+  border: none;
+  font-weight: 950;
+  color: #fff;
+  background: linear-gradient(90deg, #ec4899, #a855f7);
+  cursor: pointer;
 }
