@@ -226,17 +226,17 @@ export default function HomePage() {
   const [weatherLat, setWeatherLat] = useState<number>(37.5665);
   const [weatherLon, setWeatherLon] = useState<number>(126.978);
 
-  // ✅ 오늘 날짜 (중복 선언 제거)
+  // ✅ 오늘 날짜
   const todayStr = useMemo(() => formatDate(new Date()), []);
 
-  // ✅✅✅ 프로필 이미지 캐시버스터: "profileImage가 바뀔 때만" 갱신 (매 렌더 Date.now() 금지)
+  // ✅✅✅ 프로필 이미지 캐시버스터: profileImage가 바뀔 때만 갱신
   const [avatarVer, setAvatarVer] = useState<number>(0);
   useEffect(() => {
     if (!profileImage) return;
     setAvatarVer(Date.now());
   }, [profileImage]);
 
-  // ✅✅✅ (FIX) loading return 전에 훅 호출 고정 + storage 경로도 정상 변환
+  // ✅✅✅ storage 경로도 정상 변환
   const avatarSrc = useMemo(() => {
     const v = avatarVer ? `?v=${avatarVer}` : '';
     if (!profileImage) return '';
@@ -246,7 +246,6 @@ export default function HomePage() {
       return `${raw}${v}`;
     }
 
-    // storage 경로(avatars/xxx.png)면 getAvatarSrc로 public url 변환
     const publicUrl = getAvatarSrc(raw);
     return publicUrl ? `${publicUrl}${v}` : '';
   }, [profileImage, avatarVer]);
@@ -658,7 +657,9 @@ export default function HomePage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('name, nickname, industry, grade, career, company, department, team, avatar_url, main_goal, address_text, lat, lon')
+        .select(
+          'name, nickname, industry, grade, career, company, department, team, avatar_url, main_goal, address_text, lat, lon'
+        )
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -690,8 +691,6 @@ export default function HomePage() {
         setWeatherLat(lat);
         setWeatherLon(lon);
 
-        // ✅✅✅ 프로필 이미지 핵심: avatar_url이 storage 경로여도 profileImage에 넣고,
-        // 위 avatarSrc useMemo에서 getAvatarSrc로 변환해서 표시함
         if (p.avatar_url) setProfileImage(String(p.avatar_url));
       } else if (user.email) {
         setNickname(user.email.split('@')[0]);
@@ -858,7 +857,6 @@ export default function HomePage() {
                           alt="프로필"
                           onError={(e) => {
                             console.warn('[HOME] avatar img error:', profileImage, avatarSrc);
-                            // ✅✅✅ (FIX) 이미지 실패 시 "빈 원" 방지: 즉시 초기값(이니셜)로 fallback
                             setProfileImage(null);
                             (e.currentTarget as HTMLImageElement).style.display = 'none';
                           }}
@@ -944,8 +942,30 @@ export default function HomePage() {
           <div className="home-header-bottom">
             <div className="coach-row">
               <div className="coach-bubble-panel" aria-live="polite">
-                <div className="coach-pill">오늘의 U P 한마디</div>
+                <div className="coach-topline">
+                  <div className="coach-pill">오늘의 U P 한마디</div>
+
+                  <div className="coach-goal-mini" aria-label="목표 요약">
+                    <span className="cg-chip">
+                      <span className="cg-tag">월</span>
+                      <span className="cg-txt">{latestGoals?.month_goal || '이달엔 30건 이상 계약하기'}</span>
+                    </span>
+                    <span className="cg-chip">
+                      <span className="cg-tag">주</span>
+                      <span className="cg-txt">{latestGoals?.week_goal || '신규고객 3명 이상'}</span>
+                    </span>
+                    <span className="cg-chip cg-strong">
+                      <span className="cg-tag">오늘</span>
+                      <span className="cg-txt">{latestGoals?.day_goal || '가망고객 안부 문자인사하기'}</span>
+                    </span>
+                  </div>
+                </div>
+
                 <div className="coach-text">{EMO_QUOTES[emotionIndex] ?? ''}</div>
+
+                <div className="coach-main-goal">
+                  최종 목표 <b>“{mainGoal || '1등 찍어보자'}”</b>
+                </div>
               </div>
 
               <div className="coach-mascot-wrap" aria-hidden="true">
@@ -1388,7 +1408,7 @@ export default function HomePage() {
           </section>
         </main>
 
-        {/* ✅ 문의하기 실시간 채팅: 복구 */}
+        {/* ✅ 문의하기 실시간 채팅 */}
         <button type="button" onClick={() => router.push('/support')} className="floating-support-btn">
           <span>문의하기</span>
           <span>실시간 채팅</span>
@@ -1420,12 +1440,11 @@ a:hover { text-decoration: none; }
   .wave-text span, .badge-icon, .coach-mascot-wrap, .coach-sparkle { animation: none !important; transition: none !important; }
 }
 
-/* 1) ✅ home-root 기본 글씨 크기 살짝 업 (전체적으로 체감 올라감) */
 .home-root{
   min-height: 100vh;
   padding: 24px;
   box-sizing: border-box;
-  font-size: 16px; /* ✅ 추가 */
+  font-size: 16px;
   background:
     radial-gradient(900px 520px at 18% 12%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 62%),
     radial-gradient(900px 560px at 82% 18%, rgba(243,232,255,0.55) 0%, rgba(243,232,255,0) 64%),
@@ -1438,7 +1457,6 @@ a:hover { text-decoration: none; }
 .section-sub{ font-size: 14px; margin-top: 4px; color: var(--soft-sub); }
 .home-loading{ margin-top: 120px; text-align: center; font-size: 20px; }
 
-/* Header */
 .home-header{
   display: flex;
   flex-direction: column;
@@ -1451,13 +1469,12 @@ a:hover { text-decoration: none; }
   box-shadow: 0 16px 28px rgba(0,0,0,0.18);
   margin-bottom: 16px;
   color: #ffffff;
-  overflow: hidden; /* ✅ 여기만 변경 (visible -> hidden) */
+  overflow: hidden;
 }
-
 
 .home-header-top{
   display: grid;
-  grid-template-columns: 1fr minmax(0, clamp(320px, 36vw, 420px)); /* ✅ 변경 */
+  grid-template-columns: 1fr minmax(0, clamp(320px, 36vw, 420px));
   gap: 16px;
   align-items: start;
 }
@@ -1491,9 +1508,9 @@ a:hover { text-decoration: none; }
 
 /* Profile */
 .profile-box{
-  width: 100%;                 /* ✅ 변경 (420px -> 100%) */
-  max-width: 420px;            /* ✅ 추가 */
-  min-width: 0;                /* ✅ 변경 (420px -> 0) */
+  width: 100%;
+  max-width: 420px;
+  min-width: 0;
   height: 220px;
   box-sizing: border-box;
   background: rgba(255,255,255,0.96);
@@ -1507,7 +1524,6 @@ a:hover { text-decoration: none; }
   color: #211437;
   position: relative;
 }
-
 .profile-settings-btn{
   position: absolute;
   top: 10px;
@@ -1617,6 +1633,67 @@ a:hover { text-decoration: none; }
   overflow: hidden;
   word-break: keep-all;
 }
+.coach-topline{
+  display:flex;
+  align-items:flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.coach-goal-mini{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  flex: 0 0 auto;
+  max-width: 56%;
+  overflow: hidden;
+}
+.cg-chip{
+  display:inline-flex;
+  align-items:center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.16);
+  border: 1px solid rgba(255,255,255,0.26);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+}
+.cg-chip.cg-strong{
+  background: rgba(255,255,255,0.22);
+  border-color: rgba(255,255,255,0.34);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.10);
+}
+.cg-tag{
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.22);
+  font-size: 11px;
+  font-weight: 950;
+  flex: 0 0 auto;
+}
+.cg-txt{
+  display:inline-block;
+  overflow:hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+.coach-main-goal{
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 900;
+  color: rgba(255,255,255,0.90);
+  text-shadow: 0 2px 10px rgba(0,0,0,0.18);
+  opacity: .95;
+}
+.coach-main-goal b{ color: rgba(255,255,255,0.98); }
+@media (max-width: 920px){
+  .coach-goal-mini{ display:none; }
+}
 .coach-mascot-wrap{
   width: 180px;
   height: 180px;
@@ -1634,90 +1711,49 @@ a:hover { text-decoration: none; }
 .coach-sparkle.s1{ top: 18px; left: 18px; }
 .coach-sparkle.s2{ top: 52px; left: 46px; }
 
-/* ✅ 메뉴바(버튼 줄) : 박스 느낌 제거 */
+/* ✅ 메뉴바 */
 .home-quick-nav{
   display:flex;
   gap: 10px;
-  padding: 10px 6px;      /* 위아래 숨 */
-  margin: 14px 0 18px;    /* 아래 섹션과 여유 */
-
-  /* ❌ 갇힌 느낌 만드는 요소 제거 */
+  padding: 10px 6px;
+  margin: 14px 0 18px;
   background: transparent;
   border: none;
   box-shadow: none;
-
-  /* 한줄 유지 */
   flex-wrap: nowrap;
   overflow: hidden;
 }
-
-
-/* ✅ 메뉴 버튼 : 더 낮고 말랑한 pill */
 .quick-card{
   flex: 1 1 0;
   min-width: 0;
-
-  height: 44px;                 /* ✅ 더 슬림하게 (54 -> 44 추천) */
-  border-radius: 999px;         /* 완전 pill */
+  height: 44px;
+  border-radius: 999px;
   padding: 0 14px;
-
-  /* ✅ 부드러운 그라데이션 + 살짝 투명 */
-  background: linear-gradient(
-    135deg,
-    rgba(255, 133, 210, 0.85),
-    rgba(166, 120, 255, 0.82)
-  );
-
-  /* ✅ 테두리도 얇고 은은하게 */
+  background: linear-gradient(135deg, rgba(255, 133, 210, 0.85), rgba(166, 120, 255, 0.82));
   border: 1px solid rgba(255,255,255,0.55);
-
-  /* ✅ 너무 “카드”같이 뜨는 그림자 제거 → 소프트하게 */
-  box-shadow:
-    0 8px 18px rgba(120, 70, 210, 0.14);
-
+  box-shadow: 0 8px 18px rgba(120, 70, 210, 0.14);
   display:flex;
   align-items:center;
   justify-content:center;
-
-  font-size: 17px;              /* 글씨는 유지 */
+  font-size: 17px;
   font-weight: 900;
   letter-spacing: -0.3px;
   color:#fff;
-
   cursor:pointer;
-
-  transition:
-    transform 160ms ease,
-    box-shadow 160ms ease,
-    filter 160ms ease;
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
 }
-
-
-/* ✅ 호버 시: 살짝 커지고 빛나는 느낌 */
 .quick-card:hover{
   transform: translateY(-1px) scale(1.03);
   filter: brightness(1.04) saturate(1.06);
-  box-shadow:
-    0 12px 26px rgba(120, 70, 210, 0.22),
-    0 0 0 3px rgba(255,255,255,0.10);
+  box-shadow: 0 12px 26px rgba(120, 70, 210, 0.22), 0 0 0 3px rgba(255,255,255,0.10);
 }
-
-/* ✅ 클릭 시: “눌리는” 느낌 */
 .quick-card:active{
   transform: translateY(0px) scale(0.99);
   filter: brightness(0.98);
 }
-
-
-/* 모바일에서도 글씨 작아지지 않게 */
 @media (max-width: 520px){
-  .quick-card{
-    font-size: 17px;
-    height: 48px;
-  }
+  .quick-card{ font-size: 17px; height: 48px; }
 }
-
-
 
 /* Weather */
 .weather-wide{ margin-bottom: 10px; }
@@ -2092,12 +2128,8 @@ a:hover { text-decoration: none; }
   color: #fff;
   box-shadow: 0 12px 24px rgba(0,0,0,0.18);
 }
-.fa-pop-limit{
-  background: rgba(124,58,237,0.95);
-}
-.fa-limit{
-  animation: jiggle 240ms ease-in-out 2;
-}
+.fa-pop-limit{ background: rgba(124,58,237,0.95); }
+.fa-limit{ animation: jiggle 240ms ease-in-out 2; }
 @keyframes jiggle{
   0%{ transform: translateX(0); }
   25%{ transform: translateX(-2px); }
@@ -2139,7 +2171,14 @@ a:hover { text-decoration: none; }
   font-size: 14px;
 }
 .fp-title{ font-size: 18px; font-weight: 950; color:#1b1030; margin-bottom: 10px; }
-.fp-loading, .fp-error{ padding: 14px; border-radius: 16px; background:#faf7ff; border: 1px dashed rgba(165,148,230,0.8); color:#6f60b8; font-weight: 900; }
+.fp-loading, .fp-error{
+  padding: 14px;
+  border-radius: 16px;
+  background:#faf7ff;
+  border: 1px dashed rgba(165,148,230,0.8);
+  color:#6f60b8;
+  font-weight: 900;
+}
 .fp-body{ display:flex; flex-direction: column; gap: 12px; }
 .fp-top{ display:flex; gap: 12px; align-items:center; }
 .fp-avatar{
@@ -2150,91 +2189,119 @@ a:hover { text-decoration: none; }
   display:flex; align-items:center; justify-content:center;
   color:#fff;
   font-weight: 950;
+  font-size: 18px;
+  flex: 0 0 auto;
 }
-.fp-avatar img{ width:100%; height:100%; object-fit: cover; }
-.fp-main{ min-width: 0; }
+.fp-avatar img{ width:100%; height:100%; object-fit: cover; display:block; }
+.fp-main{ display:flex; flex-direction: column; gap: 4px; min-width: 0; }
 .fp-name{ font-size: 18px; font-weight: 950; color:#2a1236; }
-.fp-sub{ font-size: 13px; color:#7a69c4; font-weight: 900; margin-top: 2px; }
+.fp-sub{ font-size: 13px; font-weight: 900; color:#7a69c4; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
 
-.fp-sec-title{ font-size: 13px; font-weight: 950; color:#4b2d7a; margin-bottom: 6px; }
-.fp-muted{ font-size: 13px; color:#7a69c4; font-weight: 900; }
-.fp-badge-row{ display:flex; gap: 8px; flex-wrap: wrap; }
+.fp-badges{ padding: 12px; border-radius: 18px; background:#faf7ff; border: 1px solid rgba(212,200,255,0.85); }
+.fp-sec-title{ font-size: 14px; font-weight: 950; color:#4b2d7a; margin-bottom: 8px; }
+.fp-muted{ font-size: 13px; font-weight: 900; color:#7a69c4; }
+.fp-badge-row{ display:flex; gap: 10px; flex-wrap: wrap; }
 .fp-badge{
-  width: 34px; height: 34px;
+  width: 36px; height: 36px;
   border-radius: 999px;
-  background:#fff;
-  border: 2px solid rgba(180, 160, 255, 0.50);
-  display:flex; align-items:center; justify-content:center;
-  box-shadow: 0 10px 16px rgba(0,0,0,0.06);
+  background: #fff;
+  border: 1px solid rgba(214,200,255,0.95);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  box-shadow: 0 10px 18px rgba(0,0,0,0.06);
 }
 
-.fp-counts{ display:flex; gap: 8px; flex-wrap: wrap; }
+.fp-counts{ display:flex; gap: 10px; flex-wrap: wrap; }
 .fp-count-pill{
-  padding: 6px 10px;
+  padding: 8px 12px;
   border-radius: 999px;
-  background: #f7f2ff;
-  border: 1px solid #e0d4ff;
-  font-size: 13px;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid rgba(226,232,240,0.92);
   font-weight: 950;
-  color:#2a1236;
+  color:#4b2d7a;
 }
-.fp-count-pill b{ color:#ff4f9f; }
+.fp-count-pill b{ color:#ec4899; }
 
-.fp-actions{ display:flex; gap: 10px; }
+/* ✅✅✅ 여기부터가 누락됐던 fp-actions 영역 */
+.fp-actions{
+  display:flex;
+  gap: 10px;
+  margin-top: 4px;
+}
 .fp-btn{
-  flex: 1;
-  height: 40px;
+  flex: 1 1 0;
+  height: 42px;
   border-radius: 999px;
+  border: 1px solid rgba(214,200,255,0.95);
+  background: rgba(255,255,255,0.92);
+  color:#2a1236;
   font-weight: 950;
   cursor: pointer;
-  border: 2px solid rgba(226,232,240,0.9);
-  background: #fff;
-  color:#2a1236;
   box-shadow: 0 12px 22px rgba(0,0,0,0.08);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap: 8px;
 }
-.fp-btn:hover{ transform: translateY(-1px); transition: 160ms ease; }
+.fp-btn:hover{ transform: translateY(-1px); transition: 160ms ease; box-shadow: 0 16px 28px rgba(0,0,0,0.10); }
 .fp-btn:active{ transform: translateY(0); }
 .fp-btn.ghost{
-  background: rgba(255,255,255,0.92);
-  border-color: rgba(168,85,247,0.25);
+  background: rgba(255,255,255,0.90);
   box-shadow: 0 12px 22px rgba(0,0,0,0.08), 0 0 0 3px rgba(59,130,246,0.08);
 }
 .fp-btn.pink{
-  border: 2px solid rgba(255,255,255,0.85);
-  background: linear-gradient(90deg,#ff4fa1,#a855f7);
-  color:#fff;
-  box-shadow: 0 14px 28px rgba(168,85,247,0.22), 0 0 0 3px rgba(244,114,182,0.12);
+  border-color: rgba(244,114,182,0.55);
+  background: linear-gradient(135deg, rgba(255,255,255,0.92), rgba(255,239,251,0.92));
+  box-shadow: 0 12px 22px rgba(0,0,0,0.08), 0 0 0 3px rgba(244,114,182,0.10);
 }
 
-/* Floating support */
+/* Floating Support */
 .floating-support-btn{
   position: fixed;
   right: 18px;
   bottom: 18px;
   z-index: 90;
-  border: none;
-  cursor: pointer;
+  width: 128px;
+  height: 64px;
   border-radius: 18px;
-  padding: 12px 14px;
-  color: #fff;
+  border: 2px solid rgba(255,255,255,0.85);
+  background: linear-gradient(135deg, rgba(244,114,182,0.95), rgba(168,85,247,0.92));
+  color:#fff;
   font-weight: 950;
+  cursor: pointer;
+  box-shadow: 0 22px 46px rgba(15,23,42,0.22), 0 0 0 4px rgba(244,114,182,0.14);
   display:flex;
   flex-direction: column;
+  align-items:center;
+  justify-content:center;
   gap: 2px;
-  background: linear-gradient(135deg, rgba(249,115,184,0.95), rgba(168,85,247,0.95));
-  box-shadow: 0 18px 40px rgba(0,0,0,0.18), 0 0 0 3px rgba(244,114,182,0.12);
 }
-.floating-support-btn:hover{ transform: translateY(-2px); transition: 180ms ease; filter: brightness(1.02); }
-.floating-support-btn span:first-child{ font-size: 13px; opacity: .95; }
-.floating-support-btn span:last-child{ font-size: 14px; }
+.floating-support-btn span:first-child{ font-size: 14px; }
+.floating-support-btn span:last-child{ font-size: 12px; opacity: .95; }
+.floating-support-btn:hover{ transform: translateY(-2px); transition: 180ms ease; filter: brightness(1.03); }
+.floating-support-btn:active{ transform: translateY(0); }
 
-/* Responsive friends actions */
-@media (max-width: 860px){
-  .friend-row{ flex-direction: column; align-items: stretch; gap: 10px; }
-  .friend-actions{ justify-content: space-between; }
-  .fa-pill{ min-width: 0; flex: 1; }
-  .fa-cheer{ min-width: 0; }
-  .friends-right{ flex-wrap: wrap; justify-content: flex-end; }
-  .friends-search{ width: 160px; }
+/* Responsive */
+@media (max-width: 980px){
+  .home-header-top{ grid-template-columns: 1fr; }
+  .home-header-profile{ justify-content: flex-start; }
+  .profile-box{ max-width: 520px; }
+  .home-quick-nav{ flex-wrap: wrap; }
+  .quick-card{ flex: 1 1 calc(50% - 10px); }
+}
+@media (max-width: 560px){
+  .home-root{ padding: 14px; }
+  .home-header{ padding: 18px 16px 30px; }
+  .home-logo{ width: 62px; height: 62px; border-radius: 20px; }
+  .wave-text span{ font-size: 30px; letter-spacing: 4px; }
+  .profile-box{ height: auto; }
+  .profile-main{ padding-right: 72px; }
+  .badge-icon{ width: 32px; height: 32px; }
+  .friends-right{ gap: 8px; }
+  .friends-search{ width: 140px; }
+  .fa-pill{ min-width: 96px; padding: 0 10px; }
+  .fa-cheer{ min-width: 118px; }
+  .floating-support-btn{ right: 14px; bottom: 14px; width: 120px; height: 62px; }
 }
 `;
