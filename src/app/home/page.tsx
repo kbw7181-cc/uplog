@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { getAvatarSrc } from '@/lib/getAvatarSrc';
 import { fetchLiveWeatherSlots, resolveRegionFromProfile, type WeatherSlot } from '@/lib/weatherClient';
 import AdminEntryButton from '@/app/components/AdminEntryButton';
-
+import HomeMenuRow from '@/app/components/HomeMenuRow';
 /** ✅ 친구목록 프로필 모달(홈에서만 사용) */
 type FriendProfileData = {
   user_id: string;
@@ -978,24 +978,7 @@ export default function HomePage() {
           </div>
         </header>
 
-        {/* ✅✅✅ 메뉴버튼: 문자도우미를 커뮤니티 앞으로 */}
-        <section className="home-quick-nav">
-          <Link href="/my-up" className="quick-card">
-            나의 U P 관리
-          </Link>
-          <Link href="/customers" className="quick-card">
-            고객관리
-          </Link>
-          <Link href="/rebuttal" className="quick-card">
-            반론 아카이브
-          </Link>
-          <Link href="/sms-helper" className="quick-card">
-            문자 도우미
-          </Link>
-          <Link href="/community" className="quick-card">
-            커뮤니티
-          </Link>
-        </section>
+       <HomeMenuRow />
 
         {/* 날씨 */}
         <section className="weather-wide">
@@ -1711,7 +1694,7 @@ a:hover { text-decoration: none; }
 .coach-sparkle.s1{ top: 18px; left: 18px; }
 .coach-sparkle.s2{ top: 52px; left: 46px; }
 
-/* ✅ 메뉴바 */
+/* ✅ 메뉴바 (길이 폭주 방지 최종본) */
 .home-quick-nav{
   display:flex;
   gap: 10px;
@@ -1720,40 +1703,67 @@ a:hover { text-decoration: none; }
   background: transparent;
   border: none;
   box-shadow: none;
-  flex-wrap: nowrap;
-  overflow: hidden;
+
+  /* 🔑 핵심 */
+  flex-wrap: wrap;
+  justify-content: center;
 }
+
 .quick-card{
-  flex: 1 1 0;
-  min-width: 0;
+  /* ❌ flex:1 제거 */
+  flex: none;
+
+  /* ✅ 버튼 폭 고정 */
+  width: 100%;
+  max-width: 420px;
+
   height: 44px;
   border-radius: 999px;
-  padding: 0 14px;
-  background: linear-gradient(135deg, rgba(255, 133, 210, 0.85), rgba(166, 120, 255, 0.82));
+  padding: 0 18px;
+
+  background: linear-gradient(
+    135deg,
+    rgba(255,133,210,0.85),
+    rgba(166,120,255,0.82)
+  );
   border: 1px solid rgba(255,255,255,0.55);
-  box-shadow: 0 8px 18px rgba(120, 70, 210, 0.14);
-  display:flex;
+  box-shadow: 0 8px 18px rgba(120,70,210,0.14);
+
+  display:inline-flex;
   align-items:center;
   justify-content:center;
+
   font-size: 17px;
   font-weight: 900;
   letter-spacing: -0.3px;
   color:#fff;
+
   cursor:pointer;
   transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
 }
+
 .quick-card:hover{
   transform: translateY(-1px) scale(1.03);
   filter: brightness(1.04) saturate(1.06);
-  box-shadow: 0 12px 26px rgba(120, 70, 210, 0.22), 0 0 0 3px rgba(255,255,255,0.10);
+  box-shadow:
+    0 12px 26px rgba(120,70,210,0.22),
+    0 0 0 3px rgba(255,255,255,0.10);
 }
+
 .quick-card:active{
-  transform: translateY(0px) scale(0.99);
+  transform: translateY(0) scale(0.99);
   filter: brightness(0.98);
 }
-@media (max-width: 520px){
-  .quick-card{ font-size: 17px; height: 48px; }
+
+/* 모바일 */
+@media (max-width: 560px){
+  .quick-card{
+    max-width: 100%;
+    height: 48px;
+    font-size: 17px;
+  }
 }
+
 
 /* Weather */
 .weather-wide{ margin-bottom: 10px; }
