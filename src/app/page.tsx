@@ -1,182 +1,123 @@
-// ✅✅✅ 전체복붙: src/app/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import Link from 'next/link';
 
-export default function AppGatePage() {
-  const router = useRouter();
-  const [checking, setChecking] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const run = async () => {
-      try {
-        const { data } = await supabase.auth.getSession();
-        if (data?.session?.user) {
-          router.replace('/home');
-          return;
-        }
-      } finally {
-        if (mounted) setChecking(false);
-      }
-    };
-
-    run();
-    return () => {
-      mounted = false;
-    };
-  }, [router]);
-
-  if (checking) {
-    return (
-      <div className="gate-loading">
-        로딩중…
-        <style jsx>{`
-          .gate-loading {
-            min-height: 100vh;
-            display: grid;
-            place-items: center;
-            color: #fff;
-            background: radial-gradient(circle at 15% 10%, rgba(236, 72, 153, 0.25), transparent 55%),
-              radial-gradient(circle at 85% 20%, rgba(168, 85, 247, 0.25), transparent 55%),
-              linear-gradient(180deg, #0b0610, #07030b);
-            font-size: 16px;
-          }
-        `}</style>
-      </div>
-    );
-  }
-
+export default function GatePage() {
   return (
-    <div className="gate">
-      {/* ✅ 배경 이미지: public/main.png */}
-      <div className="bg" aria-hidden="true" />
+    <main className="gate">
+      <div className="gate-bg" aria-hidden="true" />
 
-      {/* ✅ 하단 고정 카드 (중복 문구 제거: 카드 안엔 버튼만) */}
-      <section className="card" aria-label="UPLOG 시작">
-        <div className="actions">
-          <button className="btn primary" onClick={() => router.push('/login')}>
+      <section className="gate-center" aria-label="UPLOG 시작">
+        <div className="gate-logo" aria-hidden="true">
+          {/* main.png에 로고가 이미 있으면 이건 시각적 안정용(안 보이면 무시됨) */}
+        </div>
+
+        <div className="gate-actions" role="group" aria-label="로그인/회원가입">
+          <Link href="/login" className="gate-btn gate-btn-primary">
             로그인
-          </button>
-          <button className="btn ghost" onClick={() => router.push('/register')}>
+          </Link>
+          <Link href="/register" className="gate-btn gate-btn-ghost">
             회원가입
-          </button>
+          </Link>
         </div>
       </section>
 
       <style jsx>{`
-        .gate {
+        .gate{
           position: relative;
-          min-height: 100vh;
+          min-height: 100svh; /* ✅ 하단 검은줄 방지 핵심 */
           overflow: hidden;
-          background: linear-gradient(180deg, #2a0f3a, #16081f);
+          background: #7b3bbf; /* ✅ 배경색 먼저 채워서 빈틈 방지 */
+          display: grid;
+          place-items: center;
+          padding: 18px;
         }
 
-        .bg {
+        .gate-bg{
           position: absolute;
           inset: 0;
-          background-image: url('/main.png');
-          background-repeat: no-repeat;
-          background-size: cover;
-          background-position: center;
-          filter: saturate(1.02);
-          transform: translateY(-2%);
+          background:
+            linear-gradient(180deg, rgba(0,0,0,0.12), rgba(0,0,0,0.28)),
+            url('/main.png') center / cover no-repeat;
+          transform: scale(1.01); /* ✅ 1px 삐져나옴/라인 방지 */
+          filter: saturate(1.08);
         }
 
-        /* ✅ 카드가 이미지 덜 가리게: 더 얇게 + 더 아래 + 폭 적당히 */
-        .card {
-          position: absolute;
-          left: 50%;
-          bottom: 18px;
-          transform: translateX(-50%);
-          width: min(520px, calc(100% - 28px));
-          border-radius: 26px;
-          padding: 14px 14px 12px;
+        .gate-center{
+          position: relative;
+          width: min(720px, 100%);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 18px;
+          padding-top: 56px;
+          padding-bottom: 24px;
+          /* ✅ 버튼이 너무 밑으로 안 내려가게 “중앙 아래” 느낌으로 */
+          transform: translateY(140px);
+        }
 
-          background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.08));
-          border: 1px solid rgba(255, 255, 255, 0.16);
-          box-shadow: 0 22px 70px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+        @media (max-height: 760px){
+          .gate-center{ transform: translateY(110px); }
+        }
+        @media (max-height: 680px){
+          .gate-center{ transform: translateY(90px); }
+        }
+
+        .gate-actions{
+          width: min(520px, 100%);
+          padding: 12px;
+          border-radius: 18px;
+          background: rgba(255,255,255,0.14);
+          border: 1px solid rgba(255,255,255,0.22);
           backdrop-filter: blur(10px);
-
-          color: #fff;
-        }
-
-        .actions {
+          box-shadow:
+            0 12px 30px rgba(0,0,0,0.18),
+            inset 0 1px 0 rgba(255,255,255,0.22);
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 12px;
         }
 
-        .btn {
-          height: 50px;
-          border-radius: 18px;
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          cursor: pointer;
-          font-size: 15px;
-          font-weight: 900;
-          letter-spacing: 0.2px;
+        .gate-btn{
+          height: 54px;
+          border-radius: 14px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 18px;
+          font-weight: 800;
+          letter-spacing: -0.2px;
+          text-decoration: none;
+          transition: transform .12s ease, filter .12s ease, background .12s ease;
           user-select: none;
-
-          transition: transform 160ms ease, box-shadow 180ms ease, filter 180ms ease, border-color 180ms ease;
-
-          /* ✅ 둥둥 */
-          animation: floaty 2.8s ease-in-out infinite;
         }
 
-        .btn.ghost {
-          animation-delay: 0.15s;
+        .gate-btn:active{
+          transform: translateY(1px) scale(0.99);
         }
 
-        @keyframes floaty {
-          0% {
-            transform: translateY(0px);
-          }
-          50% {
-            transform: translateY(-4px);
-          }
-          100% {
-            transform: translateY(0px);
-          }
+        .gate-btn-primary{
+          color: #ffffff;
+          background: linear-gradient(90deg, rgba(255,72,158,0.95), rgba(172,88,255,0.95));
+          box-shadow:
+            0 10px 22px rgba(255,72,158,0.25),
+            0 10px 22px rgba(172,88,255,0.18);
         }
 
-        .primary {
-          background: linear-gradient(90deg, rgba(236, 72, 153, 0.96), rgba(168, 85, 247, 0.96));
-          box-shadow: 0 16px 40px rgba(168, 85, 247, 0.22);
-          color: #1a0623;
+        .gate-btn-primary:hover{
+          filter: brightness(1.05);
         }
 
-        .ghost {
-          background: rgba(255, 255, 255, 0.12);
-          color: #fff;
+        .gate-btn-ghost{
+          color: rgba(255,255,255,0.92);
+          background: rgba(255,255,255,0.12);
+          border: 1px solid rgba(255,255,255,0.22);
         }
 
-        .btn:hover {
-          transform: translateY(-1px);
-          border-color: rgba(255, 255, 255, 0.28);
-          filter: saturate(1.06);
-          box-shadow: 0 18px 46px rgba(0, 0, 0, 0.25);
-        }
-
-        .btn:active {
-          transform: translateY(0px) scale(0.995);
-        }
-
-        @media (max-width: 520px) {
-          .card {
-            bottom: 14px;
-            padding: 12px 12px 10px;
-            border-radius: 22px;
-          }
-          .btn {
-            height: 48px;
-            border-radius: 16px;
-            font-size: 14px;
-          }
+        .gate-btn-ghost:hover{
+          background: rgba(255,255,255,0.16);
         }
       `}</style>
-    </div>
+    </main>
   );
 }
