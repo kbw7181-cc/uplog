@@ -1,3 +1,4 @@
+// ✅✅✅ 전체복붙: src/app/components/HomeMenuRow.tsx
 'use client';
 
 import Link from 'next/link';
@@ -5,7 +6,7 @@ import Link from 'next/link';
 export type HomeMenuItem = {
   label: string;
   href: string;
-  emoji: string;
+  emoji?: string; // ✅ 이모지 없어도 동작
 };
 
 export default function HomeMenuRow({ items }: { items: HomeMenuItem[] }) {
@@ -14,9 +15,7 @@ export default function HomeMenuRow({ items }: { items: HomeMenuItem[] }) {
       <div className="hm-row">
         {items.map((it) => (
           <Link key={it.href} href={it.href} className="hm-item" aria-label={it.label}>
-            <span className="hm-emoji" aria-hidden="true">
-              {it.emoji}
-            </span>
+            {/* ✅ 이모지 완전 제거 (렌더링 안 함) */}
             <span className="hm-label">{it.label}</span>
           </Link>
         ))}
@@ -44,7 +43,7 @@ export default function HomeMenuRow({ items }: { items: HomeMenuItem[] }) {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          gap: 8px;
+          gap: 0;
           padding: 0 10px;
           background: rgba(255, 255, 255, 0.92);
           border: 1px solid rgba(226, 232, 240, 0.92);
@@ -61,12 +60,6 @@ export default function HomeMenuRow({ items }: { items: HomeMenuItem[] }) {
           box-shadow: 0 16px 28px rgba(0, 0, 0, 0.10);
         }
 
-        .hm-emoji {
-          font-size: 18px;
-          line-height: 1;
-          flex: 0 0 auto;
-        }
-
         .hm-label {
           font-size: 13px;
           font-weight: 950;
@@ -77,8 +70,7 @@ export default function HomeMenuRow({ items }: { items: HomeMenuItem[] }) {
           white-space: nowrap; /* ✅ 줄바꿈 금지 */
         }
 
-        /* ✅ 화면이 좁아질 때도 “1줄 유지”가 우선.
-           대신 글자는 더 줄고(ellipsis) 높이만 살짝 줄임 */
+        /* ✅ 화면이 좁아질 때도 “1줄 유지”가 우선 */
         @media (max-width: 720px) {
           .hm-item {
             height: 48px;
@@ -87,9 +79,6 @@ export default function HomeMenuRow({ items }: { items: HomeMenuItem[] }) {
           }
           .hm-label {
             font-size: 12px;
-          }
-          .hm-emoji {
-            font-size: 17px;
           }
         }
       `}</style>

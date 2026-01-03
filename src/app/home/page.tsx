@@ -188,14 +188,15 @@ const MOCK_FRIENDS: Friend[] = [
   { user_id: '4c7d9e0f-9f2a-4d7e-8b3c-1a2f3b5c6d7e', nickname: '이멘탈', online: false, role: '대리' },
 ];
 
-// ✅ 홈 메뉴(5개 유지)
-const MENU_ITEMS: HomeMenuItem[] = [
-  { label: '나의 U P 관리', href: '/my-up', emoji: '📈' },
-  { label: '고객관리', href: '/customers', emoji: '👥' },
-  { label: '반론 아카이브', href: '/rebuttal', emoji: '🧠' },
-  { label: '커뮤니티', href: '/community', emoji: '💬' },
-  { label: '문자 도우미', href: '/sms-helper', emoji: '✉️' },
+// ❌ 이모지 제거된 홈 메뉴 (텍스트만)
+const MENU_ITEMS = [
+  { label: '나의 U P 관리', href: '/my-up' },
+  { label: '고객관리', href: '/customers' },
+  { label: '반론 아카이브', href: '/rebuttal' },
+  { label: '커뮤니티', href: '/community' },
+  { label: '문자 도우미', href: '/sms-helper' },
 ];
+
 
 export default function HomePage() {
   const router = useRouter();
@@ -814,7 +815,7 @@ export default function HomePage() {
             <div className="home-header-left">
               <div className="home-logo-row">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/assets/gogo.png" alt="UPLOG 로고" className="home-logo" />
+                <img src="/gogo.png" alt="UPLOG 로고" className="home-logo" />
 
                 <div className="home-logo-text-wrap">
                   <div className="wave-text" aria-label="UPLOG">
@@ -2195,4 +2196,128 @@ a:hover { text-decoration: none; }
   align-items: center;
 }
 .floating-support-btn:hover{ transform: translateY(-1px); transition: 160ms ease; filter: brightness(1.03); }
+
+/* 전체복붙: (CSS에 그대로 추가/교체용)
+   - 이 블록만 "맨 아래"에 붙여넣으면 됩니다.
+   - 이모지 없음
+   - 다른 스타일은 건드리지 않고 hover만 강화합니다.
+*/
+
+/* Neon hover tokens (없으면 추가) */
+:root{
+  --neon-pink: rgba(244,114,182,0.95);
+  --neon-purple: rgba(168,85,247,0.95);
+  --neon-blue: rgba(59,130,246,0.75);
+}
+
+/* smooth neon motion */
+.nav-btn,
+.profile-settings-btn,
+.uplog-chat-btn,
+.fa-pill,
+.friend-row,
+.calendar-day,
+.summary-card,
+.weather-panel,
+.home-section,
+.profile-box{
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease, border-color 180ms ease, background 180ms ease;
+  will-change: transform, box-shadow, filter;
+}
+
+/* Neon hover: buttons */
+.nav-btn:hover,
+.profile-settings-btn:hover,
+.uplog-chat-btn:hover,
+.fa-pill:hover{
+  transform: translateY(-2px);
+  filter: brightness(1.04) saturate(1.10);
+  border-color: rgba(255,255,255,0.88);
+  box-shadow:
+    0 14px 28px rgba(0,0,0,0.10),
+    0 0 0 3px rgba(255,255,255,0.22),
+    0 0 16px rgba(244,114,182,0.30),
+    0 0 26px rgba(168,85,247,0.28),
+    0 0 38px rgba(59,130,246,0.16);
+}
+
+/* Press */
+.nav-btn:active,
+.profile-settings-btn:active,
+.uplog-chat-btn:active,
+.fa-pill:active{
+  transform: translateY(0px) scale(0.99);
+  filter: brightness(0.99);
+}
+
+/* Cheer button stronger neon (fa-cheer 클래스가 있을 때만 적용됨) */
+.fa-cheer:hover{
+  filter: brightness(1.06) saturate(1.18);
+  border-color: rgba(244,114,182,0.72);
+  box-shadow:
+    0 16px 34px rgba(0,0,0,0.12),
+    0 0 0 3px rgba(244,114,182,0.14),
+    0 0 18px rgba(244,114,182,0.38),
+    0 0 30px rgba(168,85,247,0.22);
+}
+
+/* Neon hover: big cards */
+.profile-box:hover,
+.weather-panel:hover,
+.summary-card:hover,
+.home-section:hover,
+.friend-row:hover{
+  transform: translateY(-2px);
+  filter: brightness(1.02) saturate(1.06);
+  box-shadow:
+    0 18px 40px rgba(0,0,0,0.14),
+    0 0 0 3px rgba(255,255,255,0.16),
+    0 0 26px rgba(244,114,182,0.20),
+    0 0 36px rgba(168,85,247,0.18);
+}
+
+/* Calendar day hover neon (기존 .calendar-day:hover가 있으면 이걸로 교체되게 아래에 둠) */
+.calendar-day:hover{
+  transform: translateY(-2px);
+  border-color: rgba(168,85,247,0.55);
+  box-shadow:
+    0 16px 28px rgba(0,0,0,0.08),
+    0 0 0 3px rgba(168,85,247,0.12),
+    0 0 18px rgba(244,114,182,0.16);
+  filter: brightness(1.02) saturate(1.05);
+}
+
+/* Sweep highlight (원치 않으면 이 블록 삭제)
+   버튼 위로 은근히 빛이 지나가는 효과 */
+.uplog-chat-btn,
+.fa-pill,
+.profile-settings-btn,
+.nav-btn{
+  position: relative;
+  overflow: hidden;
+}
+
+.uplog-chat-btn::after,
+.fa-pill::after,
+.profile-settings-btn::after,
+.nav-btn::after{
+  content:'';
+  position:absolute;
+  top:-40%;
+  left:-60%;
+  width: 60%;
+  height: 180%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  transform: rotate(18deg);
+  opacity: 0;
+  transition: opacity 180ms ease, transform 420ms ease;
+  pointer-events:none;
+}
+
+.uplog-chat-btn:hover::after,
+.fa-pill:hover::after,
+.profile-settings-btn:hover::after,
+.nav-btn:hover::after{
+  opacity: 1;
+  transform: translateX(220%) rotate(18deg);
 `;

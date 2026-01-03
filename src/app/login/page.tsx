@@ -1,4 +1,3 @@
-// ✅✅✅ 전체복붙: src/app/login/page.tsx
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
@@ -68,19 +67,25 @@ export default function LoginPage() {
     setLoading(true);
     setMsg(null);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: eMail,
-      password: pw,
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: eMail,
+        password: pw,
+      });
 
-    if (error || !data?.session?.user) {
+      if (error || !data?.session?.user) {
+        setLoading(false);
+        setMsg('로그인 실패! 이메일/비밀번호를 다시 확인해줘요.');
+        return;
+      }
+
+      // ✅ 성공해도 안전하게 loading 해제 후 이동
       setLoading(false);
-      setMsg('로그인 실패! 이메일/비밀번호를 다시 확인해줘요.');
-      return;
+      router.replace('/home');
+    } catch {
+      setLoading(false);
+      setMsg('로그인 중 문제가 발생했어요. 잠시 후 다시 시도해줘요.');
     }
-
-    // 로그인 성공 → 메인 이동
-    router.replace('/home');
   };
 
   if (checking) {
@@ -118,11 +123,9 @@ export default function LoginPage() {
           maxWidth: 420,
           borderRadius: 22,
           padding: '20px 18px 18px',
-          background:
-            'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06))',
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06))',
           border: '1px solid rgba(255,255,255,0.14)',
-          boxShadow:
-            '0 18px 55px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.12)',
+          boxShadow: '0 18px 55px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.12)',
           color: '#fff',
         }}
       >
@@ -137,9 +140,7 @@ export default function LoginPage() {
           >
             UPLOG 로그인
           </div>
-          <div style={{ fontSize: 14, opacity: 0.85 }}>
-            이메일과 비밀번호 입력 후 들어갈 수 있어요.
-          </div>
+          <div style={{ fontSize: 14, opacity: 0.85 }}>이메일과 비밀번호 입력 후 들어갈 수 있어요.</div>
         </div>
 
         <form onSubmit={onSubmit} style={{ display: 'grid', gap: 10 }}>
@@ -208,9 +209,10 @@ export default function LoginPage() {
               height: 48,
               borderRadius: 16,
               border: '1px solid rgba(255,255,255,0.16)',
-              background: disabled || loading
-                ? 'rgba(255,255,255,0.10)'
-                : 'linear-gradient(90deg, rgba(236,72,153,0.95), rgba(168,85,247,0.95))',
+              background:
+                disabled || loading
+                  ? 'rgba(255,255,255,0.10)'
+                  : 'linear-gradient(90deg, rgba(236,72,153,0.95), rgba(168,85,247,0.95))',
               color: '#fff',
               fontSize: 16,
               fontWeight: 800,
@@ -224,7 +226,7 @@ export default function LoginPage() {
 
           <button
             type="button"
-            onClick={() => router.replace('/signup')}
+            onClick={() => router.push('/signup')}
             style={{
               height: 46,
               borderRadius: 16,
