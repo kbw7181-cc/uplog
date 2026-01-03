@@ -18,7 +18,6 @@ export default function GatePage() {
         </div>
       </section>
 
-      {/* ✅ 전역으로 강하게(다른 CSS가 덮어도 버튼이 무조건 살아남게) */}
       <style jsx global>{`
         .gate {
           position: relative;
@@ -45,26 +44,26 @@ export default function GatePage() {
           display: flex;
           justify-content: center;
 
-          /* ✅ 글귀 아래로 살짝 더 내려서 고정 */
-          padding-top: 300px;
-          padding-bottom: 28px;
+          /* ✅ 더 밑으로 */
+          padding-top: 360px;
+          padding-bottom: 22px;
         }
         @media (max-height: 820px) {
           .gateCenter {
-            padding-top: 260px;
+            padding-top: 310px;
           }
         }
         @media (max-height: 720px) {
           .gateCenter {
-            padding-top: 230px;
+            padding-top: 270px;
           }
         }
 
         .btnRow {
-          width: min(640px, 100%);
+          width: min(560px, 100%);
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 16px;
+          gap: 14px;
           animation: floaty 2.6s ease-in-out infinite;
         }
 
@@ -73,31 +72,30 @@ export default function GatePage() {
             transform: translateY(0);
           }
           50% {
-            transform: translateY(-8px);
+            transform: translateY(-6px);
           }
           100% {
             transform: translateY(0);
           }
         }
 
-        /* ✅ 핵심: 다른 전역 a 스타일이 덮어도 버튼이 무조건 “버튼처럼” 보이게 !important */
+        /* ✅ 버튼 크기 줄임 */
         .gateBtn {
           display: inline-flex !important;
           align-items: center !important;
           justify-content: center !important;
 
-          height: 64px !important;
-          border-radius: 20px !important;
+          height: 52px !important;
+          border-radius: 18px !important;
 
-          font-size: 22px !important;
+          font-size: 18px !important;
           font-weight: 950 !important;
-          letter-spacing: -0.3px !important;
+          letter-spacing: -0.2px !important;
           text-decoration: none !important;
 
-          border: 2px solid rgba(255, 255, 255, 0.28) !important;
+          border: 1.5px solid rgba(255, 255, 255, 0.28) !important;
           backdrop-filter: blur(10px) !important;
-
-          box-shadow: 0 16px 38px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+          box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
 
           transition: transform 0.12s ease, filter 0.12s ease, background 0.12s ease !important;
           user-select: none !important;

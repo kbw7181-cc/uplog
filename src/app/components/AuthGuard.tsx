@@ -1,37 +1,52 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '../../lib/supabaseClient';
+import { usePathname, useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
+
+const PUBLIC_PATHS = ['/', '/login', '/register'];
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
+
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    let alive = true;
+    let mounted = true;
 
     (async () => {
-      const { data } = await supabase.auth.getUser();
-      const user = data?.user;
-
-      if (!user) {
-        router.replace('/login'); // ❌ 로그인 안 됐으면 무조건 튕김
+      // ✅ 공개 페이지는 절대 막지 않기
+      const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
+      if (isPublic) {
+        if (mounted) setChecking(false);
         return;
       }
 
-      if (alive) setChecking(false);
+      const { data } = await supabase.auth.getSession();
+      const hasSession = !!data.session;
+
+      if (!hasSession) {
+        router.replace('/login');
+        return;
+      }
+
+      if (mounted) setChecking(false);
     })();
 
     return () => {
-      alive = false;
+      mounted = false;
     };
-  }, [router]);
+  }, [pathname, router]);
+
+  // ✅ 공개 페이지는 로딩 마스크도 없이 바로 렌더
+  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
+  if (isPublic) return <>{children}</>;
 
   if (checking) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#B982FF] text-white text-[18px] font-black">
-        인증 확인 중...
+      <div style={{ minHeight: '100svh', display: 'grid', placeItems: 'center', color: '#fff', background: '#7b3bbf' }}>
+        로딩중…
       </div>
     );
   }
