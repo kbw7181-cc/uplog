@@ -1,180 +1,261 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function RegisterPage() {
   const router = useRouter();
 
-  const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [pw, setPw] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
 
-  const [err, setErr] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!mounted) return;
-      if (data.session) router.replace('/home');
-      setLoading(false);
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [router]);
+  const canSubmit = useMemo(() => {
+    const e = email.trim();
+    return e.includes('@') && pw.trim().length >= 8 && !loading;
+  }, [email, pw, loading]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (submitting) return;
+    if (!canSubmit) return;
 
-    setErr(null);
-    setSubmitting(true);
+    setLoading(true);
+    setMsg(null);
 
-    const { error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-    });
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password: pw.trim(),
+      });
 
-    if (error) {
-      setErr(humanize(error.message));
-      setSubmitting(false);
-      return;
+      if (error) {
+        setMsg(error.message || '회원가입에 실패했어요.');
+        return;
+      }
+
+      // ✅ 케이스 1) 즉시 세션이 생기면 홈으로
+      if (data.session) {
+        router.replace('/home');
+        return;
+      }
+
+      // ✅ 케이스 2) 이메일 인증이 필요한 설정이면 안내 후 로그인으로
+      setMsg('회원가입 완료! 이메일 인증 후 로그인해 주세요.');
+      setTimeout(() => router.replace('/login'), 800);
+    } catch (err: any) {
+      setMsg(err?.message || '회원가입 중 오류가 발생했어요.');
+    } finally {
+      setLoading(false);
     }
-
-    router.replace('/login');
-  }
-
-  if (loading) {
-    return (
-      <main className="auth">
-        <div className="bg" aria-hidden="true" />
-        <div className="card">로딩중…</div>
-        <style jsx>{styles}</style>
-      </main>
-    );
   }
 
   return (
-    <main className="auth">
-      <div className="bg" aria-hidden="true" />
-
-      <section className="card" aria-label="회원가입">
-        <header className="head">
-          <div className="brand">
-            <img className="logo" src="/gogo.png" alt="UPLOG" />
-            <div className="brandText">
-              <div className="title">UPLOG</div>
-              <div className="sub">회원가입</div>
-            </div>
+    <main className="auth-page">
+      <div className="auth-bg" aria-hidden="true" />
+      <section className="auth-card" aria-label="회원가입">
+        <header className="auth-head">
+          <div className="auth-logo" aria-hidden="true">
+            <div className="auth-logoMark" />
+          </div>
+          <div className="auth-titles">
+            <div className="auth-brand">UPLOG</div>
+            <div className="auth-sub">회원가입</div>
           </div>
         </header>
 
-        <form className="form" onSubmit={onSubmit}>
-          <label className="lbl">
-            <span className="lblt">이메일</span>
+        <form className="auth-form" onSubmit={onSubmit}>
+          <label className="auth-label">
+            <span>이메일</span>
             <input
-              className="inp"
+              className="auth-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@email.com"
+              inputMode="email"
               autoComplete="email"
             />
           </label>
 
-          <label className="lbl">
-            <span className="lblt">비밀번호</span>
+          <label className="auth-label">
+            <span>비밀번호</span>
             <input
-              className="inp"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              className="auth-input"
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
               placeholder="8자 이상 권장"
+              type="password"
               autoComplete="new-password"
             />
           </label>
 
-          {err && <div className="err">{err}</div>}
+          {msg ? <div className="auth-msg">{msg}</div> : null}
 
-          {/* ✅ 메인: 회원가입 */}
-          <button className="btn btnPrimary" type="submit" disabled={submitting}>
-            {submitting ? '가입 중…' : '회원가입'}
+          <button className="auth-btn auth-primary" disabled={!canSubmit} type="submit">
+            {loading ? '처리 중…' : '회원가입'}
           </button>
 
-          {/* ✅ 서브: 로그인 하러가기 */}
-          <button className="btn btnGhost" type="button" onClick={() => router.push('/login')}>
+          {/* ✅ 회원가입 화면에는 "로그인 하러가기"만 */}
+          <Link className="auth-btn auth-ghost" href="/login" aria-label="로그인 하러가기">
             로그인 하러가기
-          </button>
+          </Link>
         </form>
       </section>
 
-      <style jsx>{styles}</style>
+      <style jsx>{`
+        .auth-page {
+          min-height: 100vh;
+          display: grid;
+          place-items: center;
+          padding: 26px 16px;
+          position: relative;
+          overflow: hidden;
+        }
+        .auth-bg {
+          position: fixed;
+          inset: 0;
+          background: radial-gradient(circle at 20% 10%, rgba(255, 70, 190, 0.28), transparent 55%),
+            radial-gradient(circle at 85% 15%, rgba(145, 80, 255, 0.35), transparent 52%),
+            radial-gradient(circle at 45% 95%, rgba(255, 155, 220, 0.20), transparent 50%),
+            linear-gradient(135deg, #a23ea7 0%, #7b3fe6 100%);
+          filter: saturate(1.05);
+        }
+
+        .auth-card {
+          width: min(760px, 96vw);
+          border-radius: 26px;
+          padding: 24px 22px 22px;
+          background: rgba(255, 255, 255, 0.10);
+          border: 1px solid rgba(255, 255, 255, 0.22);
+          box-shadow: 0 18px 60px rgba(0, 0, 0, 0.25);
+          backdrop-filter: blur(10px);
+        }
+
+        .auth-head {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 6px 6px 14px;
+        }
+
+        .auth-logo {
+          width: 44px;
+          height: 44px;
+          border-radius: 14px;
+          background: rgba(255, 255, 255, 0.14);
+          border: 1px solid rgba(255, 255, 255, 0.22);
+          display: grid;
+          place-items: center;
+        }
+        .auth-logoMark {
+          width: 22px;
+          height: 22px;
+          border-radius: 8px;
+          background: linear-gradient(135deg, #ff4db8 0%, #a855f7 60%, #7c3aed 100%);
+          box-shadow: 0 10px 24px rgba(255, 77, 184, 0.22);
+        }
+
+        .auth-titles {
+          display: flex;
+          flex-direction: column;
+          line-height: 1.1;
+        }
+        .auth-brand {
+          font-size: 26px;
+          font-weight: 900;
+          letter-spacing: 0.4px;
+          color: rgba(255, 255, 255, 0.95);
+        }
+        .auth-sub {
+          margin-top: 4px;
+          font-size: 16px;
+          font-weight: 800;
+          color: rgba(255, 255, 255, 0.78);
+        }
+
+        .auth-form {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          padding: 6px;
+        }
+
+        .auth-label span {
+          display: block;
+          font-size: 14px;
+          font-weight: 800;
+          color: rgba(255, 255, 255, 0.85);
+          margin: 10px 0 8px;
+        }
+
+        .auth-input {
+          width: 100%;
+          height: 52px;
+          border-radius: 16px;
+          padding: 0 16px;
+          font-size: 16px;
+          color: rgba(255, 255, 255, 0.92);
+          background: rgba(0, 0, 0, 0.18);
+          border: 1px solid rgba(255, 255, 255, 0.22);
+          outline: none;
+        }
+        .auth-input::placeholder {
+          color: rgba(255, 255, 255, 0.55);
+        }
+        .auth-input:focus {
+          border-color: rgba(255, 77, 184, 0.60);
+          box-shadow: 0 0 0 3px rgba(255, 77, 184, 0.18);
+        }
+
+        .auth-msg {
+          margin-top: 2px;
+          padding: 10px 12px;
+          border-radius: 14px;
+          background: rgba(0, 0, 0, 0.18);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          color: rgba(255, 255, 255, 0.9);
+          font-size: 14px;
+          font-weight: 700;
+        }
+
+        /* ✅ 버튼 "위치 안맞음" 해결: 동일 높이/정렬/간격 고정 */
+        .auth-btn {
+          height: 54px;
+          border-radius: 18px;
+          display: grid;
+          place-items: center;
+          font-size: 18px;
+          font-weight: 900;
+          text-decoration: none;
+          user-select: none;
+        }
+
+        .auth-primary {
+          margin-top: 6px;
+          border: 1px solid rgba(255, 255, 255, 0.22);
+          background: linear-gradient(90deg, #ff4db8 0%, #b86bff 55%, #7c3aed 100%);
+          color: #ffffff;
+          box-shadow: 0 18px 42px rgba(255, 77, 184, 0.18);
+          cursor: pointer;
+        }
+        .auth-primary:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+          filter: grayscale(0.2);
+        }
+
+        .auth-ghost {
+          background: rgba(0, 0, 0, 0.16);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          color: rgba(255, 255, 255, 0.92);
+        }
+        .auth-ghost:hover {
+          border-color: rgba(255, 255, 255, 0.30);
+          background: rgba(0, 0, 0, 0.20);
+        }
+      `}</style>
     </main>
   );
 }
-
-function humanize(msg: string) {
-  const m = (msg || '').toLowerCase();
-  if (m.includes('anonymous sign-ins are disabled')) return 'Supabase 인증 설정이 막혀 있어요. Auth 설정 확인 필요.';
-  if (m.includes('user already registered')) return '이미 가입된 이메일이에요. 로그인으로 진행해 주세요.';
-  return msg;
-}
-
-const styles = `
-  .auth{ position:relative; min-height:100svh; overflow:hidden; display:grid; place-items:center; padding:18px; background:#7b3bbf; }
-  .bg{ position:absolute; inset:0;
-    background:
-      radial-gradient(circle at 20% 18%, rgba(255,82,168,0.40), transparent 48%),
-      radial-gradient(circle at 82% 28%, rgba(172,88,255,0.48), transparent 52%),
-      radial-gradient(circle at 48% 92%, rgba(255,255,255,0.10), transparent 55%),
-      linear-gradient(180deg, rgba(20,0,36,0.22), rgba(20,0,36,0.40));
-  }
-  .card{
-    position:relative; width:min(640px,100%);
-    border-radius:26px; padding:20px;
-    background:rgba(255,255,255,0.12);
-    border:2px solid rgba(255,255,255,0.26);
-    backdrop-filter:blur(12px);
-    box-shadow:0 18px 48px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.22);
-    color:rgba(255,255,255,0.96);
-  }
-  .brand{ display:flex; align-items:center; gap:12px; }
-  .logo{ width:48px; height:48px; object-fit:contain; }
-  .title{ font-size:24px; font-weight:950; letter-spacing:-0.4px; }
-  .sub{ font-size:18px; font-weight:900; opacity:0.95; }
-
-  .form{ display:grid; gap:14px; padding:14px 6px 6px; }
-  .lbl{ display:grid; gap:10px; }
-  .lblt{ font-size:16px; font-weight:900; }
-
-  .inp{
-    height:58px; border-radius:18px;
-    border:2px solid rgba(255,255,255,0.26);
-    background:rgba(0,0,0,0.22);
-    color:rgba(255,255,255,0.96);
-    padding:0 16px; outline:none; font-size:18px;
-  }
-  .inp::placeholder{ color:rgba(255,255,255,0.72); }
-
-  .err{
-    padding:12px 14px; border-radius:18px;
-    background:rgba(255,60,120,0.18);
-    border:2px solid rgba(255,60,120,0.26);
-    font-size:16px; font-weight:850;
-  }
-
-  .btn{
-    height:60px; border-radius:18px;
-    border:2px solid rgba(255,255,255,0.26);
-    font-size:20px; font-weight:950;
-    color:rgba(255,255,255,0.98);
-    cursor:pointer;
-    transition: transform .12s ease, filter .12s ease, background .12s ease;
-  }
-  .btn:active{ transform: translateY(1px) scale(0.99); }
-  .btnPrimary{ background:linear-gradient(90deg, rgba(255,72,158,0.98), rgba(172,88,255,0.98)); }
-  .btnGhost{ background:rgba(0,0,0,0.18); }
-`;
