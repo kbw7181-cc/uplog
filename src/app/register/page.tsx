@@ -45,7 +45,6 @@ export default function RegisterPage() {
       return;
     }
 
-    // ✅ 회원가입 완료 → 로그인으로 이동 (확실)
     router.replace('/login');
   }
 
@@ -66,7 +65,7 @@ export default function RegisterPage() {
       <section className="card" aria-label="회원가입">
         <header className="head">
           <div className="brand">
-            <img className="logo" src="/assets/gogo.png" alt="UPLOG" />
+            <img className="logo" src="/gogo.png" alt="UPLOG" />
             <div className="brandText">
               <div className="title">UPLOG</div>
               <div className="sub">회원가입하고 UP을 시작해요</div>
@@ -98,7 +97,7 @@ export default function RegisterPage() {
             />
           </label>
 
-          {err && <div className="err">{err}</div>}
+          {err && <div className="err">{humanizeAuthError(err)}</div>}
 
           <button className="btn btnPrimary" type="submit" disabled={submitting}>
             {submitting ? '가입 중…' : '회원가입'}
@@ -116,6 +115,16 @@ export default function RegisterPage() {
       <style jsx>{styles}</style>
     </main>
   );
+}
+
+function humanizeAuthError(msg: string) {
+  const m = (msg || '').toLowerCase();
+  if (m.includes('anonymous sign-ins are disabled')) {
+    return '현재 Supabase에서 “익명 로그인”이 꺼져있다고 떠요. 이메일/비밀번호 회원가입은 정상이어야 하는데, 프로젝트 Auth 설정을 한번 확인해야 해요.';
+  }
+  if (m.includes('user already registered')) return '이미 가입된 이메일이에요. 로그인으로 진행해 주세요.';
+  if (m.includes('password')) return '비밀번호 조건을 확인해 주세요.';
+  return msg;
 }
 
 const styles = `
@@ -141,7 +150,7 @@ const styles = `
 
   .card{
     position: relative;
-    width: min(560px, 100%);
+    width: min(600px, 100%);
     border-radius: 24px;
     padding: 18px;
     background: rgba(255,255,255,0.12);
@@ -151,43 +160,18 @@ const styles = `
     color: rgba(255,255,255,0.96);
     animation: floaty 2.8s ease-in-out infinite;
   }
-
-  @keyframes floaty{
-    0%{ transform: translateY(0); }
-    50%{ transform: translateY(-6px); }
-    100%{ transform: translateY(0); }
-  }
+  @keyframes floaty{ 0%{ transform: translateY(0);} 50%{ transform: translateY(-6px);} 100%{ transform: translateY(0);} }
 
   .head{ padding: 6px 6px 12px; }
-  .brand{
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .logo{
-    width: 44px;
-    height: 44px;
-    object-fit: contain;
-    filter: drop-shadow(0 10px 16px rgba(0,0,0,0.20));
-  }
-  .brandText{ display: grid; gap: 2px; }
-  .title{
-    font-size: 22px;
-    font-weight: 950;
-    letter-spacing: -0.4px;
-  }
-  .sub{
-    font-size: 14px;
-    opacity: 0.95;
-  }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .logo{ width: 44px; height:44px; object-fit:contain; filter: drop-shadow(0 10px 16px rgba(0,0,0,0.20)); }
+  .brandText{ display:grid; gap:2px; }
+  .title{ font-size: 22px; font-weight: 950; letter-spacing: -0.4px; }
+  .sub{ font-size: 14px; opacity: 0.95; }
 
-  .form{ display: grid; gap: 12px; padding: 10px 6px 6px; }
-  .lbl{ display: grid; gap: 8px; }
-  .lblt{
-    font-size: 14px;
-    font-weight: 800;
-    color: rgba(255,255,255,0.95);
-  }
+  .form{ display:grid; gap:12px; padding: 10px 6px 6px; }
+  .lbl{ display:grid; gap:8px; }
+  .lblt{ font-size: 14px; font-weight: 850; color: rgba(255,255,255,0.98); }
 
   .inp{
     height: 52px;
@@ -211,7 +195,7 @@ const styles = `
     background: rgba(255, 60, 120, 0.18);
     border: 1.5px solid rgba(255, 60, 120, 0.26);
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 750;
   }
 
   .btn{
@@ -227,7 +211,6 @@ const styles = `
     border: 1.5px solid rgba(255,255,255,0.26);
     transition: transform .12s ease, filter .12s ease, background .12s ease;
   }
-
   .btnPrimary{
     color: #fff;
     background: linear-gradient(90deg, rgba(255,72,158,0.98), rgba(172,88,255,0.98));
@@ -239,13 +222,13 @@ const styles = `
   .btn:active{ transform: translateY(1px) scale(0.99); }
 
   .foot{
-    display: grid;
+    display:grid;
     grid-template-columns: 1fr auto;
-    align-items: center;
+    align-items:center;
     gap: 10px;
     padding-top: 4px;
   }
-  .muted{ opacity: 0.92; font-size: 14px; font-weight: 700; }
+  .muted{ opacity: 0.92; font-size: 14px; font-weight: 750; }
 
   .btnGhost{
     padding: 0 16px;
@@ -253,7 +236,6 @@ const styles = `
     border-radius: 14px;
     background: rgba(0,0,0,0.20);
     color: rgba(255,255,255,0.96);
-    border: 1.5px solid rgba(255,255,255,0.26);
   }
   .btnGhost:hover{ background: rgba(0,0,0,0.26); }
 `;

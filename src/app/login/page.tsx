@@ -65,10 +65,11 @@ export default function LoginPage() {
       <section className="card" aria-label="로그인">
         <header className="head">
           <div className="brand">
-            <img className="logo" src="/assets/gogo.png" alt="UPLOG" />
+            {/* ✅ public에 있으면 경로는 무조건 이렇게 */}
+            <img className="logo" src="/gogo.png" alt="UPLOG" />
             <div className="brandText">
               <div className="title">UPLOG</div>
-              <div className="sub">오늘도 나를 UP시키다</div>
+              <div className="sub">로그인하고 오늘 기록 시작해요</div>
             </div>
           </div>
         </header>
@@ -97,7 +98,7 @@ export default function LoginPage() {
             />
           </label>
 
-          {err && <div className="err">{err}</div>}
+          {err && <div className="err">{humanizeAuthError(err)}</div>}
 
           <button className="btn btnPrimary" type="submit" disabled={submitting}>
             {submitting ? '로그인 중…' : '로그인'}
@@ -115,6 +116,14 @@ export default function LoginPage() {
       <style jsx>{styles}</style>
     </main>
   );
+}
+
+function humanizeAuthError(msg: string) {
+  const m = (msg || '').toLowerCase();
+  if (m.includes('invalid login credentials')) return '이메일 또는 비밀번호가 올바르지 않아요.';
+  if (m.includes('email not confirmed')) return '이메일 인증이 필요해요. 메일함을 확인해 주세요.';
+  if (m.includes('too many requests')) return '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.';
+  return msg;
 }
 
 const styles = `
@@ -140,7 +149,7 @@ const styles = `
 
   .card{
     position: relative;
-    width: min(560px, 100%);
+    width: min(600px, 100%);
     border-radius: 24px;
     padding: 18px;
     background: rgba(255,255,255,0.12);
@@ -150,43 +159,18 @@ const styles = `
     color: rgba(255,255,255,0.96);
     animation: floaty 2.8s ease-in-out infinite;
   }
-
-  @keyframes floaty{
-    0%{ transform: translateY(0); }
-    50%{ transform: translateY(-6px); }
-    100%{ transform: translateY(0); }
-  }
+  @keyframes floaty{ 0%{ transform: translateY(0);} 50%{ transform: translateY(-6px);} 100%{ transform: translateY(0);} }
 
   .head{ padding: 6px 6px 12px; }
-  .brand{
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .logo{
-    width: 44px;
-    height: 44px;
-    object-fit: contain;
-    filter: drop-shadow(0 10px 16px rgba(0,0,0,0.20));
-  }
-  .brandText{ display: grid; gap: 2px; }
-  .title{
-    font-size: 22px;
-    font-weight: 950;
-    letter-spacing: -0.4px;
-  }
-  .sub{
-    font-size: 14px;
-    opacity: 0.95;
-  }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .logo{ width: 44px; height:44px; object-fit:contain; filter: drop-shadow(0 10px 16px rgba(0,0,0,0.20)); }
+  .brandText{ display:grid; gap:2px; }
+  .title{ font-size: 22px; font-weight: 950; letter-spacing: -0.4px; }
+  .sub{ font-size: 14px; opacity: 0.95; }
 
-  .form{ display: grid; gap: 12px; padding: 10px 6px 6px; }
-  .lbl{ display: grid; gap: 8px; }
-  .lblt{
-    font-size: 14px;
-    font-weight: 800;
-    color: rgba(255,255,255,0.95);
-  }
+  .form{ display:grid; gap:12px; padding: 10px 6px 6px; }
+  .lbl{ display:grid; gap:8px; }
+  .lblt{ font-size: 14px; font-weight: 850; color: rgba(255,255,255,0.98); }
 
   .inp{
     height: 52px;
@@ -210,7 +194,7 @@ const styles = `
     background: rgba(255, 60, 120, 0.18);
     border: 1.5px solid rgba(255, 60, 120, 0.26);
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 750;
   }
 
   .btn{
@@ -223,10 +207,9 @@ const styles = `
     font-weight: 950;
     text-decoration: none;
     user-select: none;
-    border: 1.5px solid rgba(255,255,255,0.26); /* ✅ 버튼 테두리 */
+    border: 1.5px solid rgba(255,255,255,0.26);
     transition: transform .12s ease, filter .12s ease, background .12s ease;
   }
-
   .btnPrimary{
     color: #fff;
     background: linear-gradient(90deg, rgba(255,72,158,0.98), rgba(172,88,255,0.98));
@@ -238,13 +221,13 @@ const styles = `
   .btn:active{ transform: translateY(1px) scale(0.99); }
 
   .foot{
-    display: grid;
+    display:grid;
     grid-template-columns: 1fr auto;
-    align-items: center;
+    align-items:center;
     gap: 10px;
     padding-top: 4px;
   }
-  .muted{ opacity: 0.92; font-size: 14px; font-weight: 700; }
+  .muted{ opacity: 0.92; font-size: 14px; font-weight: 750; }
 
   .btnGhost{
     padding: 0 16px;
@@ -252,7 +235,6 @@ const styles = `
     border-radius: 14px;
     background: rgba(0,0,0,0.20);
     color: rgba(255,255,255,0.96);
-    border: 1.5px solid rgba(255,255,255,0.26);
   }
   .btnGhost:hover{ background: rgba(0,0,0,0.26); }
 `;
