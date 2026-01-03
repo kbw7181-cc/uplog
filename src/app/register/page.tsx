@@ -76,20 +76,35 @@ export default function RegisterPage() {
         <form className="form" onSubmit={onSubmit}>
           <label className="lbl">
             <span className="lblt">이메일</span>
-            <input className="inp" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@email.com" autoComplete="email" />
+            <input
+              className="inp"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@email.com"
+              autoComplete="email"
+            />
           </label>
 
           <label className="lbl">
             <span className="lblt">비밀번호</span>
-            <input className="inp" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="8자 이상 권장" autoComplete="new-password" />
+            <input
+              className="inp"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="8자 이상 권장"
+              autoComplete="new-password"
+            />
           </label>
 
           {err && <div className="err">{err}</div>}
 
+          {/* ✅ 메인: 회원가입 */}
           <button className="btn btnPrimary" type="submit" disabled={submitting}>
             {submitting ? '가입 중…' : '회원가입'}
           </button>
 
+          {/* ✅ 서브: 로그인 하러가기 */}
           <button className="btn btnGhost" type="button" onClick={() => router.push('/login')}>
             로그인 하러가기
           </button>
@@ -103,8 +118,8 @@ export default function RegisterPage() {
 
 function humanize(msg: string) {
   const m = (msg || '').toLowerCase();
-  if (m.includes('anonymous sign-ins are disabled')) return 'Supabase 설정에서 인증 옵션이 막혀 있어요. Auth 설정 확인 필요.';
-  if (m.includes('user already registered')) return '이미 가입된 이메일이에요. 로그인으로 가세요.';
+  if (m.includes('anonymous sign-ins are disabled')) return 'Supabase 인증 설정이 막혀 있어요. Auth 설정 확인 필요.';
+  if (m.includes('user already registered')) return '이미 가입된 이메일이에요. 로그인으로 진행해 주세요.';
   return msg;
 }
 

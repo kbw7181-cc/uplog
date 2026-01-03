@@ -76,21 +76,35 @@ export default function LoginPage() {
         <form className="form" onSubmit={onSubmit}>
           <label className="lbl">
             <span className="lblt">이메일</span>
-            <input className="inp" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@email.com" autoComplete="email" />
+            <input
+              className="inp"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@email.com"
+              autoComplete="email"
+            />
           </label>
 
           <label className="lbl">
             <span className="lblt">비밀번호</span>
-            <input className="inp" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="비밀번호 입력" autoComplete="current-password" />
+            <input
+              className="inp"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="비밀번호 입력"
+              autoComplete="current-password"
+            />
           </label>
 
           {err && <div className="err">{err}</div>}
 
+          {/* ✅ 메인: 로그인하기 */}
           <button className="btn btnPrimary" type="submit" disabled={submitting}>
-            {submitting ? '로그인 중…' : '로그인'}
+            {submitting ? '로그인 중…' : '로그인하기'}
           </button>
 
-          {/* ✅ 로그인 화면에는 회원가입 버튼 안 넣음(요청대로) */}
+          {/* ✅ 서브: 회원가입 하러가기 */}
           <button className="btn btnGhost" type="button" onClick={() => router.push('/register')}>
             회원가입 하러가기
           </button>
@@ -161,10 +175,6 @@ const styles = `
     transition: transform .12s ease, filter .12s ease, background .12s ease;
   }
   .btn:active{ transform: translateY(1px) scale(0.99); }
-  .btnPrimary{
-    background:linear-gradient(90deg, rgba(255,72,158,0.98), rgba(172,88,255,0.98));
-  }
-  .btnGhost{
-    background:rgba(0,0,0,0.18);
-  }
+  .btnPrimary{ background:linear-gradient(90deg, rgba(255,72,158,0.98), rgba(172,88,255,0.98)); }
+  .btnGhost{ background:rgba(0,0,0,0.18); }
 `;
