@@ -1,7 +1,6 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -31,6 +30,7 @@ export default function RegisterPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (submitting) return;
+
     setErr(null);
     setSubmitting(true);
 
@@ -40,7 +40,7 @@ export default function RegisterPage() {
     });
 
     if (error) {
-      setErr(error.message);
+      setErr(humanize(error.message));
       setSubmitting(false);
       return;
     }
@@ -68,7 +68,7 @@ export default function RegisterPage() {
             <img className="logo" src="/gogo.png" alt="UPLOG" />
             <div className="brandText">
               <div className="title">UPLOG</div>
-              <div className="sub">회원가입하고 UP을 시작해요</div>
+              <div className="sub">회원가입</div>
             </div>
           </div>
         </header>
@@ -76,39 +76,23 @@ export default function RegisterPage() {
         <form className="form" onSubmit={onSubmit}>
           <label className="lbl">
             <span className="lblt">이메일</span>
-            <input
-              className="inp"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@email.com"
-              autoComplete="email"
-            />
+            <input className="inp" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@email.com" autoComplete="email" />
           </label>
 
           <label className="lbl">
             <span className="lblt">비밀번호</span>
-            <input
-              className="inp"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="8자 이상 권장"
-              autoComplete="new-password"
-            />
+            <input className="inp" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="8자 이상 권장" autoComplete="new-password" />
           </label>
 
-          {err && <div className="err">{humanizeAuthError(err)}</div>}
+          {err && <div className="err">{err}</div>}
 
           <button className="btn btnPrimary" type="submit" disabled={submitting}>
             {submitting ? '가입 중…' : '회원가입'}
           </button>
 
-          <div className="foot">
-            <span className="muted">이미 계정이 있나요?</span>
-            <Link href="/login" className="btn btnGhost">
-              로그인
-            </Link>
-          </div>
+          <button className="btn btnGhost" type="button" onClick={() => router.push('/login')}>
+            로그인 하러가기
+          </button>
         </form>
       </section>
 
@@ -117,125 +101,65 @@ export default function RegisterPage() {
   );
 }
 
-function humanizeAuthError(msg: string) {
+function humanize(msg: string) {
   const m = (msg || '').toLowerCase();
-  if (m.includes('anonymous sign-ins are disabled')) {
-    return '현재 Supabase에서 “익명 로그인”이 꺼져있다고 떠요. 이메일/비밀번호 회원가입은 정상이어야 하는데, 프로젝트 Auth 설정을 한번 확인해야 해요.';
-  }
-  if (m.includes('user already registered')) return '이미 가입된 이메일이에요. 로그인으로 진행해 주세요.';
-  if (m.includes('password')) return '비밀번호 조건을 확인해 주세요.';
+  if (m.includes('anonymous sign-ins are disabled')) return 'Supabase 설정에서 인증 옵션이 막혀 있어요. Auth 설정 확인 필요.';
+  if (m.includes('user already registered')) return '이미 가입된 이메일이에요. 로그인으로 가세요.';
   return msg;
 }
 
 const styles = `
-  .auth{
-    position: relative;
-    min-height: 100svh;
-    overflow: hidden;
-    display: grid;
-    place-items: center;
-    padding: 18px;
-    background: #7b3bbf;
-  }
-  .bg{
-    position: absolute;
-    inset: 0;
+  .auth{ position:relative; min-height:100svh; overflow:hidden; display:grid; place-items:center; padding:18px; background:#7b3bbf; }
+  .bg{ position:absolute; inset:0;
     background:
-      radial-gradient(circle at 20% 18%, rgba(255, 82, 168, 0.40), transparent 48%),
-      radial-gradient(circle at 82% 28%, rgba(172, 88, 255, 0.48), transparent 52%),
-      radial-gradient(circle at 48% 92%, rgba(255, 255, 255, 0.10), transparent 55%),
-      linear-gradient(180deg, rgba(20, 0, 36, 0.22), rgba(20, 0, 36, 0.40));
-    filter: saturate(1.06);
+      radial-gradient(circle at 20% 18%, rgba(255,82,168,0.40), transparent 48%),
+      radial-gradient(circle at 82% 28%, rgba(172,88,255,0.48), transparent 52%),
+      radial-gradient(circle at 48% 92%, rgba(255,255,255,0.10), transparent 55%),
+      linear-gradient(180deg, rgba(20,0,36,0.22), rgba(20,0,36,0.40));
   }
-
   .card{
-    position: relative;
-    width: min(600px, 100%);
-    border-radius: 24px;
-    padding: 18px;
-    background: rgba(255,255,255,0.12);
-    border: 1.5px solid rgba(255,255,255,0.26);
-    backdrop-filter: blur(12px);
-    box-shadow: 0 18px 48px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.22);
-    color: rgba(255,255,255,0.96);
-    animation: floaty 2.8s ease-in-out infinite;
+    position:relative; width:min(640px,100%);
+    border-radius:26px; padding:20px;
+    background:rgba(255,255,255,0.12);
+    border:2px solid rgba(255,255,255,0.26);
+    backdrop-filter:blur(12px);
+    box-shadow:0 18px 48px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.22);
+    color:rgba(255,255,255,0.96);
   }
-  @keyframes floaty{ 0%{ transform: translateY(0);} 50%{ transform: translateY(-6px);} 100%{ transform: translateY(0);} }
-
-  .head{ padding: 6px 6px 12px; }
   .brand{ display:flex; align-items:center; gap:12px; }
-  .logo{ width: 44px; height:44px; object-fit:contain; filter: drop-shadow(0 10px 16px rgba(0,0,0,0.20)); }
-  .brandText{ display:grid; gap:2px; }
-  .title{ font-size: 22px; font-weight: 950; letter-spacing: -0.4px; }
-  .sub{ font-size: 14px; opacity: 0.95; }
+  .logo{ width:48px; height:48px; object-fit:contain; }
+  .title{ font-size:24px; font-weight:950; letter-spacing:-0.4px; }
+  .sub{ font-size:18px; font-weight:900; opacity:0.95; }
 
-  .form{ display:grid; gap:12px; padding: 10px 6px 6px; }
-  .lbl{ display:grid; gap:8px; }
-  .lblt{ font-size: 14px; font-weight: 850; color: rgba(255,255,255,0.98); }
+  .form{ display:grid; gap:14px; padding:14px 6px 6px; }
+  .lbl{ display:grid; gap:10px; }
+  .lblt{ font-size:16px; font-weight:900; }
 
   .inp{
-    height: 52px;
-    border-radius: 16px;
-    border: 1.5px solid rgba(255,255,255,0.26);
-    background: rgba(0,0,0,0.22);
-    color: rgba(255,255,255,0.96);
-    padding: 0 14px;
-    outline: none;
-    font-size: 16px;
+    height:58px; border-radius:18px;
+    border:2px solid rgba(255,255,255,0.26);
+    background:rgba(0,0,0,0.22);
+    color:rgba(255,255,255,0.96);
+    padding:0 16px; outline:none; font-size:18px;
   }
-  .inp::placeholder{ color: rgba(255,255,255,0.70); }
-  .inp:focus{
-    border-color: rgba(255, 140, 210, 0.65);
-    box-shadow: 0 0 0 4px rgba(255, 82, 168, 0.18);
-  }
+  .inp::placeholder{ color:rgba(255,255,255,0.72); }
 
   .err{
-    padding: 11px 12px;
-    border-radius: 16px;
-    background: rgba(255, 60, 120, 0.18);
-    border: 1.5px solid rgba(255, 60, 120, 0.26);
-    font-size: 14px;
-    font-weight: 750;
+    padding:12px 14px; border-radius:18px;
+    background:rgba(255,60,120,0.18);
+    border:2px solid rgba(255,60,120,0.26);
+    font-size:16px; font-weight:850;
   }
 
   .btn{
-    height: 52px;
-    border-radius: 16px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 17px;
-    font-weight: 950;
-    text-decoration: none;
-    user-select: none;
-    border: 1.5px solid rgba(255,255,255,0.26);
+    height:60px; border-radius:18px;
+    border:2px solid rgba(255,255,255,0.26);
+    font-size:20px; font-weight:950;
+    color:rgba(255,255,255,0.98);
+    cursor:pointer;
     transition: transform .12s ease, filter .12s ease, background .12s ease;
   }
-  .btnPrimary{
-    color: #fff;
-    background: linear-gradient(90deg, rgba(255,72,158,0.98), rgba(172,88,255,0.98));
-    box-shadow: 0 14px 30px rgba(255,72,158,0.22), 0 14px 30px rgba(172,88,255,0.16);
-    cursor: pointer;
-  }
-  .btnPrimary:disabled{ opacity: 0.72; cursor: not-allowed; }
-  .btnPrimary:hover{ filter: brightness(1.06); }
   .btn:active{ transform: translateY(1px) scale(0.99); }
-
-  .foot{
-    display:grid;
-    grid-template-columns: 1fr auto;
-    align-items:center;
-    gap: 10px;
-    padding-top: 4px;
-  }
-  .muted{ opacity: 0.92; font-size: 14px; font-weight: 750; }
-
-  .btnGhost{
-    padding: 0 16px;
-    height: 44px;
-    border-radius: 14px;
-    background: rgba(0,0,0,0.20);
-    color: rgba(255,255,255,0.96);
-  }
-  .btnGhost:hover{ background: rgba(0,0,0,0.26); }
+  .btnPrimary{ background:linear-gradient(90deg, rgba(255,72,158,0.98), rgba(172,88,255,0.98)); }
+  .btnGhost{ background:rgba(0,0,0,0.18); }
 `;
