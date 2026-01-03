@@ -1,122 +1,148 @@
-// ✅ 파일: src/app/components/TopNav.tsx
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { usePathname } from 'next/navigation';
 
-type MyProfile = {
-  user_id: string;
-  nickname: string | null;
-  name: string | null;
-  role: string | null;
+type NavItem = {
+  href: string;
+  label: string;
+  emoji: string;
 };
 
+const NAV: NavItem[] = [
+  { href: '/home', label: '홈', emoji: '🏠' },
+  { href: '/my-up', label: '나의UP', emoji: '📈' },
+  { href: '/customers', label: '고객', emoji: '👥' },
+  { href: '/rebuttal', label: '반론', emoji: '🧩' },
+  { href: '/community', label: '커뮤니티', emoji: '💬' },
+];
+
 export default function TopNav() {
-  const [me, setMe] = useState<MyProfile | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-
-    async function load() {
-      const { data: auth } = await supabase.auth.getUser();
-      const uid = auth?.user?.id;
-      if (!uid) {
-        if (alive) setMe(null);
-        return;
-      }
-
-      const r = await supabase
-        .from('profiles')
-        .select('user_id,nickname,name,role')
-        .eq('user_id', uid)
-        .maybeSingle();
-
-      if (!alive) return;
-      if (r.error) {
-        setMe({ user_id: uid, nickname: null, name: null, role: null });
-        return;
-      }
-      setMe((r.data as any) ?? { user_id: uid, nickname: null, name: null, role: null });
-    }
-
-    load();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  const displayName = (me?.nickname || me?.name || '').trim() || '사용자';
-  const role = (me?.role || 'user').toLowerCase();
-  const isAdmin = role === 'admin';
+  const pathname = usePathname();
+  const isActive = (href: string) => pathname === href || pathname?.startsWith(href + '/');
 
   return (
-    <div className="wrap">
-      <div className="left">
-        <div className="name">{displayName}</div>
+    <div style={wrap}>
+      <div style={bar}>
+        {/* ✅ 로고: public/gogo.png => '/gogo.png' */}
+        <Link href="/home" style={logoWrap} aria-label="UPLOG 홈으로">
+          <img src="/gogo.png" alt="UPLOG" style={logoImg} />
+        </Link>
 
-        <div className="subRow">
-          <span className={`pill ${isAdmin ? 'admin' : 'user'}`}>{isAdmin ? '관리자' : '일반'}</span>
-
-          {isAdmin ? (
-            <Link className="adminBtn" href="/admin">
-              관리자페이지
-            </Link>
-          ) : null}
-        </div>
+        {/* ✅ 메뉴: 1줄 고정 */}
+        <nav style={navRow} aria-label="메인 메뉴">
+          {NAV.map((it) => {
+            const active = isActive(it.href);
+            return (
+              <Link
+                key={it.href}
+                href={it.href}
+                style={{
+                  ...pill,
+                  ...(active ? pillActive : null),
+                }}
+              >
+                <span style={pillEmoji}>{it.emoji}</span>
+                <span style={pillText}>{it.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
       </div>
-
-      <style jsx>{`
-        .wrap{
-          width:100%;
-          display:flex;
-          align-items:flex-start;
-          justify-content:space-between;
-          gap:12px;
-        }
-        .left{ min-width:0; }
-        .name{
-          font-size:18px;
-          font-weight:950;
-          color:#210a34;
-          letter-spacing:-0.2px;
-        }
-        .subRow{
-          margin-top:6px;
-          display:flex;
-          align-items:center;
-          gap:10px;
-          flex-wrap:wrap;
-        }
-        .pill{
-          padding:6px 10px;
-          border-radius:999px;
-          border:1px solid rgba(60,30,90,0.16);
-          font-weight:950;
-          font-size:12px;
-        }
-        .pill.user{
-          background: rgba(73,183,255,0.14);
-          border-color: rgba(73,183,255,0.22);
-          color:#1f1230;
-        }
-        .pill.admin{
-          background: rgba(255,79,216,0.16);
-          border-color: rgba(255,79,216,0.26);
-          color:#2a0f3c;
-        }
-        .adminBtn{
-          padding:8px 12px;
-          border-radius:999px;
-          border:1px solid rgba(255,79,216,0.26);
-          background: linear-gradient(135deg, rgba(255,79,216,0.18), rgba(185,130,255,0.16));
-          font-weight:950;
-          color:#230b35;
-          text-decoration:none;
-          box-shadow: 0 12px 24px rgba(40,10,70,0.10);
-          white-space:nowrap;
-        }
-      `}</style>
     </div>
   );
 }
+
+/* ===== styles (inline to avoid CSS 충돌) ===== */
+
+const wrap: React.CSSProperties = {
+  position: 'sticky',
+  top: 0,
+  zIndex: 50,
+  padding: '10px 12px',
+  backdropFilter: 'blur(10px)',
+};
+
+const bar: React.CSSProperties = {
+  maxWidth: 1120,
+  margin: '0 auto',
+  borderRadius: 18,
+  padding: '10px 12px',
+  background:
+    'linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06))',
+  border: '1px solid rgba(255,255,255,0.14)',
+  boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+};
+
+const logoWrap: React.CSSProperties = {
+  flex: '0 0 auto',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 44,
+  height: 44,
+  borderRadius: 14,
+  background:
+    'linear-gradient(135deg, rgba(255,105,180,0.18), rgba(168,85,247,0.18))',
+  border: '1px solid rgba(255,255,255,0.14)',
+};
+
+const logoImg: React.CSSProperties = {
+  width: 28,
+  height: 28,
+  objectFit: 'contain',
+  display: 'block',
+};
+
+const navRow: React.CSSProperties = {
+  flex: '1 1 auto',
+  display: 'flex',
+  gap: 8,
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  flexWrap: 'nowrap', // ✅ 2줄 방지 핵심
+  overflow: 'hidden',
+  minWidth: 0,
+};
+
+const pill: React.CSSProperties = {
+  flex: '1 1 0',
+  minWidth: 0,
+  height: 36,
+  borderRadius: 14,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 6,
+  padding: '0 8px',
+  textDecoration: 'none',
+  color: 'rgba(255,255,255,0.92)',
+  fontSize: 13,
+  fontWeight: 800,
+  letterSpacing: '-0.2px',
+  background: 'rgba(255,255,255,0.06)',
+  border: '1px solid rgba(255,255,255,0.12)',
+  boxShadow: '0 6px 18px rgba(0,0,0,0.14)',
+  whiteSpace: 'nowrap',
+};
+
+const pillActive: React.CSSProperties = {
+  background:
+    'linear-gradient(135deg, rgba(255,105,180,0.20), rgba(168,85,247,0.20))',
+  border: '1px solid rgba(255,255,255,0.22)',
+  boxShadow: '0 10px 26px rgba(168,85,247,0.18)',
+};
+
+const pillEmoji: React.CSSProperties = {
+  fontSize: 14,
+  lineHeight: '14px',
+};
+
+const pillText: React.CSSProperties = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  maxWidth: '100%',
+};

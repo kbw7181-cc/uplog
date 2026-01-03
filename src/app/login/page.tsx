@@ -1,256 +1,245 @@
+// ✅✅✅ 전체복붙: src/app/login/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function LoginPage() {
   const router = useRouter();
+
+  const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState('');
-  const [pw, setPw] = useState('');
+  const [password, setPassword] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  const disabled = useMemo(() => {
+    const e = email.trim();
+    const p = password.trim();
+    if (!e || !p) return true;
+    if (!e.includes('@')) return true;
+    if (p.length < 6) return true;
+    return false;
+  }, [email, password]);
+
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (data.session) router.replace('/home');
-    })();
+    let mounted = true;
+
+    const run = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data?.session?.user) {
+          router.replace('/home');
+          return;
+        }
+      } finally {
+        if (mounted) setChecking(false);
+      }
+    };
+
+    run();
+    return () => {
+      mounted = false;
+    };
   }, [router]);
 
-  async function onLogin() {
-    setMsg(null);
-    if (!email.trim() || !pw.trim()) {
-      setMsg('이메일과 비밀번호를 입력해 주세요.');
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (loading) return;
+
+    const eMail = email.trim();
+    const pw = password.trim();
+
+    if (!eMail || !pw) {
+      setMsg('이메일/비밀번호를 입력해줘요.');
+      return;
+    }
+    if (!eMail.includes('@')) {
+      setMsg('이메일 형식을 확인해줘요.');
+      return;
+    }
+    if (pw.length < 6) {
+      setMsg('비밀번호는 6자 이상이 좋아요.');
       return;
     }
 
-    try {
-      setLoading(true);
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: pw.trim(),
-      });
-      if (error) {
-        setMsg(error.message || '로그인에 실패했습니다.');
-        return;
-      }
-      router.replace('/home');
-    } catch (e: any) {
-      setMsg(e?.message || '로그인 중 오류가 발생했습니다.');
-    } finally {
+    setLoading(true);
+    setMsg(null);
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: eMail,
+      password: pw,
+    });
+
+    if (error || !data?.session?.user) {
       setLoading(false);
+      setMsg('로그인 실패! 이메일/비밀번호를 다시 확인해줘요.');
+      return;
     }
+
+    // 로그인 성공 → 메인 이동
+    router.replace('/home');
+  };
+
+  if (checking) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'grid',
+          placeItems: 'center',
+          color: '#fff',
+          background:
+            'radial-gradient(circle at 15% 10%, rgba(236,72,153,0.25), transparent 55%), radial-gradient(circle at 85% 20%, rgba(168,85,247,0.25), transparent 55%), linear-gradient(180deg, #0b0610, #07030b)',
+          fontSize: 16,
+        }}
+      >
+        로딩중…
+      </div>
+    );
   }
 
   return (
-    <div style={S.wrap}>
-      <div style={S.card}>
-        <div style={S.top}>
-          <div style={S.brandRow}>
-            <div style={S.brandDot} />
-            <div style={S.h1}>UPLOG 로그인</div>
+    <div
+      style={{
+        minHeight: '100vh',
+        padding: '28px 16px',
+        display: 'grid',
+        placeItems: 'center',
+        background:
+          'radial-gradient(circle at 12% 12%, rgba(236,72,153,0.22), transparent 55%), radial-gradient(circle at 88% 18%, rgba(168,85,247,0.22), transparent 55%), linear-gradient(180deg, #0b0610, #07030b)',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 420,
+          borderRadius: 22,
+          padding: '20px 18px 18px',
+          background:
+            'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06))',
+          border: '1px solid rgba(255,255,255,0.14)',
+          boxShadow:
+            '0 18px 55px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.12)',
+          color: '#fff',
+        }}
+      >
+        <div style={{ marginBottom: 14 }}>
+          <div
+            style={{
+              fontSize: 22,
+              fontWeight: 800,
+              letterSpacing: 0.2,
+              marginBottom: 6,
+            }}
+          >
+            UPLOG 로그인
           </div>
-          <div style={S.sub}>오늘도 나를 UP시키다</div>
+          <div style={{ fontSize: 14, opacity: 0.85 }}>
+            이메일과 비밀번호 입력 후 들어갈 수 있어요.
+          </div>
         </div>
 
-        <div style={S.form}>
-          <div style={S.field}>
-            <label style={S.label}>이메일</label>
+        <form onSubmit={onSubmit} style={{ display: 'grid', gap: 10 }}>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: 13, opacity: 0.9 }}>이메일</span>
             <input
-              style={S.input}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="example@email.com"
+              placeholder="email@example.com"
               autoComplete="email"
+              inputMode="email"
+              style={{
+                height: 46,
+                borderRadius: 14,
+                padding: '0 14px',
+                outline: 'none',
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: 'rgba(0,0,0,0.22)',
+                color: '#fff',
+                fontSize: 16,
+              }}
             />
-          </div>
+          </label>
 
-          <div style={S.field}>
-            <label style={S.label}>비밀번호</label>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: 13, opacity: 0.9 }}>비밀번호</span>
             <input
-              style={S.input}
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               placeholder="비밀번호"
               type="password"
               autoComplete="current-password"
+              style={{
+                height: 46,
+                borderRadius: 14,
+                padding: '0 14px',
+                outline: 'none',
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: 'rgba(0,0,0,0.22)',
+                color: '#fff',
+                fontSize: 16,
+              }}
             />
-          </div>
+          </label>
 
-          {msg ? <div style={S.msg}>{msg}</div> : null}
+          {msg ? (
+            <div
+              style={{
+                marginTop: 2,
+                padding: '10px 12px',
+                borderRadius: 14,
+                background: 'rgba(255, 59, 100, 0.14)',
+                border: '1px solid rgba(255, 59, 100, 0.25)',
+                fontSize: 14,
+              }}
+            >
+              {msg}
+            </div>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={disabled || loading}
+            style={{
+              marginTop: 8,
+              height: 48,
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.16)',
+              background: disabled || loading
+                ? 'rgba(255,255,255,0.10)'
+                : 'linear-gradient(90deg, rgba(236,72,153,0.95), rgba(168,85,247,0.95))',
+              color: '#fff',
+              fontSize: 16,
+              fontWeight: 800,
+              letterSpacing: 0.2,
+              cursor: disabled || loading ? 'not-allowed' : 'pointer',
+              boxShadow: disabled || loading ? 'none' : '0 14px 34px rgba(168,85,247,0.22)',
+            }}
+          >
+            {loading ? '로그인 중…' : '로그인'}
+          </button>
 
           <button
             type="button"
-            onClick={onLogin}
-            disabled={loading}
+            onClick={() => router.replace('/signup')}
             style={{
-              ...S.btn,
-              opacity: loading ? 0.7 : 1,
+              height: 46,
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.14)',
+              background: 'rgba(255,255,255,0.08)',
+              color: '#fff',
+              fontSize: 15,
+              fontWeight: 700,
+              cursor: 'pointer',
             }}
           >
-            {loading ? '로그인 중...' : '로그인'}
+            회원가입
           </button>
-
-          <div style={S.row}>
-            <span style={S.gray}>계정이 없으신가요?</span>
-            <Link href="/register" style={S.link}>
-              회원가입
-            </Link>
-          </div>
-
-          <button type="button" onClick={() => router.push('/')} style={S.backBtn}>
-            ← 메인으로
-          </button>
-        </div>
+        </form>
       </div>
     </div>
   );
 }
-
-const S: Record<string, React.CSSProperties> = {
-  wrap: {
-    minHeight: '100vh',
-    display: 'grid',
-    placeItems: 'center',
-    padding: '34px 18px', // ✅ 바깥 여유 더
-    background:
-      'radial-gradient(1200px 600px at 15% 18%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 60%),' +
-      'radial-gradient(1200px 700px at 78% 22%, rgba(243,232,255,0.85) 0%, rgba(255,255,255,0) 60%),' +
-      'linear-gradient(180deg, #f8f4ff 0%, #f5f9ff 50%, #f8f4ff 100%)',
-  },
-
-  card: {
-    width: 'min(620px, 100%)', // ✅ 약간 넓게
-    background: 'rgba(255,255,255,0.93)',
-    borderRadius: 28,
-    border: '1px solid rgba(90,40,120,0.14)',
-    boxShadow: '0 26px 70px rgba(40,10,70,0.14)',
-    padding: 22, // ✅ 카드 패딩 더
-  },
-
-  top: {
-    padding: '10px 10px 18px', // ✅ 상단 여유 더
-  },
-
-  brandRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-  },
-
-  brandDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 999,
-    background: 'linear-gradient(90deg,#ff4fa1,#a855f7)',
-    boxShadow: '0 10px 18px rgba(168,85,247,0.25)',
-  },
-
-  h1: {
-    fontSize: 28,
-    fontWeight: 950,
-    letterSpacing: -0.5,
-    color: '#2a1236',
-    lineHeight: 1.1,
-  },
-
-  sub: {
-    marginTop: 10,
-    fontSize: 15,
-    fontWeight: 850,
-    color: 'rgba(42,18,54,0.70)',
-    lineHeight: 1.35,
-  },
-
-  form: {
-  padding: '8px 10px 6px',
-  maxWidth: 520,      // ✅ 핵심
-},
-
-
-  field: {
-    marginTop: 16, // ✅ 필드 간격 핵심
-  },
-
-  label: {
-    display: 'block',
-    fontSize: 14,
-    fontWeight: 900,
-    color: 'rgba(42,18,54,0.78)',
-    marginBottom: 10, // ✅ 라벨-인풋 간격
-  },
-
-  input: {
-    width: '100%',
-    height: 56, // ✅ 입력 높이 ↑
-    padding: '0 16px',
-    borderRadius: 18,
-    border: '1px solid rgba(90,40,120,0.18)',
-    outline: 'none',
-    fontSize: 15,
-    fontWeight: 800,
-    color: '#2a1236',
-    background: 'rgba(255,255,255,0.96)',
-    boxShadow: '0 12px 26px rgba(40,10,70,0.08)',
-  },
-
-  msg: {
-    marginTop: 16,
-    padding: '12px 14px',
-    borderRadius: 16,
-    fontSize: 14,
-    fontWeight: 900,
-    color: '#7a1239',
-    background: 'rgba(255,79,161,0.12)',
-    border: '1px solid rgba(255,79,161,0.22)',
-    lineHeight: 1.35,
-  },
-
-  btn: {
-    width: '100%',
-    height: 62, // ✅ 버튼 높이 ↑
-    marginTop: 24, // ✅ 버튼 위 여유
-    borderRadius: 20,
-    border: 0,
-    cursor: 'pointer',
-    fontSize: 19,
-    fontWeight: 950,
-    color: '#fff',
-    background: 'linear-gradient(90deg,#ff4fa1,#a855f7)',
-    boxShadow: '0 18px 40px rgba(168,85,247,0.26)',
-  },
-
-  row: {
-    marginTop: 18, // ✅ 링크 영역 여유
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    fontSize: 14,
-    fontWeight: 800,
-  },
-
-  gray: {
-    color: 'rgba(42,18,54,0.62)',
-  },
-
-  link: {
-    color: '#a855f7',
-    textDecoration: 'none',
-    fontWeight: 950,
-  },
-
-  backBtn: {
-    width: '100%',
-    height: 54,
-    marginTop: 16,
-    borderRadius: 18,
-    border: '1px solid rgba(90,40,120,0.18)',
-    background: 'rgba(255,255,255,0.92)',
-    color: '#2a1236',
-    fontWeight: 900,
-    cursor: 'pointer',
-  },
-};

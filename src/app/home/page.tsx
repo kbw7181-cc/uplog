@@ -8,7 +8,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { getAvatarSrc } from '@/lib/getAvatarSrc';
 import { fetchLiveWeatherSlots, resolveRegionFromProfile, type WeatherSlot } from '@/lib/weatherClient';
 import AdminEntryButton from '@/app/components/AdminEntryButton';
-import HomeMenuRow from '@/app/components/HomeMenuRow';
+import HomeMenuRow, { type HomeMenuItem } from '@/app/components/HomeMenuRow';
+
 /** ✅ 친구목록 프로필 모달(홈에서만 사용) */
 type FriendProfileData = {
   user_id: string;
@@ -185,6 +186,15 @@ const MOCK_FRIENDS: Friend[] = [
   { user_id: '7b1c3a3e-1b2c-4e6a-9e1a-2f5d7c9a1b2c', nickname: '김영업', online: true, role: '팀장' },
   { user_id: '9f2a1c4d-7e3b-4c1a-8d2f-1a3b5c7d9e0f', nickname: '박성장', online: true, role: '사원' },
   { user_id: '4c7d9e0f-9f2a-4d7e-8b3c-1a2f3b5c6d7e', nickname: '이멘탈', online: false, role: '대리' },
+];
+
+// ✅ 홈 메뉴(5개 유지)
+const MENU_ITEMS: HomeMenuItem[] = [
+  { label: '나의 U P 관리', href: '/my-up', emoji: '📈' },
+  { label: '고객관리', href: '/customers', emoji: '👥' },
+  { label: '반론 아카이브', href: '/rebuttal', emoji: '🧠' },
+  { label: '커뮤니티', href: '/community', emoji: '💬' },
+  { label: '문자 도우미', href: '/sms-helper', emoji: '✉️' },
 ];
 
 export default function HomePage() {
@@ -428,10 +438,7 @@ export default function HomePage() {
 
       let likesCount = 0;
       try {
-        const { count } = await supabase
-          .from('post_likes')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', targetUserId);
+        const { count } = await supabase.from('post_likes').select('id', { count: 'exact', head: true }).eq('user_id', targetUserId);
         likesCount = count ?? 0;
       } catch {
         likesCount = 0;
@@ -478,10 +485,7 @@ export default function HomePage() {
   };
 
   const newRebuttalCount = useMemo(() => recentRebuttals.length, [recentRebuttals]);
-  const newScheduleCountToday = useMemo(
-    () => schedules.filter((s) => s.schedule_date === todayStr).length,
-    [schedules, todayStr]
-  );
+  const newScheduleCountToday = useMemo(() => schedules.filter((s) => s.schedule_date === todayStr).length, [schedules, todayStr]);
 
   // 감성 슬라이드
   useEffect(() => {
@@ -657,9 +661,7 @@ export default function HomePage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select(
-          'name, nickname, industry, grade, career, company, department, team, avatar_url, main_goal, address_text, lat, lon'
-        )
+        .select('name, nickname, industry, grade, career, company, department, team, avatar_url, main_goal, address_text, lat, lon')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -800,8 +802,7 @@ export default function HomePage() {
   }
 
   const avatarInitial = nickname && nickname.length > 0 ? nickname.trim()[0]?.toUpperCase() : 'U';
-  const careerCombined =
-    grade && careerYears ? `${grade} · ${careerYears}` : grade ? grade : careerYears ? careerYears : '경력/직함 미설정';
+  const careerCombined = grade && careerYears ? `${grade} · ${careerYears}` : grade ? grade : careerYears ? careerYears : '경력/직함 미설정';
   const orgCombined = [company, department, team].filter(Boolean).join(' / ') || '조직/팀 미설정';
 
   return (
@@ -813,7 +814,7 @@ export default function HomePage() {
             <div className="home-header-left">
               <div className="home-logo-row">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/gogo.png" alt="UPLOG 로고" className="home-logo" />
+                <img src="/assets/gogo.png" alt="UPLOG 로고" className="home-logo" />
 
                 <div className="home-logo-text-wrap">
                   <div className="wave-text" aria-label="UPLOG">
@@ -978,7 +979,8 @@ export default function HomePage() {
           </div>
         </header>
 
-       <HomeMenuRow />
+        {/* ✅ 메뉴 1줄 강제는 HomeMenuRow에서 처리 */}
+        <HomeMenuRow items={MENU_ITEMS} />
 
         {/* 날씨 */}
         <section className="weather-wide">
@@ -1234,7 +1236,7 @@ export default function HomePage() {
                           <span className="schedule-title">{s.title}</span>
                         </div>
 
-                        {/* ✅✅✅ 상세보기 버튼 관련 코드 "전부 제거" */}
+                        {/* ✅ 상세보기 버튼 제거 유지 */}
                       </li>
                     );
                   })}
@@ -1694,77 +1696,6 @@ a:hover { text-decoration: none; }
 .coach-sparkle.s1{ top: 18px; left: 18px; }
 .coach-sparkle.s2{ top: 52px; left: 46px; }
 
-/* ✅ 메뉴바 (길이 폭주 방지 최종본) */
-.home-quick-nav{
-  display:flex;
-  gap: 10px;
-  padding: 10px 6px;
-  margin: 14px 0 18px;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-
-  /* 🔑 핵심 */
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.quick-card{
-  /* ❌ flex:1 제거 */
-  flex: none;
-
-  /* ✅ 버튼 폭 고정 */
-  width: 100%;
-  max-width: 420px;
-
-  height: 44px;
-  border-radius: 999px;
-  padding: 0 18px;
-
-  background: linear-gradient(
-    135deg,
-    rgba(255,133,210,0.85),
-    rgba(166,120,255,0.82)
-  );
-  border: 1px solid rgba(255,255,255,0.55);
-  box-shadow: 0 8px 18px rgba(120,70,210,0.14);
-
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-
-  font-size: 17px;
-  font-weight: 900;
-  letter-spacing: -0.3px;
-  color:#fff;
-
-  cursor:pointer;
-  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
-}
-
-.quick-card:hover{
-  transform: translateY(-1px) scale(1.03);
-  filter: brightness(1.04) saturate(1.06);
-  box-shadow:
-    0 12px 26px rgba(120,70,210,0.22),
-    0 0 0 3px rgba(255,255,255,0.10);
-}
-
-.quick-card:active{
-  transform: translateY(0) scale(0.99);
-  filter: brightness(0.98);
-}
-
-/* 모바일 */
-@media (max-width: 560px){
-  .quick-card{
-    max-width: 100%;
-    height: 48px;
-    font-size: 17px;
-  }
-}
-
-
 /* Weather */
 .weather-wide{ margin-bottom: 10px; }
 .weather-panel{
@@ -2147,171 +2078,121 @@ a:hover { text-decoration: none; }
   100%{ transform: translateX(0); }
 }
 
-/* Friend Profile Modal */
+/* ✅ 친구 프로필 모달(fp) */
 .fp-backdrop{
   position: fixed;
   inset: 0;
+  z-index: 80;
   background: rgba(15,23,42,0.55);
   display:flex;
   align-items:center;
   justify-content:center;
-  z-index: 80;
+  padding: 18px;
 }
 .fp-panel{
   width: 420px;
-  max-width: 92vw;
+  max-width: 94vw;
   border-radius: 26px;
   background: rgba(255,255,255,0.98);
-  box-shadow: 0 28px 60px rgba(15,23,42,0.45);
+  border: 1px solid rgba(226,232,240,0.92);
+  box-shadow: 0 28px 60px rgba(15,23,42,0.40);
   padding: 18px 18px 16px;
-  border: 1px solid rgba(226,232,240,0.9);
   position: relative;
 }
 .fp-close{
   position:absolute;
   top: 10px;
   right: 12px;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 999px;
-  border:none;
-  background:#f3f4ff;
+  border: none;
+  cursor: pointer;
+  background: #f3f4ff;
   color:#4b2d7a;
-  cursor:pointer;
-  font-size: 14px;
+  font-weight: 950;
 }
-.fp-title{ font-size: 18px; font-weight: 950; color:#1b1030; margin-bottom: 10px; }
-.fp-loading, .fp-error{
-  padding: 14px;
-  border-radius: 16px;
-  background:#faf7ff;
-  border: 1px dashed rgba(165,148,230,0.8);
-  color:#6f60b8;
-  font-weight: 900;
-}
-.fp-body{ display:flex; flex-direction: column; gap: 12px; }
+.fp-title{ font-size: 18px; font-weight: 950; color:#1b1030; }
+.fp-loading{ margin-top: 12px; font-weight: 900; color:#6f60b8; }
+.fp-error{ margin-top: 12px; font-weight: 950; color:#c02675; background:#fff1f6; border:1px solid rgba(244,114,182,0.35); padding: 10px; border-radius: 14px; }
+.fp-body{ margin-top: 12px; display:flex; flex-direction: column; gap: 12px; }
 .fp-top{ display:flex; gap: 12px; align-items:center; }
 .fp-avatar{
-  width: 64px; height: 64px;
-  border-radius: 999px;
-  background: radial-gradient(circle at top left, rgba(244,114,182,0.85) 0, rgba(168,85,247,0.78) 60%);
-  overflow:hidden;
+  width: 64px; height: 64px; border-radius: 999px;
+  background: radial-gradient(circle at top left, rgba(244,114,182,0.85) 0, rgba(168,85,247,0.80) 60%);
   display:flex; align-items:center; justify-content:center;
-  color:#fff;
-  font-weight: 950;
-  font-size: 18px;
-  flex: 0 0 auto;
+  color:#fff; font-weight: 950; font-size: 20px;
+  overflow:hidden; flex: 0 0 64px;
 }
-.fp-avatar img{ width:100%; height:100%; object-fit: cover; display:block; }
-.fp-main{ display:flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fp-avatar img{ width:100%; height:100%; object-fit: cover; }
+.fp-main{ min-width: 0; }
 .fp-name{ font-size: 18px; font-weight: 950; color:#2a1236; }
-.fp-sub{ font-size: 13px; font-weight: 900; color:#7a69c4; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
+.fp-sub{ margin-top: 4px; font-size: 13px; font-weight: 900; color:#7a69c4; }
 
-.fp-badges{ padding: 12px; border-radius: 18px; background:#faf7ff; border: 1px solid rgba(212,200,255,0.85); }
 .fp-sec-title{ font-size: 14px; font-weight: 950; color:#4b2d7a; margin-bottom: 8px; }
 .fp-muted{ font-size: 13px; font-weight: 900; color:#7a69c4; }
-.fp-badge-row{ display:flex; gap: 10px; flex-wrap: wrap; }
+.fp-badge-row{ display:flex; flex-wrap: wrap; gap: 10px; }
 .fp-badge{
-  width: 36px; height: 36px;
-  border-radius: 999px;
-  background: #fff;
-  border: 1px solid rgba(214,200,255,0.95);
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  box-shadow: 0 10px 18px rgba(0,0,0,0.06);
+  width: 34px; height: 34px; border-radius: 999px;
+  display:inline-flex; align-items:center; justify-content:center;
+  border: 2px solid rgba(180,160,255,0.45);
+  background:#fff;
+  box-shadow: 0 10px 16px rgba(0,0,0,0.06), 0 0 12px rgba(168,85,247,0.12);
 }
 
 .fp-counts{ display:flex; gap: 10px; flex-wrap: wrap; }
 .fp-count-pill{
-  padding: 8px 12px;
+  padding: 8px 10px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.92);
-  border: 1px solid rgba(226,232,240,0.92);
+  background: #f7f2ff;
+  border: 1px solid #e0d4ff;
   font-weight: 950;
-  color:#4b2d7a;
+  color:#2a1236;
+  font-size: 13px;
 }
 .fp-count-pill b{ color:#ec4899; }
 
-/* ✅✅✅ 여기부터가 누락됐던 fp-actions 영역 */
-.fp-actions{
-  display:flex;
-  gap: 10px;
-  margin-top: 4px;
-}
+.fp-actions{ display:flex; gap: 10px; margin-top: 2px; }
 .fp-btn{
-  flex: 1 1 0;
+  flex: 1;
   height: 42px;
   border-radius: 999px;
-  border: 1px solid rgba(214,200,255,0.95);
-  background: rgba(255,255,255,0.92);
-  color:#2a1236;
-  font-weight: 950;
   cursor: pointer;
-  box-shadow: 0 12px 22px rgba(0,0,0,0.08);
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  gap: 8px;
+  font-weight: 950;
+  border: 1px solid rgba(214,200,255,0.85);
+  background: rgba(255,255,255,0.86);
+  color:#2a1236;
+  box-shadow: 0 10px 18px rgba(0,0,0,0.06);
 }
-.fp-btn:hover{ transform: translateY(-1px); transition: 160ms ease; box-shadow: 0 16px 28px rgba(0,0,0,0.10); }
+.fp-btn:hover{ transform: translateY(-1px); transition: 160ms ease; box-shadow: 0 14px 24px rgba(0,0,0,0.08); }
 .fp-btn:active{ transform: translateY(0); }
-.fp-btn.ghost{
-  background: rgba(255,255,255,0.90);
-  box-shadow: 0 12px 22px rgba(0,0,0,0.08), 0 0 0 3px rgba(59,130,246,0.08);
-}
 .fp-btn.pink{
-  border-color: rgba(244,114,182,0.55);
-  background: linear-gradient(135deg, rgba(255,255,255,0.92), rgba(255,239,251,0.92));
-  box-shadow: 0 12px 22px rgba(0,0,0,0.08), 0 0 0 3px rgba(244,114,182,0.10);
+  background: linear-gradient(90deg, rgba(255,79,161,0.96), rgba(168,85,247,0.92));
+  color:#fff;
+  border-color: rgba(255,255,255,0.85);
+}
+.fp-btn.ghost{
+  background: rgba(255,255,255,0.86);
 }
 
-/* Floating Support */
+/* floating support */
 .floating-support-btn{
   position: fixed;
   right: 18px;
   bottom: 18px;
   z-index: 90;
-  width: 128px;
-  height: 64px;
-  border-radius: 18px;
-  border: 2px solid rgba(255,255,255,0.85);
-  background: linear-gradient(135deg, rgba(244,114,182,0.95), rgba(168,85,247,0.92));
-  color:#fff;
-  font-weight: 950;
+  border: none;
   cursor: pointer;
-  box-shadow: 0 22px 46px rgba(15,23,42,0.22), 0 0 0 4px rgba(244,114,182,0.14);
+  padding: 12px 14px;
+  border-radius: 18px;
+  color: #fff;
+  font-weight: 950;
+  background: linear-gradient(90deg,#ff4fa1,#a855f7);
+  box-shadow: 0 18px 34px rgba(0,0,0,0.20), 0 0 0 4px rgba(244,114,182,0.14);
   display:flex;
   flex-direction: column;
-  align-items:center;
-  justify-content:center;
   gap: 2px;
+  align-items: center;
 }
-.floating-support-btn span:first-child{ font-size: 14px; }
-.floating-support-btn span:last-child{ font-size: 12px; opacity: .95; }
-.floating-support-btn:hover{ transform: translateY(-2px); transition: 180ms ease; filter: brightness(1.03); }
-.floating-support-btn:active{ transform: translateY(0); }
-
-/* Responsive */
-@media (max-width: 980px){
-  .home-header-top{ grid-template-columns: 1fr; }
-  .home-header-profile{ justify-content: flex-start; }
-  .profile-box{ max-width: 520px; }
-  .home-quick-nav{ flex-wrap: wrap; }
-  .quick-card{ flex: 1 1 calc(50% - 10px); }
-}
-@media (max-width: 560px){
-  .home-root{ padding: 14px; }
-  .home-header{ padding: 18px 16px 30px; }
-  .home-logo{ width: 62px; height: 62px; border-radius: 20px; }
-  .wave-text span{ font-size: 30px; letter-spacing: 4px; }
-  .profile-box{ height: auto; }
-  .profile-main{ padding-right: 72px; }
-  .badge-icon{ width: 32px; height: 32px; }
-  .friends-right{ gap: 8px; }
-  .friends-search{ width: 140px; }
-  .fa-pill{ min-width: 96px; padding: 0 10px; }
-  .fa-cheer{ min-width: 118px; }
-  .floating-support-btn{ right: 14px; bottom: 14px; width: 120px; height: 62px; }
-}
+.floating-support-btn:hover{ transform: translateY(-1px); transition: 160ms ease; filter: brightness(1.03); }
 `;
