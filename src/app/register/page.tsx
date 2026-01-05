@@ -1,3 +1,4 @@
+// ✅✅✅ 전체복붙: src/app/register/page.tsx
 'use client';
 
 import { FormEvent, useMemo, useState } from 'react';
@@ -36,15 +37,15 @@ export default function RegisterPage() {
         return;
       }
 
-      // ✅ 케이스 1) 즉시 세션이 생기면 홈으로
+      // ✅ 즉시 세션이면 바로 홈
       if (data.session) {
         router.replace('/home');
         return;
       }
 
-      // ✅ 케이스 2) 이메일 인증이 필요한 설정이면 안내 후 로그인으로
+      // ✅ 이메일 인증 흐름이면 로그인으로 유도
       setMsg('회원가입 완료! 이메일 인증 후 로그인해 주세요.');
-      setTimeout(() => router.replace('/login'), 800);
+      setTimeout(() => router.replace('/login'), 900);
     } catch (err: any) {
       setMsg(err?.message || '회원가입 중 오류가 발생했어요.');
     } finally {
@@ -55,11 +56,14 @@ export default function RegisterPage() {
   return (
     <main className="auth-page">
       <div className="auth-bg" aria-hidden="true" />
+
       <section className="auth-card" aria-label="회원가입">
         <header className="auth-head">
           <div className="auth-logo" aria-hidden="true">
-            <div className="auth-logoMark" />
+            {/* ✅ 로고 경로 고정: public/assets/gogo.png */}
+            <img src="/assets/gogo.png" alt="" className="auth-logoImg" />
           </div>
+
           <div className="auth-titles">
             <div className="auth-brand">UPLOG</div>
             <div className="auth-sub">회원가입</div>
@@ -85,7 +89,7 @@ export default function RegisterPage() {
               className="auth-input"
               value={pw}
               onChange={(e) => setPw(e.target.value)}
-              placeholder="8자 이상 권장"
+              placeholder="8자 이상"
               type="password"
               autoComplete="new-password"
             />
@@ -97,14 +101,20 @@ export default function RegisterPage() {
             {loading ? '처리 중…' : '회원가입'}
           </button>
 
-          {/* ✅ 회원가입 화면에는 "로그인 하러가기"만 */}
-          <Link className="auth-btn auth-ghost" href="/login" aria-label="로그인 하러가기">
+          {/* ✅ 로그인 하러가기(버튼처럼) */}
+          <Link className="auth-btn auth-ghost" href="/login">
             로그인 하러가기
           </Link>
         </form>
       </section>
 
       <style jsx>{`
+        :global(*),
+        :global(*::before),
+        :global(*::after) {
+          box-sizing: border-box;
+        }
+
         .auth-page {
           min-height: 100vh;
           display: grid;
@@ -113,12 +123,13 @@ export default function RegisterPage() {
           position: relative;
           overflow: hidden;
         }
+
         .auth-bg {
           position: fixed;
           inset: 0;
           background: radial-gradient(circle at 20% 10%, rgba(255, 70, 190, 0.28), transparent 55%),
             radial-gradient(circle at 85% 15%, rgba(145, 80, 255, 0.35), transparent 52%),
-            radial-gradient(circle at 45% 95%, rgba(255, 155, 220, 0.20), transparent 50%),
+            radial-gradient(circle at 45% 95%, rgba(255, 155, 220, 0.2), transparent 50%),
             linear-gradient(135deg, #a23ea7 0%, #7b3fe6 100%);
           filter: saturate(1.05);
         }
@@ -126,8 +137,8 @@ export default function RegisterPage() {
         .auth-card {
           width: min(760px, 96vw);
           border-radius: 26px;
-          padding: 24px 22px 22px;
-          background: rgba(255, 255, 255, 0.10);
+          padding: 22px 20px 20px;
+          background: rgba(255, 255, 255, 0.1);
           border: 1px solid rgba(255, 255, 255, 0.22);
           box-shadow: 0 18px 60px rgba(0, 0, 0, 0.25);
           backdrop-filter: blur(10px);
@@ -148,13 +159,16 @@ export default function RegisterPage() {
           border: 1px solid rgba(255, 255, 255, 0.22);
           display: grid;
           place-items: center;
+          overflow: hidden;
+          flex: 0 0 auto;
         }
-        .auth-logoMark {
-          width: 22px;
-          height: 22px;
-          border-radius: 8px;
-          background: linear-gradient(135deg, #ff4db8 0%, #a855f7 60%, #7c3aed 100%);
-          box-shadow: 0 10px 24px rgba(255, 77, 184, 0.22);
+
+        .auth-logoImg {
+          width: 30px;
+          height: 30px;
+          object-fit: contain;
+          display: block;
+          filter: drop-shadow(0 10px 18px rgba(255, 77, 184, 0.18));
         }
 
         .auth-titles {
@@ -162,16 +176,18 @@ export default function RegisterPage() {
           flex-direction: column;
           line-height: 1.1;
         }
+
         .auth-brand {
           font-size: 26px;
-          font-weight: 900;
+          font-weight: 1000;
           letter-spacing: 0.4px;
           color: rgba(255, 255, 255, 0.95);
         }
+
         .auth-sub {
           margin-top: 4px;
           font-size: 16px;
-          font-weight: 800;
+          font-weight: 900;
           color: rgba(255, 255, 255, 0.78);
         }
 
@@ -185,27 +201,31 @@ export default function RegisterPage() {
         .auth-label span {
           display: block;
           font-size: 14px;
-          font-weight: 800;
+          font-weight: 900;
           color: rgba(255, 255, 255, 0.85);
           margin: 10px 0 8px;
         }
 
         .auth-input {
           width: 100%;
+          max-width: 100%;
           height: 52px;
-          border-radius: 16px;
+          border-radius: 18px;
           padding: 0 16px;
           font-size: 16px;
           color: rgba(255, 255, 255, 0.92);
           background: rgba(0, 0, 0, 0.18);
           border: 1px solid rgba(255, 255, 255, 0.22);
           outline: none;
+          display: block;
         }
+
         .auth-input::placeholder {
           color: rgba(255, 255, 255, 0.55);
         }
+
         .auth-input:focus {
-          border-color: rgba(255, 77, 184, 0.60);
+          border-color: rgba(255, 77, 184, 0.6);
           box-shadow: 0 0 0 3px rgba(255, 77, 184, 0.18);
         }
 
@@ -217,19 +237,26 @@ export default function RegisterPage() {
           border: 1px solid rgba(255, 255, 255, 0.18);
           color: rgba(255, 255, 255, 0.9);
           font-size: 14px;
-          font-weight: 700;
+          font-weight: 900;
         }
 
-        /* ✅ 버튼 "위치 안맞음" 해결: 동일 높이/정렬/간격 고정 */
         .auth-btn {
           height: 54px;
-          border-radius: 18px;
+          border-radius: 20px;
           display: grid;
           place-items: center;
           font-size: 18px;
-          font-weight: 900;
+          font-weight: 1000;
           text-decoration: none;
           user-select: none;
+          width: 100%;
+          -webkit-tap-highlight-color: transparent;
+          transition: transform 0.14s ease, filter 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+        }
+
+        .auth-btn:hover {
+          transform: translateY(-1px);
+          filter: brightness(1.03);
         }
 
         .auth-primary {
@@ -240,20 +267,36 @@ export default function RegisterPage() {
           box-shadow: 0 18px 42px rgba(255, 77, 184, 0.18);
           cursor: pointer;
         }
+
         .auth-primary:disabled {
           opacity: 0.55;
           cursor: not-allowed;
-          filter: grayscale(0.2);
+          transform: none;
+          filter: none;
         }
 
         .auth-ghost {
           background: rgba(0, 0, 0, 0.16);
-          border: 1px solid rgba(255, 255, 255, 0.18);
+          border: 1px solid rgba(255, 255, 255, 0.22);
           color: rgba(255, 255, 255, 0.92);
         }
+
         .auth-ghost:hover {
-          border-color: rgba(255, 255, 255, 0.30);
-          background: rgba(0, 0, 0, 0.20);
+          border-color: rgba(255, 255, 255, 0.34);
+          background: rgba(0, 0, 0, 0.2);
+        }
+
+        @media (max-width: 480px) {
+          .auth-card {
+            padding: 20px 16px 18px;
+          }
+          .auth-brand {
+            font-size: 24px;
+          }
+          .auth-btn {
+            font-size: 17px;
+            height: 52px;
+          }
         }
       `}</style>
     </main>

@@ -1,124 +1,172 @@
+// ✅✅✅ 전체복붙: (지금 / 라우트를 먹는 그 page.tsx)
 'use client';
 
 import Link from 'next/link';
 
-export default function GatePage() {
+export default function Page() {
   return (
     <main className="gate">
-      <div className="gateBg" aria-hidden="true" />
+      <div className="bg" aria-hidden="true" />
 
-      <section className="gateCenter" aria-label="UPLOG 시작">
-        <div className="btnRow" role="group" aria-label="로그인/회원가입">
-          <Link href="/login" className="gateBtn gateBtnPrimary" aria-label="로그인">
-            로그인
-          </Link>
-          <Link href="/register" className="gateBtn gateBtnGhost" aria-label="회원가입">
-            회원가입
-          </Link>
-        </div>
-      </section>
+      {/* ✅ 적용 확인용: 이게 안 뜨면 '다른 파일'이 렌더링 중 */}
+      <div className="badge">GATE APPLY ✅</div>
 
-      <style jsx global>{`
+      {/* ✅ 이미지 하단의 박힌 글씨 영역 살짝 덮기 + 버튼 도크 배경 */}
+      <div className="dockBg" aria-hidden="true" />
+
+      {/* ✅ 무조건 보이는 버튼(라운드/테두리/그림자 강하게) */}
+      <nav className="dock" aria-label="시작">
+        <Link href="/login" className="pill primary">
+          로그인
+        </Link>
+        <Link href="/register" className="pill ghost">
+          회원가입
+        </Link>
+      </nav>
+
+      <style jsx>{`
+        :global(html, body) {
+          margin: 0;
+          padding: 0;
+          background: #120022; /* ✅ 하단 하얀줄 방지 */
+        }
+        :global(*) {
+          box-sizing: border-box;
+        }
+
         .gate {
+          min-height: 100vh;
           position: relative;
-          min-height: 100svh;
           overflow: hidden;
-          background: #7b3bbf;
-          display: grid;
-          place-items: center;
-          padding: 18px;
+          background: #120022;
         }
 
-        .gateBg {
-          position: absolute;
+        .bg {
+          position: fixed;
           inset: 0;
-          background: linear-gradient(180deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.34)),
-            url('/main.png') center / cover no-repeat;
-          transform: scale(1.01);
-          filter: saturate(1.08);
+          background: url('/main.png') center / cover no-repeat;
+          z-index: 0;
         }
 
-        .gateCenter {
-          position: relative;
-          width: min(760px, 100%);
+        /* ✅ 상단 적용 확인 */
+        .badge {
+          position: fixed;
+          top: 12px;
+          left: 12px;
+          z-index: 2147483647;
+          padding: 8px 10px;
+          border-radius: 999px;
+          background: rgba(0, 0, 0, 0.55);
+          border: 2px solid rgba(255, 255, 255, 0.5);
+          color: #fff;
+          font-weight: 1000;
+          font-size: 13px;
+          letter-spacing: 0.2px;
+          backdrop-filter: blur(8px);
+        }
+
+        /* ✅ 하단 도크 배경(이미지 글씨 덮기 + 버튼 대비) */
+        .dockBg {
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          height: 260px;
+          z-index: 1;
+          pointer-events: none;
+          background: linear-gradient(
+            to top,
+            rgba(10, 0, 22, 0.88) 0%,
+            rgba(70, 20, 120, 0.35) 55%,
+            rgba(0, 0, 0, 0) 100%
+          );
+          backdrop-filter: blur(10px);
+        }
+
+        /* ✅ 버튼 도크: 무조건 최상단 */
+        .dock {
+          position: fixed;
+          left: 50%;
+          bottom: 58px;
+          transform: translateX(-50%);
+          z-index: 2147483646;
           display: flex;
+          gap: 14px;
+        }
+
+        /* ✅ 버튼: 라운드/테두리/그림자 "안 보일 수가 없게" */
+        .pill {
+          min-width: 190px;
+          height: 58px;
+          border-radius: 999px;
+
+          display: flex;
+          align-items: center;
           justify-content: center;
 
-          /* ✅ 더 밑으로 */
-          padding-top: 360px;
-          padding-bottom: 22px;
+          text-decoration: none;
+          user-select: none;
+          cursor: pointer;
+
+          font-size: 18px;
+          font-weight: 1000;
+
+          border: 3px solid rgba(255, 255, 255, 0.95);
+          color: rgba(255, 255, 255, 0.98);
+
+          box-shadow:
+            0 18px 42px rgba(0, 0, 0, 0.45),
+            0 0 18px rgba(255, 255, 255, 0.14),
+            inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+
+          background: rgba(255, 255, 255, 0.14);
+          backdrop-filter: blur(10px);
+
+          transition: transform 0.14s ease, filter 0.14s ease, box-shadow 0.14s ease,
+            background 0.14s ease, border-color 0.14s ease;
+          -webkit-tap-highlight-color: transparent;
         }
-        @media (max-height: 820px) {
-          .gateCenter {
-            padding-top: 310px;
+
+        .primary {
+          background: linear-gradient(
+            90deg,
+            rgba(255, 77, 184, 0.45) 0%,
+            rgba(184, 107, 255, 0.32) 55%,
+            rgba(124, 58, 237, 0.28) 100%
+          );
+          box-shadow:
+            0 22px 52px rgba(255, 77, 184, 0.22),
+            0 18px 42px rgba(0, 0, 0, 0.42),
+            inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+        }
+
+        .ghost {
+          background: rgba(255, 255, 255, 0.12);
+        }
+
+        .pill:hover {
+          transform: translateY(-2px);
+          filter: brightness(1.08);
+          border-color: rgba(255, 255, 255, 1);
+          background: rgba(255, 255, 255, 0.18);
+        }
+
+        .pill:active {
+          transform: translateY(0);
+          filter: brightness(0.98);
+          box-shadow: inset 0 8px 14px rgba(0, 0, 0, 0.45);
+        }
+
+        @media (max-width: 420px) {
+          .pill {
+            min-width: 160px;
+            height: 54px;
+            font-size: 17px;
           }
-        }
-        @media (max-height: 720px) {
-          .gateCenter {
-            padding-top: 270px;
+          .dock {
+            bottom: 48px;
+            gap: 10px;
           }
-        }
-
-        .btnRow {
-          width: min(560px, 100%);
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 14px;
-          animation: floaty 2.6s ease-in-out infinite;
-        }
-
-        @keyframes floaty {
-          0% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-6px);
-          }
-          100% {
-            transform: translateY(0);
-          }
-        }
-
-        /* ✅ 버튼 크기 줄임 */
-        .gateBtn {
-          display: inline-flex !important;
-          align-items: center !important;
-          justify-content: center !important;
-
-          height: 52px !important;
-          border-radius: 18px !important;
-
-          font-size: 18px !important;
-          font-weight: 950 !important;
-          letter-spacing: -0.2px !important;
-          text-decoration: none !important;
-
-          border: 1.5px solid rgba(255, 255, 255, 0.28) !important;
-          backdrop-filter: blur(10px) !important;
-          box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
-
-          transition: transform 0.12s ease, filter 0.12s ease, background 0.12s ease !important;
-          user-select: none !important;
-
-          color: rgba(255, 255, 255, 0.98) !important;
-        }
-
-        .gateBtn:active {
-          transform: translateY(1px) scale(0.99) !important;
-        }
-
-        .gateBtnPrimary {
-          background: linear-gradient(90deg, rgba(255, 72, 158, 0.98), rgba(172, 88, 255, 0.98)) !important;
-        }
-        .gateBtnPrimary:hover {
-          filter: brightness(1.06) !important;
-        }
-
-        .gateBtnGhost {
-          background: rgba(0, 0, 0, 0.18) !important;
-        }
-        .gateBtnGhost:hover {
-          background: rgba(0, 0, 0, 0.24) !important;
         }
       `}</style>
     </main>
