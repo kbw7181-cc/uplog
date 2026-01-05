@@ -4,11 +4,205 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabaseClient';
-import { getAvatarSrc } from '@/lib/getAvatarSrc';
-import { fetchLiveWeatherSlots, resolveRegionFromProfile, type WeatherSlot } from '@/lib/weatherClient';
-import AdminEntryButton from '@/app/components/AdminEntryButton';
-import HomeMenuRow, { type HomeMenuItem } from '@/app/components/HomeMenuRow';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+
+/* =========================================================
+   ✅ Home 올인원(단, 달력/채팅 흐름 유지)
+   - HomeMenuRow: ✅ UPLOG채팅 버튼 감성(네온/둥둥)으로 통일
+   - 메뉴: 이모지 없음 / 1줄 고정
+   - 채팅(/chats/open?to=UID) 동작 유지
+   - 달력 구조/로직 유지
+   - Supabase ENV 필요:
+     NEXT_PUBLIC_SUPABASE_URL
+     NEXT_PUBLIC_SUPABASE_ANON_KEY
+========================================================= */
+
+/** ✅ Supabase (올인원) */
+let supabase: SupabaseClient;
+function getSupabase() {
+  if (supabase) return supabase;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+  if (!url || !key) {
+    console.warn('[HOME] Missing Supabase env. Set NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  }
+
+  supabase = createClient(url, key);
+  return supabase;
+}
+
+/** ✅ Storage avatar public URL 만들기 */
+function getAvatarSrc(pathOrUrl: string) {
+  if (!pathOrUrl) return '';
+  const raw = String(pathOrUrl);
+
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+
+  const sb = getSupabase();
+  try {
+    const { data } = sb.storage.from('avatars').getPublicUrl(raw);
+    return data?.publicUrl || '';
+  } catch {
+    return '';
+  }
+}
+
+/** ✅ Weather types */
+type WeatherSlot = { time: string; temp: number; desc: string };
+
+/** ✅ 프로필로 지역/좌표 해석 */
+function resolveRegionFromProfile(p: any): { label: string; lat: number; lon: number } {
+  const lat = Number(p?.lat);
+  const lon = Number(p?.lon);
+  const addressText = String(p?.address_text || '').trim();
+
+  if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) > 0.001 && Math.abs(lon) > 0.001) {
+    return { label: addressText || '설정한 지역', lat, lon };
+  }
+
+  const txt = addressText;
+
+  const presets: Record<string, { label: string; lat: number; lon: number }> = {
+    서울: { label: '서울', lat: 37.5665, lon: 126.978 },
+    경기: { label: '경기', lat: 37.4138, lon: 127.5183 },
+    인천: { label: '인천', lat: 37.4563, lon: 126.7052 },
+    대전: { label: '대전', lat: 36.3504, lon: 127.3845 },
+    대구: { label: '대구', lat: 35.8714, lon: 128.6014 },
+    부산: { label: '부산', lat: 35.1796, lon: 129.0756 },
+    광주: { label: '광주', lat: 35.1595, lon: 126.8526 },
+    울산: { label: '울산', lat: 35.5384, lon: 129.3114 },
+    세종: { label: '세종', lat: 36.48, lon: 127.289 },
+    제주: { label: '제주', lat: 33.4996, lon: 126.5312 },
+  };
+
+  for (const k of Object.keys(presets)) {
+    if (txt.includes(k)) return presets[k];
+  }
+
+  return { label: '서울', lat: 37.5665, lon: 126.978 };
+}
+
+/** ✅ Open-Meteo로 3시간 단위 오늘 슬롯 만들기 */
+async function fetchLiveWeatherSlots(lat: number, lon: number): Promise<WeatherSlot[]> {
+  try {
+    const url =
+      `https://api.open-meteo.com/v1/forecast` +
+      `?latitude=${encodeURIComponent(lat)}` +
+      `&longitude=${encodeURIComponent(lon)}` +
+      `&hourly=temperature_2m,weathercode` +
+      `&timezone=Asia%2FSeoul`;
+
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return [];
+
+    const j = await res.json();
+    const times: string[] = j?.hourly?.time || [];
+    const temps: number[] = j?.hourly?.temperature_2m || [];
+    const codes: number[] = j?.hourly?.weathercode || [];
+
+    const codeToDesc = (c: number) => {
+      if (c === 0) return '맑음';
+      if ([1, 2].includes(c)) return '약간 구름';
+      if (c === 3) return '구름';
+      if ([45, 48].includes(c)) return '안개';
+      if ([51, 53, 55, 56, 57].includes(c)) return '이슬비';
+      if ([61, 63, 65, 66, 67].includes(c)) return '비';
+      if ([71, 73, 75, 77].includes(c)) return '눈';
+      if ([80, 81, 82].includes(c)) return '소나기';
+      if ([95, 96, 99].includes(c)) return '뇌우';
+      return '흐림';
+    };
+
+    const now = new Date();
+    const todayYMD = now.toISOString().slice(0, 10);
+
+    const slots: WeatherSlot[] = [];
+    for (let i = 0; i < times.length; i++) {
+      const t = times[i];
+      if (!String(t).startsWith(todayYMD)) continue;
+
+      const hh = Number(String(t).slice(11, 13));
+      if (![0, 3, 6, 9, 12, 15, 18, 21].includes(hh)) continue;
+
+      slots.push({
+        time: `${String(hh).padStart(2, '0')}:00`,
+        temp: Number(temps[i] ?? 0),
+        desc: codeToDesc(Number(codes[i] ?? 0)),
+      });
+
+      if (slots.length >= 6) break;
+    }
+
+    if (slots.length === 0) {
+      for (let i = 0; i < Math.min(6, times.length); i++) {
+        const hh = String(times[i]).slice(11, 13);
+        slots.push({
+          time: `${hh}:00`,
+          temp: Number(temps[i] ?? 0),
+          desc: codeToDesc(Number(codes[i] ?? 0)),
+        });
+      }
+    }
+
+    return slots;
+  } catch (e) {
+    console.warn('[HOME] weather fetch fail', e);
+    return [];
+  }
+}
+
+/** ✅ 관리자 버튼 */
+function AdminEntryButton({
+  adminEmail,
+  label = '관리자',
+  size = 'sm',
+}: {
+  adminEmail: string;
+  label?: string;
+  size?: 'sm' | 'md';
+}) {
+  const router = useRouter();
+  const [myEmail, setMyEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const sb = getSupabase();
+      const { data } = await sb.auth.getUser();
+      setMyEmail(data?.user?.email ?? null);
+    })();
+  }, []);
+
+  const isAdmin = !!myEmail && myEmail === adminEmail;
+  if (!isAdmin) return null;
+
+  return (
+    <button
+      type="button"
+      className={'admin-btn ' + (size === 'md' ? 'admin-btn-md' : 'admin-btn-sm')}
+      onClick={() => router.push('/admin')}
+      aria-label="관리자 진입"
+      title="관리자"
+    >
+      {label}
+    </button>
+  );
+}
+
+/** ✅ 홈 메뉴(이모지 없음 / 1줄 고정 / UPLOG채팅 버튼 감성) */
+type HomeMenuItem = { label: string; href: string };
+function HomeMenuRow({ items }: { items: HomeMenuItem[] }) {
+  return (
+    <nav className="home-menu-row" aria-label="홈 메뉴">
+      {items.map((it) => (
+        <Link key={it.href} href={it.href} className="hm-item" aria-label={it.label} title={it.label}>
+          <span className="hm-label">{it.label}</span>
+        </Link>
+      ))}
+    </nav>
+  );
+}
 
 /** ✅ 친구목록 프로필 모달(홈에서만 사용) */
 type FriendProfileData = {
@@ -32,23 +226,20 @@ const EMO_QUOTES: string[] = [
   '오늘 1건의 계약도 내일 10건의 씨앗이 됩니다.',
 ];
 
-// ✅ Friend
 type Friend = {
   user_id: string;
   nickname: string;
   online: boolean;
   role?: string | null;
-  avatarUrl?: string | null;
 };
 
-// ✅ Schedule
 type ScheduleRow = {
   id: string;
   title: string;
   schedule_date: string; // YYYY-MM-DD
   schedule_time?: string | null;
   category?: string | null;
-  customer_id?: string | null; // (유지)
+  customer_id?: string | null;
 };
 
 type DaySummary = { date: string; count: number };
@@ -59,7 +250,6 @@ type DailyTask = { id: string; content: string; done: boolean; task_date: string
 type ContractLevel = 'new' | 'contract1' | 'contract2' | 'contract3';
 type ContractDay = { date: string; newCount: number; c1: number; c2: number; c3: number };
 
-// ✅ 날짜/라벨 유틸
 function formatDate(date: Date): string {
   const y = date.getFullYear();
   const m = `${date.getMonth() + 1}`.padStart(2, '0');
@@ -72,19 +262,16 @@ function getMonthLabel(date: Date) {
 function getKoreanWeekday(date: Date) {
   return date.toLocaleDateString('ko-KR', { weekday: 'long' });
 }
-
-// ✅ 날씨 이모지
 function weatherEmoji(desc: string) {
   if (!desc) return '🌤';
   if (desc.includes('맑')) return '☀️';
   if (desc.includes('비')) return '🌧️';
   if (desc.includes('눈')) return '❄️';
   if (desc.includes('구름')) return '⛅';
-  if (desc.includes('흐')) return '☁️';
+  if (desc.includes('흐') || desc.includes('안개')) return '☁️';
   return '🌤';
 }
 
-// ✅ 스케줄 카테고리 메타
 type ScheduleCategoryKind = 'work' | 'attendance' | 'etc';
 type ScheduleCategoryMeta = { label: string; badgeClass: string; kind: ScheduleCategoryKind };
 
@@ -99,16 +286,15 @@ function getScheduleCategoryMeta(category: string | null | undefined): ScheduleC
   if (c === 'delivery' || c === '택배' || c === '배송') return { label: '배송', badgeClass: 'schedule-cat-work', kind: 'work' };
   if (c === 'meeting' || c === '회의') return { label: '회의', badgeClass: 'schedule-cat-work', kind: 'work' };
   if (c === 'edu' || c === 'education' || c === '교육') return { label: '교육', badgeClass: 'schedule-cat-edu', kind: 'work' };
-  if (c === 'event' || c === '행사' || c === '행사/이벤트')
-    return { label: '행사/이벤트', badgeClass: 'schedule-cat-event', kind: 'work' };
+  if (c === 'event' || c === '행사' || c === '행사/이벤트') return { label: '행사/이벤트', badgeClass: 'schedule-cat-event', kind: 'work' };
 
-  if (c === 'absent' || c === 'late' || c === 'early' || c === 'out' || c === 'close' || c === '근태')
+  if (c === 'absent' || c === 'late' || c === 'early' || c === 'out' || c === 'close' || c === '근태') {
     return { label: '근태', badgeClass: 'schedule-cat-attend', kind: 'attendance' };
+  }
 
   return { label: '기타', badgeClass: 'schedule-cat-etc', kind: 'etc' };
 }
 
-// ✅ 무드/경력 라벨
 function getMoodEmoji(code: string | null | undefined): string {
   if (!code) return '';
   if (code === '🙂' || code === '😎' || code === '🔥') return code;
@@ -150,7 +336,6 @@ function getCareerLabel(code: string | null | undefined): string | null {
   }
 }
 
-// ✅ 계약 단계 파싱
 function pickContractLevel(statusRaw: any): ContractLevel | null {
   const s = String(statusRaw ?? '').replace(/\s/g, '').toLowerCase();
   if (!s) return null;
@@ -162,7 +347,6 @@ function pickContractLevel(statusRaw: any): ContractLevel | null {
   return null;
 }
 
-// ✅ localStorage 유틸
 function lsGetJson<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -176,20 +360,17 @@ function lsGetJson<T>(key: string, fallback: T): T {
 function lsSetJson(key: string, value: any) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
-/** ✅ 목업 친구(기존 유지). 실제 연동은 나중에 friends 테이블로 교체 */
+/** ✅ 목업 친구 */
 const MOCK_FRIENDS: Friend[] = [
   { user_id: '7b1c3a3e-1b2c-4e6a-9e1a-2f5d7c9a1b2c', nickname: '김영업', online: true, role: '팀장' },
   { user_id: '9f2a1c4d-7e3b-4c1a-8d2f-1a3b5c7d9e0f', nickname: '박성장', online: true, role: '사원' },
   { user_id: '4c7d9e0f-9f2a-4d7e-8b3c-1a2f3b5c6d7e', nickname: '이멘탈', online: false, role: '대리' },
 ];
 
-// ❌ 이모지 제거된 홈 메뉴 (텍스트만)
-const MENU_ITEMS = [
+const MENU_ITEMS: HomeMenuItem[] = [
   { label: '나의 U P 관리', href: '/my-up' },
   { label: '고객관리', href: '/customers' },
   { label: '반론 아카이브', href: '/rebuttal' },
@@ -197,9 +378,9 @@ const MENU_ITEMS = [
   { label: '문자 도우미', href: '/sms-helper' },
 ];
 
-
 export default function HomePage() {
   const router = useRouter();
+  const sb = useMemo(() => getSupabase(), []);
 
   const [loading, setLoading] = useState(true);
 
@@ -237,53 +418,42 @@ export default function HomePage() {
   const [weatherLat, setWeatherLat] = useState<number>(37.5665);
   const [weatherLon, setWeatherLon] = useState<number>(126.978);
 
-  // ✅ 오늘 날짜
   const todayStr = useMemo(() => formatDate(new Date()), []);
 
-  // ✅✅✅ 프로필 이미지 캐시버스터: profileImage가 바뀔 때만 갱신
+  // ✅ avatar cache bust
   const [avatarVer, setAvatarVer] = useState<number>(0);
   useEffect(() => {
     if (!profileImage) return;
     setAvatarVer(Date.now());
   }, [profileImage]);
 
-  // ✅✅✅ storage 경로도 정상 변환
   const avatarSrc = useMemo(() => {
     const v = avatarVer ? `?v=${avatarVer}` : '';
     if (!profileImage) return '';
     const raw = String(profileImage);
 
-    if (raw.startsWith('http://') || raw.startsWith('https://')) {
-      return `${raw}${v}`;
-    }
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return `${raw}${v}`;
 
     const publicUrl = getAvatarSrc(raw);
     return publicUrl ? `${publicUrl}${v}` : '';
   }, [profileImage, avatarVer]);
 
-  // ✅ 배지 패널
   const [badgeOpen, setBadgeOpen] = useState(false);
   const [myBadges, setMyBadges] = useState<{ code: string; name: string }[]>([]);
 
-  // ✅ 감성 문구
   const [emotionIndex, setEmotionIndex] = useState(0);
 
-  // ✅ 친구 검색
   const [friendQuery, setFriendQuery] = useState('');
 
-  // ✅ 응원 카운트(새로고침 유지)
   const [cheerCounts, setCheerCounts] = useState<Record<string, number>>({});
   const [cheerPopKey, setCheerPopKey] = useState<string | null>(null);
 
-  // ✅ 친구 프로필 모달(홈 전용)
   const [fpOpen, setFpOpen] = useState(false);
   const [fpLoading, setFpLoading] = useState(false);
   const [fpData, setFpData] = useState<FriendProfileData | null>(null);
   const [fpError, setFpError] = useState<string | null>(null);
 
-  // ✅ 친구 목록(기존 유지)
   const friends = useMemo(() => MOCK_FRIENDS, []);
-
   const filteredFriends = useMemo(() => {
     const q = friendQuery.trim().toLowerCase();
     if (!q) return friends;
@@ -305,7 +475,7 @@ export default function HomePage() {
   const loadMyMonthlyBadges = async (uid: string) => {
     try {
       const today = formatDate(new Date());
-      const { data, error } = await supabase
+      const { data, error } = await sb
         .from('monthly_badges')
         .select('badge_code, badge_name, month_start, month_end')
         .eq('winner_user_id', uid)
@@ -330,7 +500,6 @@ export default function HomePage() {
     }
   };
 
-  // ✅ 응원 로컬 저장
   useEffect(() => {
     const savedCounts = lsGetJson<Record<string, number>>('uplog_cheer_counts', {});
     setCheerCounts(savedCounts);
@@ -355,7 +524,7 @@ export default function HomePage() {
     setDailyMap(m);
   };
 
-  // ✅ 채팅: 무조건 1:1 방 열기(/chats/open)
+  // ✅ 채팅 라우트 유지
   const goDirectChat = (toUid: string) => {
     if (!toUid) return;
     router.push(`/chats/open?to=${encodeURIComponent(toUid)}`);
@@ -379,16 +548,13 @@ export default function HomePage() {
     window.setTimeout(() => setCheerPopKey((cur) => (cur === toUid ? null : cur)), 520);
 
     try {
-      const { data, error } = await supabase.rpc('cheer_friend', { p_to: toUid });
-      if (error || !(data as any)?.ok) {
-        console.warn('cheer_friend rpc skipped/fail', error, data);
-      }
+      const { data, error } = await sb.rpc('cheer_friend', { p_to: toUid });
+      if (error || !(data as any)?.ok) console.warn('cheer_friend rpc skipped/fail', error, data);
     } catch (e) {
       console.warn('cheer_friend rpc fatal (ignored)', e);
     }
   };
 
-  // ✅ 친구 프로필 열기(무한 로딩 방지 타임아웃 포함)
   const openFriendProfile = async (targetUserId: string) => {
     if (!targetUserId) return;
 
@@ -403,35 +569,28 @@ export default function HomePage() {
     }, 6000);
 
     try {
-      const { data: prof, error: profErr } = await supabase
+      const { data: prof } = await sb
         .from('profiles')
         .select('user_id, nickname, name, career, company, team, grade, avatar_url')
         .eq('user_id', targetUserId)
         .maybeSingle();
 
-      if (profErr) console.warn('friend profile profiles error', profErr);
-
       const today = formatDate(new Date());
-      const { data: bData, error: bErr } = await supabase
+      const { data: bData } = await sb
         .from('monthly_badges')
         .select('badge_code, badge_name, month_start, month_end')
         .eq('winner_user_id', targetUserId)
         .lte('month_start', today)
         .gte('month_end', today);
 
-      if (bErr) console.warn('friend profile badges error', bErr);
-
-      const { count: postsCount } = await supabase
+      const { count: postsCount } = await sb
         .from('community_posts')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', targetUserId);
 
       let feedbackCount = 0;
       try {
-        const { count } = await supabase
-          .from('objection_feedbacks')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', targetUserId);
+        const { count } = await sb.from('objection_feedbacks').select('id', { count: 'exact', head: true }).eq('user_id', targetUserId);
         feedbackCount = count ?? 0;
       } catch {
         feedbackCount = 0;
@@ -439,7 +598,7 @@ export default function HomePage() {
 
       let likesCount = 0;
       try {
-        const { count } = await supabase.from('post_likes').select('id', { count: 'exact', head: true }).eq('user_id', targetUserId);
+        const { count } = await sb.from('post_likes').select('id', { count: 'exact', head: true }).eq('user_id', targetUserId);
         likesCount = count ?? 0;
       } catch {
         likesCount = 0;
@@ -488,14 +647,12 @@ export default function HomePage() {
   const newRebuttalCount = useMemo(() => recentRebuttals.length, [recentRebuttals]);
   const newScheduleCountToday = useMemo(() => schedules.filter((s) => s.schedule_date === todayStr).length, [schedules, todayStr]);
 
-  // 감성 슬라이드
   useEffect(() => {
     if (EMO_QUOTES.length === 0) return;
     const timer = setInterval(() => setEmotionIndex((prev) => (prev + 1) % EMO_QUOTES.length), 5000);
     return () => clearInterval(timer);
   }, []);
 
-  // ✅✅✅ 날씨는 "그때의 lat/lon"으로 불러오도록 인자 전달
   const loadDashboardData = async (uid: string, baseMonth: Date, lat: number, lon: number) => {
     const monthStart = new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1, 0, 0, 0);
     const monthEnd = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 0, 23, 59, 59);
@@ -509,8 +666,7 @@ export default function HomePage() {
     const moodMap: Record<string, string> = {};
     const contractByDate: Record<string, { newCount: number; c1: number; c2: number; c3: number }> = {};
 
-    // ✅ schedules 로드 (customer_id 포함)
-    const { data: scheduleRows, error: scheduleError } = await supabase
+    const { data: scheduleRows, error: scheduleError } = await sb
       .from('schedules')
       .select('id, title, schedule_date, schedule_time, category, customer_id')
       .eq('user_id', uid)
@@ -523,14 +679,13 @@ export default function HomePage() {
     const safeSchedules: ScheduleRow[] = (scheduleRows ?? []) as ScheduleRow[];
     setSchedules(safeSchedules);
 
-    // ✅ 날짜별 요약(count)
     const summaryMap: Record<string, number> = {};
     safeSchedules.forEach((row) => {
       summaryMap[row.schedule_date] = (summaryMap[row.schedule_date] ?? 0) + 1;
     });
     setDaySummaries(Object.entries(summaryMap).map(([date, count]) => ({ date, count })));
 
-    const { data: upRows, error: upError } = await supabase
+    const { data: upRows } = await sb
       .from('up_logs')
       .select('id, day_goal, week_goal, month_goal, log_date, mood')
       .eq('user_id', uid)
@@ -538,7 +693,7 @@ export default function HomePage() {
       .lte('log_date', to)
       .order('log_date', { ascending: true });
 
-    if (!upError && upRows && upRows.length > 0) {
+    if (upRows && upRows.length > 0) {
       const last = upRows[upRows.length - 1] as any;
       setLatestGoals({
         day_goal: last.day_goal ?? null,
@@ -554,18 +709,17 @@ export default function HomePage() {
       });
     } else {
       setLatestGoals(null);
-      if (upError) console.error('up_logs error', upError);
     }
 
     try {
-      const { data: customerRows, error: customerError } = await supabase
+      const { data: customerRows } = await sb
         .from('customers')
         .select('id, status, created_at')
         .eq('user_id', uid)
         .gte('created_at', fromISO)
         .lte('created_at', toISO);
 
-      if (!customerError && customerRows) {
+      if (customerRows) {
         (customerRows as any[]).forEach((row) => {
           const raw = (row as any).created_at;
           if (!raw) return;
@@ -581,8 +735,6 @@ export default function HomePage() {
           if (level === 'contract2') contractByDate[dateStr].c2 += 1;
           if (level === 'contract3') contractByDate[dateStr].c3 += 1;
         });
-      } else if (customerError) {
-        console.error('customers error', customerError);
       }
     } catch (err) {
       console.error('customers fatal error', err);
@@ -599,28 +751,24 @@ export default function HomePage() {
     setContractDays(list);
     setMoodByDate(moodMap);
 
-    const { data: rebutRows, error: rebutError } = await supabase
+    const { data: rebutRows } = await sb
       .from('rebuttals')
       .select('id, category, content')
       .eq('user_id', uid)
       .order('id', { ascending: false })
       .limit(3);
 
-    if (!rebutError && rebutRows) setRecentRebuttals(rebutRows as RebuttalSummary[]);
-    else {
-      setRecentRebuttals([]);
-      if (rebutError) console.error('rebuttals error', rebutError);
-    }
+    setRecentRebuttals((rebutRows ?? []) as RebuttalSummary[]);
 
     const today = formatDate(new Date());
-    const { data: taskRows, error: taskError } = await supabase
+    const { data: taskRows } = await sb
       .from('daily_tasks')
       .select('id, task_date, content, done')
       .eq('user_id', uid)
       .eq('task_date', today)
       .order('id', { ascending: true });
 
-    if (!taskError && taskRows) {
+    if (taskRows) {
       setTodayTasks(
         taskRows.map((t: any) => ({
           id: t.id,
@@ -631,26 +779,21 @@ export default function HomePage() {
       );
     } else {
       setTodayTasks([]);
-      if (taskError) console.error('daily_tasks error', taskError);
     }
 
-    // ✅✅✅ 날씨: lat/lon 인자로 받은 값으로 호출 + 배열 가드
     try {
       const live = await fetchLiveWeatherSlots(lat, lon);
-      setTodayWeather(Array.isArray(live) ? (live as WeatherSlot[]) : []);
+      setTodayWeather(Array.isArray(live) ? live : []);
     } catch (e) {
       console.error('weather live error', e);
       setTodayWeather([]);
     }
   };
 
-  // init
   useEffect(() => {
     const init = async () => {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      const { data, error: userError } = await sb.auth.getUser();
+      const user = data?.user;
 
       if (userError || !user) {
         router.replace('/login');
@@ -660,7 +803,7 @@ export default function HomePage() {
       setUserId(user.id);
       setEmail(user.email ?? null);
 
-      const { data: profile, error: profileError } = await supabase
+      const { data: profile } = await sb
         .from('profiles')
         .select('name, nickname, industry, grade, career, company, department, team, avatar_url, main_goal, address_text, lat, lon')
         .eq('user_id', user.id)
@@ -670,7 +813,7 @@ export default function HomePage() {
       let lon = weatherLon;
       let label = weatherLabel;
 
-      if (!profileError && profile) {
+      if (profile) {
         const p: any = profile;
 
         if (p.nickname) setNickname(p.nickname);
@@ -707,7 +850,7 @@ export default function HomePage() {
 
     init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]);
+  }, [router, sb]);
 
   useEffect(() => {
     if (!userId) return;
@@ -766,7 +909,7 @@ export default function HomePage() {
 
     setTodayTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t)));
 
-    const { error } = await supabase.from('daily_tasks').update({ done: nextDone }).eq('id', task.id).eq('user_id', userId);
+    const { error } = await sb.from('daily_tasks').update({ done: nextDone }).eq('id', task.id).eq('user_id', userId);
 
     if (error) {
       setTodayTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: task.done } : t)));
@@ -787,7 +930,6 @@ export default function HomePage() {
     });
 
     const newContracts = (contractDays ?? []).reduce((acc, d) => acc + (d?.newCount ?? 0), 0);
-
     return { work, attend, etc, newContracts };
   }, [schedules, contractDays]);
 
@@ -809,7 +951,6 @@ export default function HomePage() {
   return (
     <div className="home-root">
       <div className="home-inner">
-        {/* 헤더 */}
         <header className="home-header">
           <div className="home-header-top">
             <div className="home-header-left">
@@ -832,16 +973,10 @@ export default function HomePage() {
               </div>
 
               <div className="home-date">
-                {new Date().toLocaleDateString('ko-KR', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                  weekday: 'long',
-                })}
+                {new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
               </div>
             </div>
 
-            {/* 프로필 카드 */}
             <div className="home-header-profile">
               <div className="profile-box">
                 <button type="button" className="profile-settings-btn" onClick={() => router.push('/settings')} aria-label="설정">
@@ -940,7 +1075,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* 말풍선 + 마스코트 */}
           <div className="home-header-bottom">
             <div className="coach-row">
               <div className="coach-bubble-panel" aria-live="polite">
@@ -980,10 +1114,9 @@ export default function HomePage() {
           </div>
         </header>
 
-        {/* ✅ 메뉴 1줄 강제는 HomeMenuRow에서 처리 */}
+        {/* ✅ 메뉴(UPLOG채팅 버튼 감성 / 1줄 고정) */}
         <HomeMenuRow items={MENU_ITEMS} />
 
-        {/* 날씨 */}
         <section className="weather-wide">
           <div className="weather-panel">
             <div className="weather-panel-header">
@@ -1008,7 +1141,6 @@ export default function HomePage() {
         </section>
 
         <main className="home-main">
-          {/* 상단 요약 */}
           <section className="home-top-summary">
             <div className="summary-card goals-card">
               <h3 className="summary-title">월 · 주 · 일 목표</h3>
@@ -1070,7 +1202,7 @@ export default function HomePage() {
             </div>
           </section>
 
-          {/* 달력 + 상세 + 친구 */}
+          {/* ✅✅✅ 달력 섹션: 여기부터는 대표님 파일 흐름 그대로 유지 */}
           <section className="home-section calendar-section">
             <div className="section-header">
               <div>
@@ -1236,8 +1368,6 @@ export default function HomePage() {
                           <span className={'schedule-category ' + meta.badgeClass}>{meta.label}</span>
                           <span className="schedule-title">{s.title}</span>
                         </div>
-
-                        {/* ✅ 상세보기 버튼 제거 유지 */}
                       </li>
                     );
                   })}
@@ -1245,7 +1375,7 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* ✅ 친구 목록 */}
+            {/* ✅ 친구 카드 */}
             <div className="friends-card">
               <div className="friends-head">
                 <div className="friends-title">
@@ -1317,7 +1447,6 @@ export default function HomePage() {
                 )}
               </div>
 
-              {/* ✅ 홈 전용 친구 프로필 모달 */}
               {fpOpen && (
                 <div className="fp-backdrop" onClick={() => setFpOpen(false)}>
                   <div className="fp-panel" onClick={(e) => e.stopPropagation()}>
@@ -1343,9 +1472,7 @@ export default function HomePage() {
                           </div>
                           <div className="fp-main">
                             <div className="fp-name">{fpData.nickname || fpData.name || '익명 영업인'}</div>
-                            <div className="fp-sub">
-                              {(fpData.grade || '직함 미설정') + ' · ' + (getCareerLabel(fpData.career) || '경력 미설정')}
-                            </div>
+                            <div className="fp-sub">{(fpData.grade || '직함 미설정') + ' · ' + (getCareerLabel(fpData.career) || '경력 미설정')}</div>
                             <div className="fp-sub">{[fpData.company, fpData.team].filter(Boolean).join(' / ') || '회사/팀 미설정'}</div>
                           </div>
                         </div>
@@ -1394,7 +1521,6 @@ export default function HomePage() {
           </section>
         </main>
 
-        {/* ✅ 문의하기 실시간 채팅 */}
         <button type="button" onClick={() => router.push('/support')} className="floating-support-btn">
           <span>문의하기</span>
           <span>실시간 채팅</span>
@@ -1414,17 +1540,9 @@ const styles = `
   --soft-sub: #6f60b8;
   --soft-shadow: 0 14px 26px rgba(0,0,0,0.10);
 }
-
 html, body { margin: 0; padding: 0; }
 a { color: inherit; text-decoration: none; }
-a:hover { text-decoration: none; }
-.sr-only{
-  position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .wave-text span, .badge-icon, .coach-mascot-wrap, .coach-sparkle { animation: none !important; transition: none !important; }
-}
+* { box-sizing: border-box; }
 
 .home-root{
   min-height: 100vh;
@@ -1453,7 +1571,7 @@ a:hover { text-decoration: none; }
     radial-gradient(900px 520px at 20% 20%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0) 55%),
     linear-gradient(135deg, rgba(236, 72, 153, 0.75), rgba(124, 58, 237, 0.72));
   box-shadow: 0 16px 28px rgba(0,0,0,0.18);
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   color: #ffffff;
   overflow: hidden;
 }
@@ -1465,7 +1583,6 @@ a:hover { text-decoration: none; }
   align-items: start;
 }
 
-.home-header-profile{ display:flex; justify-content:flex-end; align-items:flex-start; }
 .home-logo-row{ display:flex; align-items:center; gap: 12px; }
 .home-logo{
   width: 70px; height: 70px;
@@ -1492,7 +1609,21 @@ a:hover { text-decoration: none; }
 .home-logo-sub{ font-size: 16px; font-weight: 900; color: rgba(255,255,255,0.92); text-shadow: 0 2px 8px rgba(0,0,0,0.18); }
 .home-date{ font-size: 18px; font-weight: 900; margin-top: 10px; color: rgba(255,255,255,0.92); text-shadow: 0 2px 10px rgba(0,0,0,0.18); }
 
+.admin-btn {
+  margin-left: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-weight: 950;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
+}
+.admin-btn-sm { height: 34px; padding: 0 12px; font-size: 12px; }
+.admin-btn-md { height: 40px; padding: 0 14px; font-size: 13px; }
+
 /* Profile */
+.home-header-profile{ display:flex; justify-content:flex-end; align-items:flex-start; }
 .profile-box{
   width: 100%;
   max-width: 420px;
@@ -1529,7 +1660,6 @@ a:hover { text-decoration: none; }
   cursor: pointer;
   box-shadow: 0 8px 14px rgba(0,0,0,0.10);
 }
-.profile-settings-btn:hover{ transform: translateY(-1px); transition: 160ms ease; }
 .profile-click{ border: none; background: transparent; padding: 0; text-align: left; cursor: pointer; width: 100%; }
 .profile-main{ display:flex; align-items:center; gap: 12px; padding-right: 86px; margin-top: 2px; }
 .profile-avatar{
@@ -1676,7 +1806,6 @@ a:hover { text-decoration: none; }
   text-shadow: 0 2px 10px rgba(0,0,0,0.18);
   opacity: .95;
 }
-.coach-main-goal b{ color: rgba(255,255,255,0.98); }
 @media (max-width: 920px){
   .coach-goal-mini{ display:none; }
 }
@@ -1697,6 +1826,80 @@ a:hover { text-decoration: none; }
 .coach-sparkle.s1{ top: 18px; left: 18px; }
 .coach-sparkle.s2{ top: 52px; left: 46px; }
 
+/* ✅ 홈 메뉴: 헤더카드 밑 여유 + 가로사이즈 동일(데스크탑은 5개 균등, 모바일은 가로 스크롤) */
+.home-menu-row{
+  /* ✅ 헤더카드 밑 여유 간격 */
+  margin: 18px 0 16px;
+
+  /* ✅ 기본은 5개를 "같은 너비"로 딱 정렬 */
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+
+  /* 레이아웃 흔들림 방지 */
+  width: 100%;
+  align-items: stretch;
+}
+
+/* 모바일/좁은 화면에서는 버튼이 눌려서 2줄 되는 걸 방지: 가로 스크롤로 전환 */
+@media (max-width: 760px){
+  .home-menu-row{
+    display: flex;
+    gap: 10px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 2px 2px 10px;
+    scrollbar-width: none;
+  }
+  .home-menu-row::-webkit-scrollbar{ display:none; }
+}
+
+.hm-item{
+  /* ✅ 데스크탑 grid에서는 100%로 동일 너비 */
+  width: 100%;
+
+  height: 44px;
+  padding: 0 10px; /* 텍스트 센터링 느낌 유지 */
+  border-radius: 999px;
+
+  background: linear-gradient(135deg, #f472b6, #a855f7);
+  color: #fff;
+  font-weight: 950;
+  font-size: 15px;
+  letter-spacing: -0.2px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  box-shadow:
+    0 10px 26px rgba(168, 85, 247, 0.45),
+    inset 0 0 0 1px rgba(255,255,255,0.28);
+
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  white-space: nowrap;
+  will-change: transform;
+
+  animation: menuFloat 3.6s ease-in-out infinite;
+}
+
+@keyframes menuFloat{
+  0%,100%{ transform: translateY(0); }
+  50%{ transform: translateY(-2px); }
+}
+
+.hm-item:hover{
+  transform: translateY(-4px) scale(1.01);
+  filter: brightness(1.08);
+  box-shadow:
+    0 16px 42px rgba(168, 85, 247, 0.75),
+    0 0 18px rgba(236, 72, 153, 0.92),
+    0 0 30px rgba(168, 85, 247, 0.85);
+}
+
+.hm-label{ white-space: nowrap; }
+
+
 /* Weather */
 .weather-wide{ margin-bottom: 10px; }
 .weather-panel{
@@ -1707,7 +1910,8 @@ a:hover { text-decoration: none; }
   border: 1px solid #e3dafb;
   color: #241336;
 }
-.weather-strip{ display:flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.weather-strip{ display:flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width:none; }
+.weather-strip::-webkit-scrollbar{ display:none; }
 .weather-slot{ min-width: 100px; border-radius: 12px; background: #f7f3ff; padding: 6px; font-size: 13px; }
 .weather-time{ font-weight: 800; margin-bottom: 2px; }
 .weather-temp{ font-size: 20px; font-weight: 950; color: rgba(243,95,166,0.95); }
@@ -1734,6 +1938,7 @@ a:hover { text-decoration: none; }
   display:flex;
   flex-direction: column;
 }
+.summary-title{ font-size: 20px; font-weight: 950; margin-bottom: 10px; color:#5dd3bdb; }
 .summary-title{ font-size: 20px; font-weight: 950; margin-bottom: 10px; color:#5d3bdb; }
 .summary-desc{ font-size: 15px; color:#7a69c4; margin: 0 0 10px; }
 .tiny-note{ margin-top: 10px; font-size: 12px; color:#7a69c4; }
@@ -1784,7 +1989,6 @@ a:hover { text-decoration: none; }
   font-weight: 950;
   color: #4b2d7a;
 }
-.nav-btn:hover{ transform: translateY(-1px); transition: 160ms ease; }
 .month-label{ font-weight: 950; color:#2a1236; }
 .calendar-legend{ display:flex; flex-wrap: wrap; gap: 10px; align-items:center; margin: 8px 0 12px; }
 .legend-item{ display:flex; align-items:center; gap: 8px; font-size: 13px; color:#4b2d7a; }
@@ -1806,8 +2010,9 @@ a:hover { text-decoration: none; }
   cursor: pointer;
   text-align: left;
   min-height: 76px;
+  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
 }
-.calendar-day:hover{ transform: translateY(-1px); transition: 160ms ease; box-shadow: 0 16px 28px rgba(0,0,0,0.06); }
+.calendar-day:hover{ transform: translateY(-1px); box-shadow: 0 10px 18px rgba(0,0,0,0.06); }
 .calendar-day-out{ opacity: .38; background: #fbfbff; }
 .calendar-day-today{ border-color: rgba(244,114,182,0.75); box-shadow: 0 0 0 3px rgba(244,114,182,0.12); }
 .calendar-day-selected{ border-color: rgba(168,85,247,0.85); box-shadow: 0 0 0 3px rgba(168,85,247,0.14); }
@@ -1825,7 +2030,6 @@ a:hover { text-decoration: none; }
 .empty-text{ padding: 14px; border-radius: 14px; background:#fff; border: 1px dashed rgba(165,148,230,0.7); color:#6f60b8; line-height: 1.45; font-weight: 700; }
 .schedule-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction: column; gap: 10px; }
 
-/* schedule row */
 .schedule-item{
   display:flex;
   gap: 10px;
@@ -1834,18 +2038,9 @@ a:hover { text-decoration: none; }
   border-radius: 14px;
   background:#fff;
   border: 1px solid rgba(226,232,240,0.9);
-  position: relative;
-  overflow: visible !important;
 }
 .schedule-time{ width: 52px; font-weight: 950; color:#4b2d7a; flex: 0 0 auto; }
-.schedule-content{
-  display:flex;
-  align-items:center;
-  gap: 10px;
-  flex-wrap: wrap;
-  flex: 1 1 auto;
-  min-width: 0;
-}
+.schedule-content{ display:flex; align-items:center; gap: 10px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
 .schedule-title{ font-weight: 900; color:#2a1236; }
 .schedule-category{ font-size: 12px; font-weight: 950; padding: 5px 10px; border-radius: 999px; }
 .schedule-cat-work{ background: rgba(16,185,129,0.14); color: rgba(5,150,105,1); border: 1px solid rgba(16,185,129,0.30); }
@@ -1859,465 +2054,380 @@ a:hover { text-decoration: none; }
   margin-top: 14px;
   border-radius: 22px;
   padding: 14px;
-  position: relative;
-  overflow: hidden;
   background:
     radial-gradient(900px 220px at 12% 0%, rgba(244,114,182,0.22) 0%, rgba(244,114,182,0) 55%),
     radial-gradient(900px 240px at 82% 10%, rgba(168,85,247,0.20) 0%, rgba(168,85,247,0) 60%),
-    rgba(255,255,255,0.94);
-  border: 2px solid rgba(227, 218, 251, 0.95);
-  box-shadow: 0 18px 40px rgba(0,0,0,0.10);
-}
-.friends-card:before{
-  content:'';
-  position:absolute;
-  inset: -2px;
-  background: linear-gradient(90deg, rgba(244,114,182,0.35), rgba(168,85,247,0.35), rgba(59,130,246,0.30));
-  filter: blur(22px);
-  opacity: .55;
-  pointer-events:none;
+    rgba(255,255,255,0.96);
+  border: 1px solid #e5ddff;
+  box-shadow: var(--soft-shadow);
 }
 .friends-head{
-  position: relative;
-  display:flex;
-  align-items:center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-  padding: 10px 10px;
-  border-radius: 16px;
-  background: rgba(255,255,255,0.72);
-  border: 1px solid rgba(226,232,240,0.92);
-  box-shadow: 0 14px 28px rgba(0,0,0,0.06);
-}
-.friends-title{ font-weight: 950; color:#4b2d7a; font-size: 15px; }
-.friends-hint{ margin-left: 8px; font-weight: 800; font-size: 12px; color:#7a69c4; }
-.friends-right{ display:flex; align-items:center; gap: 10px; flex: 0 0 auto; }
-
-.uplog-chat-btn{
-  height: 40px;
-  padding: 0 14px;
-  border-radius: 999px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 950;
-  color: #fff;
-  background: linear-gradient(90deg,#ff4fa1,#a855f7);
-  border: 2px solid rgba(255,255,255,0.85);
-  box-shadow: 0 14px 28px rgba(168,85,247,0.22), 0 0 0 3px rgba(244,114,182,0.12);
-  white-space: nowrap;
-}
-.uplog-chat-btn:hover{ filter: brightness(1.03); transform: translateY(-1px); transition: 180ms ease; }
-.uplog-chat-btn:active{ transform: translateY(0); }
-
-.friends-search{
-  height: 36px;
-  border-radius: 999px;
-  border: 1px solid rgba(214,200,255,0.95);
-  background: rgba(255,255,255,0.86);
-  padding: 0 12px;
-  font-weight: 900;
-  color:#2a1236;
-  outline: none;
-  width: 200px;
-  box-shadow: inset 0 0 0 3px rgba(168,85,247,0.08);
-}
-.friends-search:focus{
-  border-color: rgba(244,114,182,0.70);
-  box-shadow: 0 0 0 4px rgba(244,114,182,0.14), inset 0 0 0 3px rgba(168,85,247,0.08);
-}
-
-.friends-list{ position: relative; display:flex; flex-direction: column; gap: 12px; }
-.friends-empty{
-  padding: 14px;
-  border-radius: 16px;
-  background: rgba(255,255,255,0.86);
-  border: 1px dashed rgba(165,148,230,0.7);
-  color:#7a69c4;
-  font-weight: 900;
-}
-
-.friend-row{
-  position: relative;
   display:flex;
   align-items:center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px 12px;
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(251,249,255,0.92));
-  border: 1px solid rgba(226,232,240,0.92);
-  box-shadow: 0 18px 34px rgba(0,0,0,0.06);
-  overflow: hidden;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
 }
-.friend-row:before{
-  content:'';
-  position:absolute;
-  inset: 0;
-  background: linear-gradient(90deg, rgba(244,114,182,0.12), rgba(168,85,247,0.12), rgba(59,130,246,0.10));
-  opacity: 0;
-  transition: 220ms ease;
-  pointer-events:none;
+.friends-title{
+  font-weight: 950;
+  color:#2a1236;
+  display:flex;
+  align-items: baseline;
+  gap: 10px;
 }
-.friend-row:hover{
-  transform: translateY(-1px);
-  transition: 220ms ease;
-  box-shadow: 0 22px 42px rgba(0,0,0,0.10);
+.friends-hint{
+  font-weight: 800;
+  font-size: 12px;
+  color:#7a69c4;
 }
-.friend-row:hover:before{ opacity: 1; }
-
-.friend-name-btn{
-  position: relative;
+.friends-right{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.uplog-chat-btn{
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
   border: none;
+  cursor: pointer;
+  color: #fff;
+  font-weight: 950;
+  letter-spacing: -0.2px;
+  background: linear-gradient(135deg, #f472b6, #a855f7);
+  box-shadow:
+    0 12px 28px rgba(168,85,247,0.45),
+    inset 0 0 0 1px rgba(255,255,255,0.26);
+  transition: transform .18s ease, filter .18s ease, box-shadow .18s ease;
+  animation: chatFloat 3.2s ease-in-out infinite;
+  white-space: nowrap;
+}
+@keyframes chatFloat{
+  0%,100%{ transform: translateY(0); }
+  50%{ transform: translateY(-2px); }
+}
+.uplog-chat-btn:hover{
+  transform: translateY(-4px);
+  filter: brightness(1.08);
+  box-shadow:
+    0 18px 44px rgba(168,85,247,0.75),
+    0 0 18px rgba(236,72,153,0.95),
+    0 0 30px rgba(168,85,247,0.85);
+}
+
+.friends-search-wrap{ width: 190px; }
+.friends-search{
+  width: 100%;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(217,204,255,0.85);
+  background: rgba(255,255,255,0.95);
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 800;
+  color:#2a1236;
+  outline: none;
+  box-shadow: 0 10px 18px rgba(0,0,0,0.05);
+}
+.friends-search:focus{
+  border-color: rgba(168,85,247,0.85);
+  box-shadow: 0 0 0 4px rgba(168,85,247,0.14);
+}
+.friends-list{ display:flex; flex-direction: column; gap: 10px; }
+.friends-empty{
+  padding: 12px;
+  border-radius: 16px;
+  background:#fff;
+  border: 1px dashed rgba(165,148,230,0.75);
+  color:#6f60b8;
+  font-weight: 800;
+}
+
+.friend-row{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.96);
+  border: 1px solid rgba(226,232,240,0.95);
+}
+.friend-name-btn{
+  border:none;
   background: transparent;
   cursor: pointer;
   display:flex;
   align-items:center;
   gap: 10px;
   min-width: 0;
-  padding: 8px 10px;
-  border-radius: 16px;
+  flex: 1 1 auto;
+  padding: 4px 6px;
+  border-radius: 14px;
+  text-align:left;
 }
-.friend-name-btn:hover{ background: rgba(244,114,182,0.08); }
+.friend-name-btn:hover{
+  background: rgba(244,114,182,0.08);
+}
 .friend-dot{
-  width: 10px; height: 10px; border-radius: 999px;
-  box-shadow: 0 0 0 4px rgba(15,23,42,0.06);
+  width: 10px; height: 10px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgba(168,85,247,0.10);
+  flex: 0 0 auto;
 }
 .friend-dot.on{ background: rgba(16,185,129,0.95); }
 .friend-dot.off{ background: rgba(148,163,184,0.95); }
 .friend-nick{
   font-weight: 950;
   color:#2a1236;
-  font-size: 15px;
   display:flex;
   align-items:center;
   gap: 8px;
-  white-space: nowrap;
+  min-width: 0;
 }
 .friend-role{
   font-size: 12px;
   font-weight: 950;
-  padding: 4px 10px;
+  padding: 3px 9px;
   border-radius: 999px;
-  background: rgba(244,114,182,0.12);
-  border: 1px solid rgba(244,114,182,0.25);
-  color:#c02675;
+  background: rgba(168,85,247,0.12);
+  color: rgba(91,33,182,1);
+  border: 1px solid rgba(168,85,247,0.22);
+  flex: 0 0 auto;
 }
 .friend-sub{
-  margin-left: 8px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 800;
   color:#7a69c4;
   white-space: nowrap;
-  opacity: .9;
+  margin-left: 8px;
+  flex: 0 0 auto;
 }
-@media (max-width: 860px){
-  .friend-sub{ display:none; }
-}
-
 .friend-actions{
   display:flex;
   align-items:center;
-  gap: 10px;
+  gap: 8px;
   flex: 0 0 auto;
 }
 .fa-pill{
   height: 38px;
-  border-radius: 999px;
-  border: 1px solid rgba(214,200,255,0.85);
-  background: rgba(255,255,255,0.86);
   padding: 0 12px;
-  cursor: pointer;
+  border-radius: 999px;
+  border: 1px solid rgba(217,204,255,0.85);
+  background: rgba(255,255,255,0.96);
+  color:#2a1236;
+  font-weight: 950;
+  font-size: 13px;
+  cursor:pointer;
   display:inline-flex;
   align-items:center;
   gap: 8px;
-  font-weight: 950;
-  color:#2a1236;
+  min-width: 86px;
+  justify-content:center;
   box-shadow: 0 10px 18px rgba(0,0,0,0.06);
-  min-width: 104px;
-  justify-content: center;
+  transition: transform .14s ease, box-shadow .14s ease, filter .14s ease;
+  white-space: nowrap;
 }
-.fa-pill:hover{ transform: translateY(-1px); transition: 160ms ease; box-shadow: 0 14px 24px rgba(0,0,0,0.08); }
-.fa-pill:active{ transform: translateY(0); }
-.fa-txt{ font-size: 13px; }
-.fa-profile{ box-shadow: 0 10px 18px rgba(0,0,0,0.06), 0 0 0 3px rgba(168,85,247,0.08); }
-.fa-chat{ box-shadow: 0 10px 18px rgba(0,0,0,0.06), 0 0 0 3px rgba(59,130,246,0.08); }
-
+.fa-pill:hover{
+  transform: translateY(-2px);
+  filter: brightness(1.03);
+  box-shadow: 0 14px 26px rgba(0,0,0,0.10);
+}
+.fa-txt{ font-weight: 950; }
 .fa-cheer{
-  min-width: 126px;
-  background: linear-gradient(135deg, rgba(255,255,255,0.88), rgba(255,239,251,0.88));
-  border-color: rgba(244,114,182,0.55);
-  box-shadow: 0 10px 18px rgba(0,0,0,0.06), 0 0 0 3px rgba(244,114,182,0.10);
-  position: relative;
-  overflow: visible;
+  min-width: 112px;
+  background: linear-gradient(135deg, rgba(244,114,182,0.18), rgba(168,85,247,0.14));
+  border-color: rgba(244,114,182,0.35);
 }
-.fa-heart{ font-size: 14px; }
+.fa-heart{ filter: drop-shadow(0 8px 12px rgba(244,114,182,0.25)); }
 .fa-cheer-n{
+  margin-left: 2px;
+  font-weight: 950;
+  color:#ec4899;
   min-width: 18px;
   text-align: right;
-  font-weight: 950;
-  color: #ec4899;
 }
 .fa-pop{
   position: absolute;
-  top: -10px;
-  right: 8px;
+  transform: translateY(-30px);
+  background: rgba(255,255,255,0.96);
+  border: 1px solid rgba(217,204,255,0.85);
+  border-radius: 999px;
+  padding: 6px 10px;
   font-size: 12px;
   font-weight: 950;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(236,72,153,0.95);
-  color: #fff;
-  box-shadow: 0 12px 24px rgba(0,0,0,0.18);
+  color:#ec4899;
+  box-shadow: 0 16px 30px rgba(0,0,0,0.12);
+  animation: popUp .52s ease both;
 }
-.fa-pop-limit{ background: rgba(124,58,237,0.95); }
-.fa-limit{ animation: jiggle 240ms ease-in-out 2; }
-@keyframes jiggle{
-  0%{ transform: translateX(0); }
-  25%{ transform: translateX(-2px); }
-  50%{ transform: translateX(2px); }
-  100%{ transform: translateX(0); }
+@keyframes popUp{
+  0%{ opacity: 0; transform: translateY(-22px) scale(0.96); }
+  100%{ opacity: 1; transform: translateY(-30px) scale(1); }
 }
+.fa-pop-limit{ color:#7c3aed; }
+.fa-limit{
+  border-color: rgba(124,58,237,0.45);
+  box-shadow: 0 0 0 4px rgba(124,58,237,0.12);
+}
+.fa-profile, .fa-chat{ min-width: 92px; }
 
-/* ✅ 친구 프로필 모달(fp) */
+/* 프로필 모달 */
 .fp-backdrop{
   position: fixed;
   inset: 0;
-  z-index: 80;
   background: rgba(15,23,42,0.55);
   display:flex;
   align-items:center;
   justify-content:center;
+  z-index: 70;
   padding: 18px;
 }
 .fp-panel{
   width: 420px;
-  max-width: 94vw;
+  max-width: 92vw;
   border-radius: 26px;
   background: rgba(255,255,255,0.98);
-  border: 1px solid rgba(226,232,240,0.92);
+  border: 1px solid rgba(226,232,240,0.95);
   box-shadow: 0 28px 60px rgba(15,23,42,0.40);
-  padding: 18px 18px 16px;
+  padding: 16px 16px 14px;
   position: relative;
 }
 .fp-close{
   position:absolute;
   top: 10px;
-  right: 12px;
-  width: 32px;
-  height: 32px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
   border-radius: 999px;
-  border: none;
-  cursor: pointer;
+  border:none;
   background: #f3f4ff;
   color:#4b2d7a;
+  cursor:pointer;
   font-weight: 950;
 }
-.fp-title{ font-size: 18px; font-weight: 950; color:#1b1030; }
-.fp-loading{ margin-top: 12px; font-weight: 900; color:#6f60b8; }
-.fp-error{ margin-top: 12px; font-weight: 950; color:#c02675; background:#fff1f6; border:1px solid rgba(244,114,182,0.35); padding: 10px; border-radius: 14px; }
-.fp-body{ margin-top: 12px; display:flex; flex-direction: column; gap: 12px; }
-.fp-top{ display:flex; gap: 12px; align-items:center; }
+.fp-title{
+  font-size: 18px;
+  font-weight: 950;
+  color:#1b1030;
+  margin-bottom: 10px;
+}
+.fp-loading, .fp-error{
+  padding: 14px;
+  border-radius: 16px;
+  background: #faf7ff;
+  border: 1px dashed rgba(165,148,230,0.75);
+  color:#6f60b8;
+  font-weight: 900;
+}
+.fp-body{ display:flex; flex-direction: column; gap: 12px; }
+.fp-top{ display:flex; align-items:center; gap: 12px; }
 .fp-avatar{
-  width: 64px; height: 64px; border-radius: 999px;
-  background: radial-gradient(circle at top left, rgba(244,114,182,0.85) 0, rgba(168,85,247,0.80) 60%);
+  width: 74px; height: 74px;
+  border-radius: 999px;
+  background: radial-gradient(circle at top left, rgba(244,114,182,0.85) 0, rgba(168,85,247,0.78) 60%);
   display:flex; align-items:center; justify-content:center;
-  color:#fff; font-weight: 950; font-size: 20px;
-  overflow:hidden; flex: 0 0 64px;
+  color:#fff; font-weight: 950; font-size: 22px;
+  overflow:hidden; flex: 0 0 auto;
+  box-shadow: 0 14px 26px rgba(168,85,247,0.18);
 }
 .fp-avatar img{ width:100%; height:100%; object-fit: cover; }
 .fp-main{ min-width: 0; }
 .fp-name{ font-size: 18px; font-weight: 950; color:#2a1236; }
-.fp-sub{ margin-top: 4px; font-size: 13px; font-weight: 900; color:#7a69c4; }
+.fp-sub{ font-size: 13px; color:#7a69c4; font-weight: 900; margin-top: 3px; }
 
-.fp-sec-title{ font-size: 14px; font-weight: 950; color:#4b2d7a; margin-bottom: 8px; }
-.fp-muted{ font-size: 13px; font-weight: 900; color:#7a69c4; }
-.fp-badge-row{ display:flex; flex-wrap: wrap; gap: 10px; }
+.fp-sec-title{ font-size: 13px; font-weight: 950; color:#4b2d7a; margin-bottom: 6px; }
+.fp-muted{ font-size: 13px; color:#7a69c4; font-weight: 900; }
+.fp-badge-row{ display:flex; gap: 10px; flex-wrap: wrap; }
 .fp-badge{
-  width: 34px; height: 34px; border-radius: 999px;
-  display:inline-flex; align-items:center; justify-content:center;
-  border: 2px solid rgba(180,160,255,0.45);
+  width: 38px; height: 38px;
+  border-radius: 999px;
+  display:flex; align-items:center; justify-content:center;
   background:#fff;
-  box-shadow: 0 10px 16px rgba(0,0,0,0.06), 0 0 12px rgba(168,85,247,0.12);
+  border: 1px solid rgba(217,204,255,0.85);
+  box-shadow: 0 14px 24px rgba(0,0,0,0.07);
+  font-size: 18px;
 }
-
 .fp-counts{ display:flex; gap: 10px; flex-wrap: wrap; }
 .fp-count-pill{
   padding: 8px 10px;
   border-radius: 999px;
-  background: #f7f2ff;
-  border: 1px solid #e0d4ff;
-  font-weight: 950;
+  background: rgba(168,85,247,0.10);
+  border: 1px solid rgba(168,85,247,0.18);
   color:#2a1236;
+  font-weight: 950;
   font-size: 13px;
 }
 .fp-count-pill b{ color:#ec4899; }
-
-.fp-actions{ display:flex; gap: 10px; margin-top: 2px; }
+.fp-actions{ display:flex; gap: 10px; justify-content: flex-end; }
 .fp-btn{
-  flex: 1;
   height: 42px;
+  padding: 0 14px;
   border-radius: 999px;
-  cursor: pointer;
+  border: 1px solid rgba(217,204,255,0.85);
+  cursor:pointer;
   font-weight: 950;
-  border: 1px solid rgba(214,200,255,0.85);
-  background: rgba(255,255,255,0.86);
-  color:#2a1236;
-  box-shadow: 0 10px 18px rgba(0,0,0,0.06);
+  font-size: 14px;
+  box-shadow: 0 14px 26px rgba(0,0,0,0.08);
+  transition: transform .14s ease, filter .14s ease, box-shadow .14s ease;
 }
-.fp-btn:hover{ transform: translateY(-1px); transition: 160ms ease; box-shadow: 0 14px 24px rgba(0,0,0,0.08); }
-.fp-btn:active{ transform: translateY(0); }
+.fp-btn:hover{ transform: translateY(-2px); filter: brightness(1.03); }
+.fp-btn.ghost{ background: #fff; color:#2a1236; }
 .fp-btn.pink{
-  background: linear-gradient(90deg, rgba(255,79,161,0.96), rgba(168,85,247,0.92));
+  border: none;
   color:#fff;
-  border-color: rgba(255,255,255,0.85);
-}
-.fp-btn.ghost{
-  background: rgba(255,255,255,0.86);
+  background: linear-gradient(135deg, #f472b6, #a855f7);
+  box-shadow:
+    0 16px 36px rgba(168,85,247,0.40),
+    inset 0 0 0 1px rgba(255,255,255,0.26);
 }
 
-/* floating support */
+/* 문의하기 플로팅 */
 .floating-support-btn{
   position: fixed;
   right: 18px;
   bottom: 18px;
-  z-index: 90;
-  border: none;
-  cursor: pointer;
-  padding: 12px 14px;
+  z-index: 80;
+  width: 132px;
+  height: 56px;
   border-radius: 18px;
-  color: #fff;
+  border: none;
+  cursor:pointer;
+  color:#fff;
   font-weight: 950;
-  background: linear-gradient(90deg,#ff4fa1,#a855f7);
-  box-shadow: 0 18px 34px rgba(0,0,0,0.20), 0 0 0 4px rgba(244,114,182,0.14);
+  background: linear-gradient(135deg, rgba(244,114,182,0.92), rgba(168,85,247,0.90));
+  box-shadow:
+    0 20px 40px rgba(168,85,247,0.38),
+    0 0 22px rgba(236,72,153,0.50);
   display:flex;
   flex-direction: column;
+  align-items:center;
+  justify-content:center;
   gap: 2px;
-  align-items: center;
+  animation: floaty2 3.1s ease-in-out infinite;
 }
-.floating-support-btn:hover{ transform: translateY(-1px); transition: 160ms ease; filter: brightness(1.03); }
-
-/* 전체복붙: (CSS에 그대로 추가/교체용)
-   - 이 블록만 "맨 아래"에 붙여넣으면 됩니다.
-   - 이모지 없음
-   - 다른 스타일은 건드리지 않고 hover만 강화합니다.
-*/
-
-/* Neon hover tokens (없으면 추가) */
-:root{
-  --neon-pink: rgba(244,114,182,0.95);
-  --neon-purple: rgba(168,85,247,0.95);
-  --neon-blue: rgba(59,130,246,0.75);
+@keyframes floaty2{
+  0%,100%{ transform: translateY(0); }
+  50%{ transform: translateY(-3px); }
 }
+.floating-support-btn span:first-child{ font-size: 13px; opacity: .96; }
+.floating-support-btn span:last-child{ font-size: 12px; opacity: .90; }
 
-/* smooth neon motion */
-.nav-btn,
-.profile-settings-btn,
-.uplog-chat-btn,
-.fa-pill,
-.friend-row,
-.calendar-day,
-.summary-card,
-.weather-panel,
-.home-section,
-.profile-box{
-  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease, border-color 180ms ease, background 180ms ease;
-  will-change: transform, box-shadow, filter;
+/* Responsive */
+@media (max-width: 980px){
+  .home-header-top{ grid-template-columns: 1fr; }
+  .home-header-profile{ justify-content:flex-start; }
+  .profile-box{ max-width: 100%; }
 }
-
-/* Neon hover: buttons */
-.nav-btn:hover,
-.profile-settings-btn:hover,
-.uplog-chat-btn:hover,
-.fa-pill:hover{
-  transform: translateY(-2px);
-  filter: brightness(1.04) saturate(1.10);
-  border-color: rgba(255,255,255,0.88);
-  box-shadow:
-    0 14px 28px rgba(0,0,0,0.10),
-    0 0 0 3px rgba(255,255,255,0.22),
-    0 0 16px rgba(244,114,182,0.30),
-    0 0 26px rgba(168,85,247,0.28),
-    0 0 38px rgba(59,130,246,0.16);
+@media (max-width: 620px){
+  .home-root{ padding: 16px; }
+  .home-header{ padding: 18px 16px 26px; }
+  .wave-text span{ font-size: 30px; letter-spacing: 4px; }
+  .profile-box{ height: auto; }
+  .friend-sub{ display:none; }
+  .fa-pill{ min-width: 76px; padding: 0 10px; }
+  .fa-cheer{ min-width: 104px; }
+  .friends-search-wrap{ width: 150px; }
 }
-
-/* Press */
-.nav-btn:active,
-.profile-settings-btn:active,
-.uplog-chat-btn:active,
-.fa-pill:active{
-  transform: translateY(0px) scale(0.99);
-  filter: brightness(0.99);
-}
-
-/* Cheer button stronger neon (fa-cheer 클래스가 있을 때만 적용됨) */
-.fa-cheer:hover{
-  filter: brightness(1.06) saturate(1.18);
-  border-color: rgba(244,114,182,0.72);
-  box-shadow:
-    0 16px 34px rgba(0,0,0,0.12),
-    0 0 0 3px rgba(244,114,182,0.14),
-    0 0 18px rgba(244,114,182,0.38),
-    0 0 30px rgba(168,85,247,0.22);
-}
-
-/* Neon hover: big cards */
-.profile-box:hover,
-.weather-panel:hover,
-.summary-card:hover,
-.home-section:hover,
-.friend-row:hover{
-  transform: translateY(-2px);
-  filter: brightness(1.02) saturate(1.06);
-  box-shadow:
-    0 18px 40px rgba(0,0,0,0.14),
-    0 0 0 3px rgba(255,255,255,0.16),
-    0 0 26px rgba(244,114,182,0.20),
-    0 0 36px rgba(168,85,247,0.18);
-}
-
-/* Calendar day hover neon (기존 .calendar-day:hover가 있으면 이걸로 교체되게 아래에 둠) */
-.calendar-day:hover{
-  transform: translateY(-2px);
-  border-color: rgba(168,85,247,0.55);
-  box-shadow:
-    0 16px 28px rgba(0,0,0,0.08),
-    0 0 0 3px rgba(168,85,247,0.12),
-    0 0 18px rgba(244,114,182,0.16);
-  filter: brightness(1.02) saturate(1.05);
-}
-
-/* Sweep highlight (원치 않으면 이 블록 삭제)
-   버튼 위로 은근히 빛이 지나가는 효과 */
-.uplog-chat-btn,
-.fa-pill,
-.profile-settings-btn,
-.nav-btn{
-  position: relative;
-  overflow: hidden;
-}
-
-.uplog-chat-btn::after,
-.fa-pill::after,
-.profile-settings-btn::after,
-.nav-btn::after{
-  content:'';
-  position:absolute;
-  top:-40%;
-  left:-60%;
-  width: 60%;
-  height: 180%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
-  transform: rotate(18deg);
-  opacity: 0;
-  transition: opacity 180ms ease, transform 420ms ease;
-  pointer-events:none;
-}
-
-.uplog-chat-btn:hover::after,
-.fa-pill:hover::after,
-.profile-settings-btn:hover::after,
-.nav-btn:hover::after{
-  opacity: 1;
-  transform: translateX(220%) rotate(18deg);
 `;

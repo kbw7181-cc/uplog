@@ -6,7 +6,6 @@ import Link from 'next/link';
 export type HomeMenuItem = {
   label: string;
   href: string;
-  emoji?: string; // ✅ 남겨도 렌더 안 함(호환용)
 };
 
 export default function HomeMenuRow({ items }: { items: HomeMenuItem[] }) {
@@ -15,119 +14,101 @@ export default function HomeMenuRow({ items }: { items: HomeMenuItem[] }) {
       <div className="hm-row">
         {items.map((it) => (
           <Link key={it.href} href={it.href} className="hm-item" aria-label={it.label}>
-            {/* ✅ 이모지 렌더링 완전 제거 */}
             <span className="hm-label">{it.label}</span>
-            <span className="hm-glow" aria-hidden="true" />
           </Link>
         ))}
       </div>
 
       <style jsx>{`
         .hm-wrap {
-          margin: 12px 0 14px;
-        }
-
-        /* ✅ 1줄 고정 */
-        .hm-row {
-          display: flex;
-          flex-wrap: nowrap;
-          gap: 12px;
           width: 100%;
-          overflow: hidden;
+          margin: 14px auto 10px;
+          padding: 0 14px;
         }
 
-        .hm-item {
-          position: relative;
-          flex: 1 1 0%;
-          min-width: 0;
+        /* ✅ “갇힌 느낌” 제거: 바깥 여백 + 가로 스크롤 허용(작은 화면 안전) */
+        .hm-row {
+          display: grid;
+          grid-auto-flow: column;
+          grid-auto-columns: 1fr; /* ✅ 전부 동일 폭 */
+          gap: 12px;
+          align-items: center;
 
-          height: 52px;
-          border-radius: 999px; /* ✅ 라운드 */
-          display: inline-flex;
+          overflow-x: auto;
+          padding: 10px 6px;
+          scroll-snap-type: x mandatory;
+
+          /* 스크롤바 예쁘게 */
+          scrollbar-width: none;
+        }
+        .hm-row::-webkit-scrollbar {
+          display: none;
+        }
+
+        /* ✅ 모든 버튼 폭을 “반론 아카이브” 기준으로 동일하게 */
+        .hm-item {
+          scroll-snap-align: start;
+          display: flex;
           align-items: center;
           justify-content: center;
-          padding: 0 12px;
+
+          height: 52px;
+          padding: 0 16px;
+
+          border-radius: 999px;
+
+          /* 버튼이 “떠있는” 느낌 */
+          background: rgba(255, 255, 255, 0.18);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+
+          border: 1.6px solid rgba(255, 255, 255, 0.46);
+          box-shadow:
+            0 10px 26px rgba(0, 0, 0, 0.16),
+            inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 
           text-decoration: none;
           user-select: none;
-          white-space: nowrap;
+          -webkit-tap-highlight-color: transparent;
 
-          /* ✅ 핑크-퍼플 */
-          background: linear-gradient(
-            90deg,
-            rgba(236, 72, 153, 0.92),
-            rgba(168, 85, 247, 0.92)
-          );
-          color: #fff;
-
-          /* ✅ 라운드 테두리 + 은은한 네온 */
-          border: 1px solid rgba(255, 255, 255, 0.22);
-          box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
-          transition: transform 160ms ease, box-shadow 180ms ease, filter 180ms ease,
-            border-color 180ms ease;
-          overflow: hidden;
-          isolation: isolate;
-        }
-
-        /* ✅ 네온 불 들어오는 레이어 */
-        .hm-glow {
-          position: absolute;
-          inset: -2px;
-          border-radius: 999px;
-          background: radial-gradient(
-              circle at 30% 20%,
-              rgba(255, 255, 255, 0.35),
-              transparent 55%
-            ),
-            radial-gradient(
-              circle at 70% 80%,
-              rgba(255, 255, 255, 0.25),
-              transparent 55%
-            );
-          opacity: 0.25;
-          z-index: -1;
-          transition: opacity 180ms ease, filter 180ms ease;
-          filter: blur(8px);
+          transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease,
+            background 140ms ease;
         }
 
         .hm-item:hover {
-          transform: translateY(-1px);
-          filter: saturate(1.08);
-          border-color: rgba(255, 255, 255, 0.34);
-          box-shadow: 0 14px 30px rgba(168, 85, 247, 0.22),
-            0 10px 22px rgba(0, 0, 0, 0.18);
-        }
-        .hm-item:hover .hm-glow {
-          opacity: 0.55; /* ✅ 네온 업 */
-          filter: blur(10px);
+          transform: translateY(-2px);
+          border-color: rgba(255, 255, 255, 0.7);
+          background: rgba(255, 255, 255, 0.22);
+          box-shadow:
+            0 14px 34px rgba(0, 0, 0, 0.2),
+            0 0 0 3px rgba(236, 72, 153, 0.18),
+            inset 0 0 0 1px rgba(255, 255, 255, 0.18);
         }
 
         .hm-item:active {
-          transform: translateY(0px) scale(0.995);
+          transform: translateY(0px) scale(0.99);
         }
 
         .hm-label {
-          font-size: 13px;
-          font-weight: 900;
-          line-height: 1;
-          max-width: 100%;
+          font-weight: 800;
+          letter-spacing: -0.2px;
+          font-size: 16px; /* ✅ 길이 긴 “반론 아카이브”도 한 줄 유지 */
+          color: rgba(255, 255, 255, 0.96);
+          text-shadow: 0 1px 10px rgba(0, 0, 0, 0.22);
+
+          white-space: nowrap; /* ✅ 줄바꿈 금지 */
           overflow: hidden;
           text-overflow: ellipsis;
-          white-space: nowrap;
-          letter-spacing: 0.2px;
-          text-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
         }
 
-        @media (max-width: 720px) {
-          .hm-row {
-            gap: 10px;
-          }
+        /* ✅ 화면이 더 좁으면 버튼 높이/글자만 살짝 줄여서 한 줄 유지 */
+        @media (max-width: 520px) {
           .hm-item {
             height: 48px;
-            padding: 0 10px;
+            padding: 0 14px;
           }
           .hm-label {
-            font-size: 12px;
+            font-size: 15px;
           }
         }
       `}</style>

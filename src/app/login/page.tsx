@@ -50,9 +50,9 @@ export default function LoginPage() {
 
       <section className="auth-card" aria-label="로그인">
         <header className="auth-head">
-          {/* ✅ 로고: public/assets/gogo.png 고정 */}
           <div className="auth-logo" aria-hidden="true">
-            <img src="/assets/gogo.png" alt="" className="auth-logoImg" />
+            {/* ✅ public/gogo.png 라면 이렇게! */}
+            <img src="/gogo.png" alt="" className="auth-logoImg" />
           </div>
 
           <div className="auth-titles">
@@ -88,12 +88,10 @@ export default function LoginPage() {
 
           {msg ? <div className="auth-msg">{msg}</div> : null}
 
-          {/* ✅ 로그인 화면 메인 버튼은 로그인 1개만 */}
           <button className="auth-btn auth-primary" disabled={!canSubmit} type="submit">
             {loading ? '처리 중…' : '로그인'}
           </button>
 
-          {/* ✅ 회원가입은 버튼이 아니라 '작은 링크'로만 */}
           <div className="auth-footer">
             <span className="auth-footText">계정이 없나요?</span>
             <Link className="auth-footLink" href="/register">
@@ -104,7 +102,6 @@ export default function LoginPage() {
       </section>
 
       <style jsx>{`
-        /* ✅ 입력창 오른쪽 치우침 방지 핵심: box-sizing + width 100% */
         :global(*),
         :global(*::before),
         :global(*::after) {
