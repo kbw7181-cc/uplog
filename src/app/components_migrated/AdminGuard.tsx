@@ -1,9 +1,8 @@
-// src/components/AdminGuard.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 type Props = {
   children: React.ReactNode;
@@ -11,57 +10,51 @@ type Props = {
 
 export default function AdminGuard({ children }: Props) {
   const router = useRouter();
-  const [checking, setChecking] = useState(true);
-  const [allowed, setAllowed] = useState(false);
+  const [ok, setOk] = useState(false);
 
   useEffect(() => {
-    const check = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    let alive = true;
 
-      if (!user) {
-        // 로그인 안되어 있으면 로그인 페이지로
-        router.replace('/login');
-        return;
-      }
+    async function run() {
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const user = auth?.user;
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('is_admin')
-        .eq('id', user.id)
-        .single();
+        if (!user) {
+          router.replace('/login');
+          return;
+        }
 
-      if (error || !data) {
-        console.error('admin check error', error);
+        // ✅ profiles 테이블 PK = user_id (id 쓰면 400/42703 터짐)
+        const { data: prof, error } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (error) {
+          router.replace('/home');
+          return;
+        }
+
+        const role = prof?.role ?? 'user';
+        if (role !== 'admin') {
+          router.replace('/home');
+          return;
+        }
+
+        if (alive) setOk(true);
+      } catch {
         router.replace('/home');
-        return;
       }
+    }
 
-      if (!data.is_admin) {
-        // 관리자 아니면 /home 으로 보내기
-        router.replace('/home');
-        return;
-      }
-
-      setAllowed(true);
-      setChecking(false);
+    run();
+    return () => {
+      alive = false;
     };
-
-    check();
   }, [router]);
 
-  if (checking) {
-    return (
-      <div style={{ padding: 24, textAlign: 'center' }}>
-        관리자 권한 확인 중입니다...
-      </div>
-    );
-  }
-
-  if (!allowed) {
-    return null;
-  }
-
+  if (!ok) return null;
   return <>{children}</>;
 }
