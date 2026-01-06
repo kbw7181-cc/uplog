@@ -1,259 +1,296 @@
-// src/components/ScheduleMonthlyCalendar.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
+
+type Props = {
+  userId: string;
+  monthYMD?: string; // 'YYYY-MM-01' 같은 형태로 받아도 되고, 없으면 현재달
+  onSelectDate?: (ymd: string) => void; // 'YYYY-MM-DD'
+};
 
 type ScheduleItem = {
   id: string;
-  date: string;   // YYYY-MM-DD
+  user_id: string;
   title: string;
-  type: string;   // work / meeting / personal
-  status: string; // pending / progress / done
+  schedule_date: string; // YYYY-MM-DD
+  schedule_time?: string | null;
+  category?: string | null;
+  customer_id?: string | null;
+  created_at?: string | null;
 };
 
-function formatDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+function pad2(n: number) {
+  return String(n).padStart(2, '0');
+}
+function toYMD(d: Date) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function monthKeyFrom(date: Date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
+}
+function getMonthStart(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function getMonthEnd(d: Date) {
+  // 다음달 1일 - 1일
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0);
 }
 
-export default function ScheduleMonthlyCalendar() {
-  const [current, setCurrent] = useState(() => new Date());
+export default function ScheduleMonthlyCalendar({ userId, monthYMD, onSelectDate }: Props) {
+  const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ScheduleItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [picked, setPicked] = useState<string>(() => toYMD(new Date()));
 
-  const year = current.getFullYear();
-  const month = current.getMonth(); // 0~11
-
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-
-  const cells = useMemo(() => {
-    const arr: Date[] = [];
-
-    // 달력 시작: 해당 월의 1일이 속한 주의 월요일부터
-    const start = new Date(firstDay);
-    const day = start.getDay(); // 0(일)~6(토)
-    const diffToMonday = (day === 0 ? -6 : 1 - day);
-    start.setDate(start.getDate() + diffToMonday);
-
-    // 6주 * 7일 = 42칸
-    for (let i = 0; i < 42; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      arr.push(d);
+  const baseMonthDate = useMemo(() => {
+    if (monthYMD && /^\d{4}-\d{2}-\d{2}$/.test(monthYMD)) {
+      const [y, m] = monthYMD.split('-').map((v) => Number(v));
+      return new Date(y, (m || 1) - 1, 1);
     }
-    return arr;
-  }, [firstDay]);
+    return getMonthStart(new Date());
+  }, [monthYMD]);
+
+  const monthLabel = useMemo(() => monthKeyFrom(baseMonthDate), [baseMonthDate]);
+
+  const range = useMemo(() => {
+    const start = getMonthStart(baseMonthDate);
+    const end = getMonthEnd(baseMonthDate);
+    return { start, end };
+  }, [baseMonthDate]);
+
+  const daysGrid = useMemo(() => {
+    // 달력 7열 그리드: 시작요일 맞추기
+    const start = new Date(range.start);
+    const end = new Date(range.end);
+
+    const startDow = start.getDay(); // 0=일
+    const firstCell = new Date(start);
+    firstCell.setDate(firstCell.getDate() - startDow);
+
+    const endDow = end.getDay();
+    const lastCell = new Date(end);
+    lastCell.setDate(lastCell.getDate() + (6 - endDow));
+
+    const out: { ymd: string; inMonth: boolean }[] = [];
+    const cur = new Date(firstCell);
+    while (cur <= lastCell) {
+      const ymd = toYMD(cur);
+      const inMonth = cur.getMonth() === baseMonthDate.getMonth();
+      out.push({ ymd, inMonth });
+      cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  }, [range.start, range.end, baseMonthDate]);
+
+  const byDate = useMemo(() => {
+    const map = new Map<string, ScheduleItem[]>();
+    for (const it of items) {
+      const key = it.schedule_date;
+      const arr = map.get(key) ?? [];
+      arr.push(it);
+      map.set(key, arr);
+    }
+    return map;
+  }, [items]);
 
   useEffect(() => {
-    let cancelled = false;
+    let alive = true;
 
     async function load() {
+      if (!userId) return;
+      setLoading(true);
+
       try {
-        setLoading(true);
+        const start = toYMD(range.start);
+        const end = toYMD(range.end);
 
-        const startStr = formatDate(new Date(year, month, 1));
-        const endStr = formatDate(new Date(year, month + 1, 0));
+        const { data, error } = await supabase
+          .from('schedules')
+          .select('id,user_id,title,schedule_date,schedule_time,category,customer_id,created_at')
+          .eq('user_id', userId)
+          .gte('schedule_date', start)
+          .lte('schedule_date', end)
+          .order('schedule_date', { ascending: true })
+          .order('schedule_time', { ascending: true });
 
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+        if (!alive) return;
 
-        if (!user) {
+        if (error) {
           setItems([]);
           return;
         }
 
-        const { data, error } = await supabase
-          .from('schedules')
-          .select('*')
-          .eq('user_id', user.id)
-          .gte('date', startStr)
-          .lte('date', endStr);
-
-        if (error) throw error;
-        if (!cancelled && data) {
-          setItems(data as any);
-        }
-      } catch (e) {
-        console.error(e);
+        setItems((data as ScheduleItem[]) ?? []);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (alive) setLoading(false);
       }
     }
 
     load();
     return () => {
-      cancelled = true;
+      alive = false;
     };
-  }, [year, month]);
+  }, [userId, range.start, range.end]);
 
-  function moveMonth(offset: number) {
-    setCurrent((prev) => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
+  function pickDate(ymd: string) {
+    setPicked(ymd);
+    onSelectDate?.(ymd);
   }
-
-  function getDayItems(date: Date): ScheduleItem[] {
-    const key = formatDate(date);
-    return items.filter((i) => i.date === key);
-  }
-
-  function statusDotClass(status: string): string {
-    switch (status) {
-      case 'done':
-        return 'bg-emerald-500';
-      case 'progress':
-        return 'bg-yellow-400';
-      case 'pending':
-      default:
-        return 'bg-sky-500';
-    }
-  }
-
-  function typeLabel(type: string): string {
-    switch (type) {
-      case 'meeting':
-        return '회의/미팅';
-      case 'personal':
-        return '개인';
-      case 'work':
-      default:
-        return '업무';
-    }
-  }
-
-  function typeBadgeClass(type: string): string {
-    switch (type) {
-      case 'meeting':
-        return 'bg-purple-500/20 text-purple-200 border-purple-400/60';
-      case 'personal':
-        return 'bg-blue-500/20 text-blue-200 border-blue-400/60';
-      case 'work':
-      default:
-        return 'bg-pink-500/20 text-pink-200 border-pink-400/60';
-    }
-  }
-
-  const monthLabel = `${year}년 ${month + 1}월`;
-
-  const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
 
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4 space-y-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => moveMonth(-1)}
-            className="rounded-full border border-zinc-600 px-2 py-1 text-xs text-zinc-200"
-          >
-            ←
-          </button>
-          <div className="text-sm font-semibold">{monthLabel}</div>
-          <button
-            type="button"
-            onClick={() => moveMonth(1)}
-            className="rounded-full border border-zinc-600 px-2 py-1 text-xs text-zinc-200"
-          >
-            →
-          </button>
-        </div>
-        <span className="text-[11px] text-zinc-400">
-          미팅/회의 · 업무 · 개인 일정과 완료/진행/대기를 색으로 구분
-        </span>
+    <section className="smc" aria-label={`월간 달력 ${monthLabel}`}>
+      <div className="smc-head">
+        <div className="smc-title">{monthLabel}</div>
+        {loading ? <div className="smc-sub">불러오는 중…</div> : <div className="smc-sub">일정 {items.length}개</div>}
       </div>
 
-      {/* 요일 헤더 */}
-      <div className="grid grid-cols-7 text-center text-[11px] text-zinc-400 mb-1">
-        {weekdays.map((d) => (
-          <div key={d}>{d}</div>
+      <div className="smc-dow">
+        {['일', '월', '화', '수', '목', '금', '토'].map((d) => (
+          <div key={d} className="smc-dow-cell">
+            {d}
+          </div>
         ))}
       </div>
 
-      {/* 날짜 셀 */}
-      <div className="grid grid-cols-7 gap-1 text-xs">
-        {cells.map((d, idx) => {
-          const inMonth = d.getMonth() === month;
-          const dayItems = getDayItems(d);
-          const isToday = formatDate(d) === formatDate(new Date());
+      <div className="smc-grid">
+        {daysGrid.map((cell) => {
+          const list = byDate.get(cell.ymd) ?? [];
+          const isPicked = picked === cell.ymd;
 
           return (
-            <div
-              key={idx}
-              className={`min-h-[72px] rounded-xl border px-1.5 py-1 flex flex-col gap-1 ${
-                inMonth ? 'border-zinc-700 bg-black/40' : 'border-zinc-800 bg-black/20 text-zinc-500'
-              }`}
+            <button
+              key={cell.ymd}
+              type="button"
+              className={`smc-day ${cell.inMonth ? '' : 'dim'} ${isPicked ? 'picked' : ''}`}
+              onClick={() => pickDate(cell.ymd)}
+              aria-label={`${cell.ymd} 일정 ${list.length}개`}
             >
-              <div className="flex items-center justify-between">
-                <span
-                  className={`text-[11px] ${
-                    isToday ? 'text-pink-300 font-semibold' : ''
-                  }`}
-                >
-                  {d.getDate()}
-                </span>
-                {dayItems.length > 0 && (
-                  <div className="flex gap-0.5">
-                    {dayItems.slice(0, 3).map((it) => (
-                      <span
-                        key={it.id}
-                        className={`h-1.5 w-1.5 rounded-full ${statusDotClass(
-                          it.status,
-                        )}`}
-                      />
-                    ))}
-                  </div>
-                )}
+              <div className="smc-day-top">
+                <span className="smc-day-num">{Number(cell.ymd.slice(8, 10))}</span>
+                {list.length > 0 && <span className="smc-badge">{list.length}</span>}
               </div>
 
-              {dayItems.slice(0, 2).map((it) => (
-                <div
-                  key={it.id}
-                  className={`truncate rounded-md border px-1 py-0.5 text-[10px] ${typeBadgeClass(
-                    it.type,
-                  )}`}
-                >
-                  {typeLabel(it.type)} · {it.title}
+              {/* 점 표시(카테고리별 색은 기존 디자인 모르니, 안전하게 단색) */}
+              {list.length > 0 && (
+                <div className="smc-dots" aria-hidden="true">
+                  {list.slice(0, 3).map((_, idx) => (
+                    <span key={idx} className="smc-dot" />
+                  ))}
+                  {list.length > 3 && <span className="smc-dot more" />}
                 </div>
-              ))}
-
-              {dayItems.length > 2 && (
-                <span className="text-[9px] text-zinc-500 mt-auto">
-                  +{dayItems.length - 2}개 더 있음
-                </span>
               )}
-            </div>
+            </button>
           );
         })}
       </div>
 
-      {/* 범례 */}
-      <div className="flex flex-wrap gap-3 mt-2 text-[10px] text-zinc-400">
-        <div className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-sky-500" /> 대기
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-yellow-400" /> 진행중
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" /> 완료
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-md border border-pink-400 bg-pink-500/20" /> 업무
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-md border border-purple-400 bg-purple-500/20" /> 회의/미팅
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-md border border-blue-400 bg-blue-500/20" /> 개인
-        </div>
-      </div>
+      <style jsx>{`
+        .smc {
+          width: 100%;
+        }
 
-      {loading && (
-        <p className="text-[11px] text-zinc-400 mt-1">일정을 불러오는 중입니다…</p>
-      )}
+        .smc-head {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 10px;
+        }
+        .smc-title {
+          font-weight: 950;
+          font-size: 18px;
+          color: rgba(255, 255, 255, 0.95);
+        }
+        .smc-sub {
+          font-weight: 800;
+          font-size: 13px;
+          color: rgba(255, 255, 255, 0.7);
+        }
+
+        .smc-dow {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          gap: 8px;
+          margin-bottom: 8px;
+        }
+        .smc-dow-cell {
+          text-align: center;
+          font-size: 12px;
+          font-weight: 900;
+          color: rgba(255, 255, 255, 0.65);
+        }
+
+        .smc-grid {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          gap: 8px;
+        }
+
+        .smc-day {
+          height: 64px;
+          border-radius: 14px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(0, 0, 0, 0.22);
+          color: rgba(255, 255, 255, 0.92);
+          cursor: pointer;
+          padding: 8px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        }
+        .smc-day:hover {
+          border-color: rgba(168, 85, 247, 0.5);
+          box-shadow: 0 10px 24px rgba(168, 85, 247, 0.14);
+        }
+        .smc-day.dim {
+          opacity: 0.45;
+        }
+        .smc-day.picked {
+          border-color: rgba(236, 72, 153, 0.7);
+          box-shadow: 0 12px 26px rgba(236, 72, 153, 0.14);
+          background: rgba(236, 72, 153, 0.12);
+        }
+
+        .smc-day-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .smc-day-num {
+          font-weight: 950;
+          font-size: 14px;
+        }
+        .smc-badge {
+          min-width: 18px;
+          height: 18px;
+          padding: 0 6px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          font-size: 12px;
+          font-weight: 950;
+          color: #fff;
+          background: linear-gradient(135deg, rgba(236, 72, 153, 0.95), rgba(168, 85, 247, 0.95));
+        }
+
+        .smc-dots {
+          display: flex;
+          gap: 4px;
+          justify-content: flex-start;
+        }
+        .smc-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.75);
+          opacity: 0.85;
+        }
+        .smc-dot.more {
+          opacity: 0.45;
+        }
+      `}</style>
     </section>
   );
 }
