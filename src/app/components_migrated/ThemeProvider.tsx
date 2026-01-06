@@ -1,136 +1,116 @@
-// src/components/ThemeProvider.tsx
 'use client';
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  ReactNode,
-} from 'react';
-import { supabase } from '../lib/supabaseClient';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
 type ThemeName = 'lavender' | 'dark' | 'light' | 'blue';
 type PlanName = 'free' | 'premium';
 
-type ThemeContextValue = {
+type ThemeSettings = {
   theme: ThemeName;
   plan: PlanName;
-  loading: boolean;
-  canChangeTheme: boolean;
-  setTheme: (next: ThemeName) => Promise<void>;
 };
 
-const ThemeContext = createContext<ThemeContextValue | null>(null);
+type Ctx = {
+  loading: boolean;
+  settings: ThemeSettings;
+  setTheme: (t: ThemeName) => void;
+  setPlan: (p: PlanName) => void;
+  refresh: () => Promise<void>;
+};
 
-const THEME_STORAGE_KEY = 'uplog-theme';
+const DEFAULT_SETTINGS: ThemeSettings = {
+  theme: 'lavender',
+  plan: 'free',
+};
 
-function applyThemeToDocument(theme: ThemeName) {
-  if (typeof document === 'undefined') return;
-  document.documentElement.dataset.theme = theme;
+const ThemeContext = createContext<Ctx | null>(null);
+
+export function useThemeSettings() {
+  const ctx = useContext(ThemeContext);
+  if (!ctx) throw new Error('useThemeSettings must be used within ThemeProvider');
+  return ctx;
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeName>('lavender');
-  const [plan, setPlan] = useState<PlanName>('free');
+export default function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState<ThemeSettings>(DEFAULT_SETTINGS);
 
-  useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-
-      // 1) 로컬 저장된 테마 먼저 적용 (깜빡임 줄이기)
-      if (typeof window !== 'undefined') {
-        const stored = window.localStorage.getItem(THEME_STORAGE_KEY) as
-          | ThemeName
-          | null;
-        if (stored) {
-          setThemeState(stored);
-          applyThemeToDocument(stored);
-        } else {
-          applyThemeToDocument('lavender');
-        }
-      }
-
-      // 2) Supabase 프로필에서 plan / theme 가져오기
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
       if (!user) {
-        setLoading(false);
+        setSettings(DEFAULT_SETTINGS);
         return;
       }
 
-      const { data: profile } = await supabase
+      // ✅ profiles 테이블에 theme/plan 컬럼이 없을 수도 있으니 안전하게 처리
+      const { data, error } = await supabase
         .from('profiles')
-        .select('plan, theme')
-        .eq('id', user.id)
-        .single();
+        .select('theme,plan')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-      if (profile) {
-        const nextPlan = (profile.plan || 'free') as PlanName;
-        const nextTheme = (profile.theme || 'lavender') as ThemeName;
-        setPlan(nextPlan);
-        setThemeState(nextTheme);
-        applyThemeToDocument(nextTheme);
-
-        // 로컬에도 저장
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
-        }
+      if (error) {
+        setSettings(DEFAULT_SETTINGS);
+        return;
       }
 
-      setLoading(false);
-    };
+      const next: ThemeSettings = {
+        theme: (data as any)?.theme ?? DEFAULT_SETTINGS.theme,
+        plan: (data as any)?.plan ?? DEFAULT_SETTINGS.plan,
+      };
 
-    init();
+      setSettings(next);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const canChangeTheme = plan === 'premium';
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
-  const setTheme = async (next: ThemeName) => {
-    // 무료 플랜이면 변경 불가
-    if (!canChangeTheme) {
-      // 무료 계정일 때는 로컬만 기본 테마로 유지
-      applyThemeToDocument('lavender');
-      setThemeState('lavender');
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(THEME_STORAGE_KEY, 'lavender');
-      }
-      return;
-    }
+  const setTheme = useCallback(async (t: ThemeName) => {
+    setSettings((prev) => ({ ...prev, theme: t }));
 
-    setThemeState(next);
-    applyThemeToDocument(next);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
 
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(THEME_STORAGE_KEY, next);
-    }
+      await supabase.from('profiles').update({ theme: t }).eq('user_id', user.id);
+    } catch {}
+  }, []);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
+  const setPlan = useCallback(async (p: PlanName) => {
+    setSettings((prev) => ({ ...prev, plan: p }));
 
-    await supabase.from('profiles').update({ theme: next }).eq('id', user.id);
-  };
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
 
-  const value: ThemeContextValue = {
-    theme,
-    plan,
-    loading,
-    canChangeTheme,
-    setTheme,
-  };
+      await supabase.from('profiles').update({ plan: p }).eq('user_id', user.id);
+    } catch {}
+  }, []);
+
+  const value = useMemo<Ctx>(
+    () => ({
+      loading,
+      settings,
+      setTheme,
+      setPlan,
+      refresh,
+    }),
+    [loading, settings, setTheme, setPlan, refresh]
+  );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
-}
-
-export function useThemeSettings() {
-  const ctx = useContext(ThemeContext);
-  if (!ctx) {
-    throw new Error('useThemeSettings must be used within ThemeProvider');
-  }
-  return ctx;
 }
