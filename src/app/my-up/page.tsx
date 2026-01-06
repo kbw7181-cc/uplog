@@ -236,7 +236,6 @@ function buildAiAdvice(slots: WeatherSlot[], when: Date) {
 }
 
 // ✅✅✅ 추가(빨간줄 원인 해결): loadSchedules(uid, monthCursor)
-// (이 함수가 없어서 const sch = await loadSchedules(...) 가 빨간줄 뜹니다)
 async function loadSchedules(uid: string, monthCursor: Date) {
   const from = fmtYMD(startOfMonth(monthCursor));
   const to = fmtYMD(endOfMonth(monthCursor));
@@ -268,7 +267,6 @@ async function loadSchedules(uid: string, monthCursor: Date) {
 }
 
 // ✅✅✅ 교체: loadUpLogs(uid, monthCursor)
-// (기존 loadUpLogs 함수 통째로 아래로 바꿔주세요)
 async function loadUpLogs(uid: string, monthCursor: Date) {
   const from = fmtYMD(startOfMonth(monthCursor));
   const to = fmtYMD(endOfMonth(monthCursor));
@@ -330,11 +328,7 @@ async function saveReflection(uid: string, date: string, payload: { good: string
 }
 
 async function loadDailyTasks(uid: string, date: string) {
-  const { data, error } = await supabase
-    .from('daily_tasks')
-    .select('id, task_date, content, done')
-    .eq('user_id', uid)
-    .eq('task_date', date);
+  const { data, error } = await supabase.from('daily_tasks').select('id, task_date, content, done').eq('user_id', uid).eq('task_date', date);
 
   if (error) return { rows: [] as DailyTask[], error: error.message };
 
@@ -932,20 +926,39 @@ export default function MyUpPage() {
     if (error) setErr(`할 일 삭제 실패: ${error.message}`);
   }
 
+  // ✅✅✅ 배경을 "밝은 핑크/퍼플"로 강제 (ClientShell이 어둡게 깔아도 위에서 덮음)
   const S: any = {
-    page: { maxWidth: 1040, margin: '0 auto', padding: '18px 14px 80px' },
+    // ✅ 페이지 전체 배경(밝게) + 내용은 위에 떠있게
+    shell: {
+      minHeight: '100vh',
+      width: '100%',
+      padding: '18px 0 80px',
+      background:
+        'radial-gradient(1200px 520px at 12% 10%, rgba(255,120,190,0.20) 0%, rgba(255,120,190,0.00) 60%), radial-gradient(1000px 520px at 88% 16%, rgba(168,85,247,0.18) 0%, rgba(168,85,247,0.00) 62%), linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,243,250,0.92) 35%, rgba(245,243,255,0.92) 100%)',
+    },
+
+    page: { maxWidth: 1040, margin: '0 auto', padding: '0 14px' },
 
     top: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
     titleWrap: { display: 'flex', flexDirection: 'column', gap: 4 },
-    title: { fontSize: 26, fontWeight: 950, letterSpacing: -0.6, color: '#2a0f3a' },
+
+    // ✅ 제목이 어두운 배경에 묻지 않게: 더 진한 글자 + 미세 그림자
+    title: {
+      fontSize: 26,
+      fontWeight: 950,
+      letterSpacing: -0.6,
+      color: '#1f0a2c',
+      textShadow: '0 1px 0 rgba(255,255,255,0.65)',
+    },
 
     headerCard: {
       borderRadius: 26,
-      border: '2px solid rgba(255,80,170,0.28)',
+      border: '2px solid rgba(255,80,170,0.22)',
       background:
         'radial-gradient(900px 420px at 18% 18%, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0) 58%), linear-gradient(135deg, rgba(255,219,239,0.85), rgba(226,214,255,0.85))',
-      boxShadow: '0 18px 46px rgba(255,80,170,0.12), 0 22px 48px rgba(40,10,70,0.10)',
+      boxShadow: '0 18px 46px rgba(255,80,170,0.10), 0 22px 48px rgba(40,10,70,0.08)',
       overflow: 'hidden',
+      backdropFilter: 'blur(6px)',
     },
     coachWrap: { padding: 14 },
     coachRow: { display: 'flex', gap: 10, alignItems: 'stretch' },
@@ -953,11 +966,11 @@ export default function MyUpPage() {
       flex: 1,
       padding: '12px 14px',
       borderRadius: 18,
-      border: '1px solid rgba(255,90,200,0.24)',
-      background: 'rgba(255,255,255,0.78)',
+      border: '1px solid rgba(255,90,200,0.20)',
+      background: 'rgba(255,255,255,0.82)',
       color: '#2a0f3a',
       fontWeight: 950,
-      boxShadow: '0 14px 30px rgba(255,120,190,0.12)',
+      boxShadow: '0 14px 30px rgba(255,120,190,0.10)',
       lineHeight: 1.35,
       position: 'relative',
       minHeight: 92,
@@ -969,7 +982,7 @@ export default function MyUpPage() {
       borderRadius: 28,
       objectFit: 'contain',
       background: 'transparent',
-      filter: 'drop-shadow(0 14px 22px rgba(180,76,255,0.26))',
+      filter: 'drop-shadow(0 14px 22px rgba(180,76,255,0.22))',
       flex: '0 0 auto',
       animation: 'floaty 3.8s ease-in-out infinite',
       alignSelf: 'center',
@@ -978,12 +991,13 @@ export default function MyUpPage() {
     card: {
       borderRadius: 22,
       background: 'rgba(255,255,255,0.92)',
-      border: '1px solid rgba(60,30,90,0.12)',
-      boxShadow: '0 18px 40px rgba(40,10,70,0.10)',
+      border: '1px solid rgba(60,30,90,0.10)',
+      boxShadow: '0 18px 40px rgba(40,10,70,0.08)',
       overflow: 'hidden',
+      backdropFilter: 'blur(6px)',
     },
     pad: { padding: 14 },
-    sectionTitle: { fontSize: 16, fontWeight: 950, color: '#2a0f3a', letterSpacing: -0.3 },
+    sectionTitle: { fontSize: 16, fontWeight: 950, color: '#1f0a2c', letterSpacing: -0.3 },
     sectionSub: { marginTop: 4, fontSize: 12, fontWeight: 900, opacity: 0.72, color: '#2a0f3a' },
     warn: {
       marginTop: 10,
@@ -1000,12 +1014,12 @@ export default function MyUpPage() {
     pill: {
       padding: '8px 12px',
       borderRadius: 999,
-      border: '1px solid rgba(255,90,200,0.22)',
+      border: '1px solid rgba(255,90,200,0.20)',
       background: 'linear-gradient(180deg, rgba(255,246,252,0.95), rgba(246,240,255,0.9))',
       color: '#2a0f3a',
       fontWeight: 950,
       fontSize: 13,
-      boxShadow: '0 10px 20px rgba(255,120,190,0.12)',
+      boxShadow: '0 10px 20px rgba(255,120,190,0.10)',
       whiteSpace: 'nowrap',
     },
 
@@ -1051,7 +1065,7 @@ export default function MyUpPage() {
       fontWeight: 950,
       fontSize: 14,
       cursor: 'pointer',
-      boxShadow: '0 14px 26px rgba(255,60,130,0.18)',
+      boxShadow: '0 14px 26px rgba(255,60,130,0.16)',
       whiteSpace: 'nowrap' as const,
     },
     ghostBtn: {
@@ -1063,7 +1077,7 @@ export default function MyUpPage() {
       fontWeight: 950,
       fontSize: 14,
       cursor: 'pointer',
-      boxShadow: '0 14px 26px rgba(40,10,70,0.10)',
+      boxShadow: '0 14px 26px rgba(40,10,70,0.08)',
       whiteSpace: 'nowrap' as const,
     },
 
@@ -1072,7 +1086,7 @@ export default function MyUpPage() {
       padding: '8px 12px',
       borderRadius: 999,
       border: '1px solid rgba(90,30,120,0.14)',
-      background: 'rgba(246,240,255,0.7)',
+      background: 'rgba(246,240,255,0.75)',
       color: '#3a1850',
       fontWeight: 950,
       fontSize: 13,
@@ -1085,7 +1099,7 @@ export default function MyUpPage() {
     dayCell: {
       borderRadius: 14,
       border: '1px solid rgba(60,30,90,0.10)',
-      background: 'rgba(255,255,255,0.85)',
+      background: 'rgba(255,255,255,0.86)',
       padding: '10px 8px',
       minHeight: 66,
       cursor: 'pointer',
@@ -1095,8 +1109,8 @@ export default function MyUpPage() {
     },
     dayCellSelected: {
       borderColor: 'rgba(255,80,170,0.55)',
-      boxShadow: '0 16px 28px rgba(255,80,170,0.18)',
-      background: 'linear-gradient(180deg, rgba(255,246,252,0.95), rgba(246,240,255,0.9))',
+      boxShadow: '0 16px 28px rgba(255,80,170,0.16)',
+      background: 'linear-gradient(180deg, rgba(255,246,252,0.95), rgba(246,240,255,0.92))',
     },
     dayCellToday: { borderColor: 'rgba(109,40,217,0.35)' },
     dayHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
@@ -1127,7 +1141,7 @@ export default function MyUpPage() {
     moodBtnOn: {
       borderColor: 'rgba(255,80,170,0.55)',
       background: 'linear-gradient(180deg, rgba(255,246,252,0.95), rgba(246,240,255,0.9))',
-      boxShadow: '0 16px 28px rgba(255,80,170,0.16)',
+      boxShadow: '0 16px 28px rgba(255,80,170,0.14)',
     },
 
     item: {
@@ -1135,7 +1149,7 @@ export default function MyUpPage() {
       padding: '10px 12px',
       borderRadius: 14,
       border: '1px solid rgba(60,30,90,0.10)',
-      background: 'rgba(255,255,255,0.85)',
+      background: 'rgba(255,255,255,0.86)',
       color: '#2a0f3a',
       fontWeight: 900,
       fontSize: 13,
@@ -1176,7 +1190,7 @@ export default function MyUpPage() {
       fontWeight: 950,
       fontSize: 14,
       cursor: 'pointer',
-      boxShadow: '0 14px 26px rgba(255,60,130,0.18)',
+      boxShadow: '0 14px 26px rgba(255,60,130,0.16)',
       whiteSpace: 'nowrap' as const,
     },
     checkBtn: {
@@ -1208,521 +1222,524 @@ export default function MyUpPage() {
 
   return (
     <ClientShell>
-      <div style={S.page}>
-        <div style={S.top}>
-          <div style={S.titleWrap}>
-            <div style={S.title}>나의 U P 관리</div>
-          </div>
-        </div>
-
-        {/* 헤더 카드 */}
-        <div style={S.headerCard}>
-          <div style={S.coachWrap}>
-            <div style={S.coachRow}>
-              <div style={S.bubble}>
-                <div style={{ fontSize: 14, fontWeight: 950 }}>오늘 가이드</div>
-                <div style={{ marginTop: 6 }}>{coachLine}</div>
-                <div style={S.bubbleSub}>멘탈 한 줄: {mentalLine}</div>
-              </div>
-
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/upzzu6.png"
-                onError={(e: any) => {
-                  e.currentTarget.src = '/lolo.png';
-                }}
-                alt="upzzu"
-                style={S.mascot}
-              />
+      {/* ✅✅✅ 밝은 배경 레이어 */}
+      <div style={S.shell}>
+        <div style={S.page}>
+          <div style={S.top}>
+            <div style={S.titleWrap}>
+              <div style={S.title}>나의 U P 관리</div>
             </div>
           </div>
-        </div>
 
-        {/* ✅✅✅ 이번달 활동 카운트 배지 */}
-        <div style={{ ...S.card, marginTop: 12 }}>
-          <div style={S.pad}>
-            <div style={S.sectionTitle}>이번달 활동 카운트</div>
-            <div style={S.sectionSub}>“기록/체크/스케줄”을 한눈에 배지처럼 보여줍니다.</div>
-
-            <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <span style={S.pill}>
-                🗓️ 기록일수 <b style={{ marginLeft: 6 }}>{monthLogDays}</b>
-              </span>
-              <span style={S.pill}>
-                ✅ 체크리스트 <b style={{ marginLeft: 6 }}>{monthTaskStats.done}</b> / {monthTaskStats.total}
-              </span>
-              <span style={S.pill}>
-                📌 스케줄 <b style={{ marginLeft: 6 }}>{schedules.length}</b>
-              </span>
-              <span style={S.pill}>
-                🟢 업무 <b style={{ marginLeft: 6 }}>{monthLegendCounts.work}</b>
-              </span>
-              <span style={S.pill}>
-                🟠 근태 <b style={{ marginLeft: 6 }}>{monthLegendCounts.attend}</b>
-              </span>
-              <span style={S.pill}>
-                💗 기타 <b style={{ marginLeft: 6 }}>{monthLegendCounts.etc}</b>
-              </span>
-
-              <span style={{ ...S.pill, opacity: 0.88 }}>
-                오늘 체크 <b style={{ marginLeft: 6 }}>{todayTaskMini.done}</b> / {todayTaskMini.total}
-              </span>
-              <span style={{ ...S.pill, opacity: 0.88 }}>
-                오늘 스케줄 <b style={{ marginLeft: 6 }}>{selectedSchedules.length}</b>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* 이번달 배지 */}
-        <div style={{ ...S.card, marginTop: 12 }}>
-          <div style={S.pad}>
-            <div style={S.sectionTitle}>이번달 배지 목록</div>
-            <div style={S.sectionSub}>이모지 + 배지 이름으로 깔끔하게 표시합니다.</div>
-
-            {myBadges.length === 0 ? (
-              <div style={{ marginTop: 10, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>아직 이번달 수상 배지가 없어요. 첫 기록부터 쌓아봐요 ✨</div>
-            ) : (
-              <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {myBadges.map((b, i) => (
-                  <div key={`${b.code}-${i}`} style={{ ...S.pill, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 16 }}>{badgeIcon(b.code)}</span>
-                    <span>{b.name || b.code}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* AI 조언 */}
-        <div style={{ ...S.card, marginTop: 12 }}>
-          <div style={S.pad}>
-            <div style={S.sectionTitle}>AI 조언 (날씨 · 시간 · 추천 관리)</div>
-            <div style={S.sectionSub}>
-              {weatherLabel} · {todayWeather?.[0] ? `${weatherEmoji(todayWeather[0].desc)} ${todayWeather[0].desc}` : '날씨 정보를 불러오는 중'}
-            </div>
-
-            <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-              {aiAdvice.map((line, idx) => (
-                <div key={idx} style={{ ...S.item, marginTop: 0 }}>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                    <div style={{ fontWeight: 950 }}>✨</div>
-                    <div style={{ flex: 1 }}>{line}</div>
-                  </div>
+          {/* 헤더 카드 */}
+          <div style={S.headerCard}>
+            <div style={S.coachWrap}>
+              <div style={S.coachRow}>
+                <div style={S.bubble}>
+                  <div style={{ fontSize: 14, fontWeight: 950 }}>오늘 가이드</div>
+                  <div style={{ marginTop: 6 }}>{coachLine}</div>
+                  <div style={S.bubbleSub}>멘탈 한 줄: {mentalLine}</div>
                 </div>
-              ))}
+
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/upzzu6.png"
+                  onError={(e: any) => {
+                    e.currentTarget.src = '/gogo.png';
+                  }}
+                  alt="upzzu"
+                  style={S.mascot}
+                />
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* ✅✅✅ 기분/목표/할일: 달력 "위"로 이동 */}
-        <div style={{ ...S.card, marginTop: 12 }}>
-          <div style={S.pad}>
-            {/* 오늘 기분 체크 */}
-            <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>오늘 기분 체크</div>
-            <div style={S.moodRow}>
-              {moodOptions.map((m) => {
-                const on = mood === m.code;
-                return (
-                  <button key={m.code} type="button" style={{ ...S.moodBtn, ...(on ? S.moodBtnOn : null) }} onClick={() => saveMood(m.code)} title={m.label}>
-                    <span style={{ fontSize: 16, marginRight: 6 }}>{m.code}</span>
-                    {m.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ marginTop: 8, fontSize: 12, fontWeight: 900, opacity: 0.75, color: '#2a0f3a' }}>
-              현재 선택: <b>{getMoodEmoji(selectedMood) || '미선택'}</b>
-            </div>
+          {/* ✅✅✅ 이번달 활동 카운트 배지 */}
+          <div style={{ ...S.card, marginTop: 12 }}>
+            <div style={S.pad}>
+              <div style={S.sectionTitle}>이번달 활동 카운트</div>
+              <div style={S.sectionSub}>“기록/체크/스케줄”을 한눈에 배지처럼 보여줍니다.</div>
 
-            {/* 목표 입력 */}
-            <div style={{ marginTop: 14, fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>월/주/오늘 목표</div>
+              <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <span style={S.pill}>
+                  🗓️ 기록일수 <b style={{ marginLeft: 6 }}>{monthLogDays}</b>
+                </span>
+                <span style={S.pill}>
+                  ✅ 체크리스트 <b style={{ marginLeft: 6 }}>{monthTaskStats.done}</b> / {monthTaskStats.total}
+                </span>
+                <span style={S.pill}>
+                  📌 스케줄 <b style={{ marginLeft: 6 }}>{schedules.length}</b>
+                </span>
+                <span style={S.pill}>
+                  🟢 업무 <b style={{ marginLeft: 6 }}>{monthLegendCounts.work}</b>
+                </span>
+                <span style={S.pill}>
+                  🟠 근태 <b style={{ marginLeft: 6 }}>{monthLegendCounts.attend}</b>
+                </span>
+                <span style={S.pill}>
+                  💗 기타 <b style={{ marginLeft: 6 }}>{monthLegendCounts.etc}</b>
+                </span>
 
-            <div style={S.field}>
-              <div style={{ ...S.small, marginBottom: 6 }}>이번 달 목표</div>
-              <input style={S.input} value={monthGoal} onChange={(e) => setMonthGoal(e.target.value)} placeholder="예: 30건 계약" />
-            </div>
-
-            <div style={S.field}>
-              <div style={{ ...S.small, marginBottom: 6 }}>이번 주 목표</div>
-              <input style={S.input} value={weekGoal} onChange={(e) => setWeekGoal(e.target.value)} placeholder="예: 신규고객 3명" />
-            </div>
-
-            <div style={S.field}>
-              <div style={{ ...S.small, marginBottom: 6 }}>오늘 목표</div>
-              <input style={S.input} value={dayGoal} onChange={(e) => setDayGoal(e.target.value)} placeholder="예: 안부문자 10명" />
-            </div>
-
-            <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-              <button type="button" style={S.saveBtn} onClick={saveGoals}>
-                목표 저장
-              </button>
-              <div style={{ ...S.pill, opacity: 0.9 }}>
-                최종 목표: <b style={{ marginLeft: 6 }}>{me?.main_goal || '프로필에서 최종 목표를 설정해 주세요'}</b>
+                <span style={{ ...S.pill, opacity: 0.88 }}>
+                  오늘 체크 <b style={{ marginLeft: 6 }}>{todayTaskMini.done}</b> / {todayTaskMini.total}
+                </span>
+                <span style={{ ...S.pill, opacity: 0.88 }}>
+                  오늘 스케줄 <b style={{ marginLeft: 6 }}>{selectedSchedules.length}</b>
+                </span>
               </div>
             </div>
+          </div>
 
-            {/* 오늘 할 일 입력 */}
-            <div style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>오늘 할 일 입력</div>
+          {/* 이번달 배지 */}
+          <div style={{ ...S.card, marginTop: 12 }}>
+            <div style={S.pad}>
+              <div style={S.sectionTitle}>이번달 배지 목록</div>
+              <div style={S.sectionSub}>이모지 + 배지 이름으로 깔끔하게 표시합니다.</div>
 
-              <div style={S.taskRow}>
-                <input
-                  style={{ ...S.input, flex: '1 1 280px' }}
-                  value={taskInput}
-                  onChange={(e) => setTaskInput(e.target.value)}
-                  placeholder="할 일 한 줄 입력 (예: 해피콜 10명)"
-                />
-                <button type="button" style={S.taskBtn} onClick={addTask}>
-                  추가
-                </button>
-              </div>
-
-              {tasks.length === 0 ? (
-                <div style={{ marginTop: 10, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>등록된 할 일이 없어요.</div>
+              {myBadges.length === 0 ? (
+                <div style={{ marginTop: 10, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>아직 이번달 수상 배지가 없어요. 첫 기록부터 쌓아봐요 ✨</div>
               ) : (
-                <div style={{ marginTop: 10 }}>
-                  {tasks.map((t) => (
-                    <div key={t.id} style={{ ...S.item, alignItems: 'center' }}>
-                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: 1, minWidth: 0 }}>
-                        <button type="button" style={S.checkBtn} onClick={() => toggleTask(t)} aria-label="체크">
-                          {t.done ? '✓' : ''}
-                        </button>
-                        <div
-                          style={{
-                            fontWeight: 950,
-                            textDecoration: t.done ? 'line-through' : 'none',
-                            opacity: t.done ? 0.55 : 1,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {t.content}
-                        </div>
-                      </div>
-                      <button type="button" style={{ ...S.ghostBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => deleteTask(t.id)}>
-                        삭제
-                      </button>
+                <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {myBadges.map((b, i) => (
+                    <div key={`${b.code}-${i}`} style={{ ...S.pill, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 16 }}>{badgeIcon(b.code)}</span>
+                      <span>{b.name || b.code}</span>
                     </div>
                   ))}
                 </div>
               )}
-
-              {selectedYMD !== todayYMD ? (
-                <div style={{ marginTop: 8, fontSize: 12, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>
-                  ※ 홈 체크리스트는 “오늘({todayYMD})”만 보여요. 오늘 체크 연동이 목적이면 달력에서 오늘을 선택해 입력하세요.
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        {/* 달력 */}
-        <div style={{ ...S.card, marginTop: 12 }}>
-          <div style={S.calTop}>
-            <button
-              type="button"
-              style={S.calBtn}
-              onClick={() => {
-                const d = new Date(monthCursor);
-                d.setMonth(d.getMonth() - 1);
-                setMonthCursor(new Date(d.getFullYear(), d.getMonth(), 1));
-              }}
-            >
-              ◀
-            </button>
-
-            <div style={{ fontSize: 16, fontWeight: 950, color: '#2a0f3a' }}>{monthLabel}</div>
-
-            <button
-              type="button"
-              style={S.calBtn}
-              onClick={() => {
-                const d = new Date(monthCursor);
-                d.setMonth(d.getMonth() + 1);
-                setMonthCursor(new Date(d.getFullYear(), d.getMonth(), 1));
-              }}
-            >
-              ▶
-            </button>
-          </div>
-
-          <div style={{ padding: '0 14px 12px' }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <span style={S.pill}>
-                <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                  <span style={{ ...S.dot, ...S.dotAttend }} />
-                  근태 <b style={{ marginLeft: 4 }}>{monthLegendCounts.attend}</b>
-                </span>
-              </span>
-              <span style={S.pill}>
-                <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                  <span style={{ ...S.dot, ...S.dotWork }} />
-                  업무 <b style={{ marginLeft: 4 }}>{monthLegendCounts.work}</b>
-                </span>
-              </span>
-              <span style={S.pill}>
-                <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                  <span style={{ ...S.dot, ...S.dotEtc }} />
-                  기타 <b style={{ marginLeft: 4 }}>{monthLegendCounts.etc}</b>
-                </span>
-              </span>
-              <span style={{ ...S.pill, opacity: 0.85 }}>🙂 기분</span>
             </div>
           </div>
 
-          <div style={S.calGridWrap}>
-            <div style={S.weekHead}>
-              {['일', '월', '화', '수', '목', '금', '토'].map((w) => (
-                <div key={w} style={S.weekHeadCell}>
-                  {w}
-                </div>
-              ))}
-            </div>
+          {/* AI 조언 */}
+          <div style={{ ...S.card, marginTop: 12 }}>
+            <div style={S.pad}>
+              <div style={S.sectionTitle}>AI 조언 (날씨 · 시간 · 추천 관리)</div>
+              <div style={S.sectionSub}>
+                {weatherLabel} · {todayWeather?.[0] ? `${weatherEmoji(todayWeather[0].desc)} ${todayWeather[0].desc}` : '날씨 정보를 불러오는 중'}
+              </div>
 
-            <div style={S.daysGrid}>
-              {gridDays.map((d) => {
-                const ymd = fmtYMD(d);
-                const inMonth = d.getMonth() === monthCursor.getMonth();
-                const selected = sameYMD(d, selectedDate);
-                const isToday = sameYMD(d, today);
-
-                const list = schedulesByDate[ymd] || [];
-                let workN = 0;
-                let attendN = 0;
-                let etcN = 0;
-
-                list.forEach((s) => {
-                  const meta = getScheduleCategoryMeta(s.category);
-                  if (meta.kind === 'attendance') attendN += 1;
-                  else if (meta.kind === 'work') workN += 1;
-                  else etcN += 1;
-                });
-
-                const moodCode = upByDate[ymd]?.mood ?? '';
-
-                const style: any = {
-                  ...S.dayCell,
-                  ...(selected ? S.dayCellSelected : null),
-                  ...(isToday ? S.dayCellToday : null),
-                  opacity: inMonth ? 1 : 0.35,
-                };
-
-                return (
-                  <div key={ymd} style={style} onClick={() => setSelectedDate(d)} title={ymd}>
-                    <div style={S.dayHead}>
-                      <div style={S.dayNum}>{d.getDate()}</div>
-                      {moodCode ? <div style={S.moodMini}>{getMoodEmoji(moodCode)}</div> : <div style={{ ...S.moodMini, opacity: 0.35 }}> </div>}
+              <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                {aiAdvice.map((line, idx) => (
+                  <div key={idx} style={{ ...S.item, marginTop: 0 }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                      <div style={{ fontWeight: 950 }}>✨</div>
+                      <div style={{ flex: 1 }}>{line}</div>
                     </div>
-
-                    {(attendN > 0 || workN > 0 || etcN > 0) && (
-                      <div style={S.dotRow}>
-                        {attendN > 0 && (
-                          <span style={S.dotItem} title="근태">
-                            <span style={{ ...S.dot, ...S.dotAttend }} />
-                            {attendN}
-                          </span>
-                        )}
-                        {workN > 0 && (
-                          <span style={S.dotItem} title="업무">
-                            <span style={{ ...S.dot, ...S.dotWork }} />
-                            {workN}
-                          </span>
-                        )}
-                        {etcN > 0 && (
-                          <span style={S.dotItem} title="기타">
-                            <span style={{ ...S.dot, ...S.dotEtc }} />
-                            {etcN}
-                          </span>
-                        )}
-                      </div>
-                    )}
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* 선택 날짜 스케줄 */}
-          <div style={{ padding: 14, borderTop: '1px solid rgba(60,30,90,0.08)' }}>
-            <div style={S.sectionTitle}>선택한 날짜: {fmtKoreanDate(selectedDate)}</div>
+          {/* ✅✅✅ 기분/목표/할일: 달력 "위"로 이동 */}
+          <div style={{ ...S.card, marginTop: 12 }}>
+            <div style={S.pad}>
+              {/* 오늘 기분 체크 */}
+              <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>오늘 기분 체크</div>
+              <div style={S.moodRow}>
+                {moodOptions.map((m) => {
+                  const on = mood === m.code;
+                  return (
+                    <button key={m.code} type="button" style={{ ...S.moodBtn, ...(on ? S.moodBtnOn : null) }} onClick={() => saveMood(m.code)} title={m.label}>
+                      <span style={{ fontSize: 16, marginRight: 6 }}>{m.code}</span>
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, fontWeight: 900, opacity: 0.75, color: '#2a0f3a' }}>
+                현재 선택: <b>{getMoodEmoji(selectedMood) || '미선택'}</b>
+              </div>
 
-            {/* 스케줄 입력 */}
-            <div style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>스케줄 입력 (달력 연동)</div>
+              {/* 목표 입력 */}
+              <div style={{ marginTop: 14, fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>월/주/오늘 목표</div>
 
-              <div style={S.scheduleGrid}>
-                <div>
-                  <div style={{ ...S.small, marginBottom: 6 }}>시간</div>
-                  <input style={S.scheduleSmallInput} type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} aria-label="time" />
-                </div>
+              <div style={S.field}>
+                <div style={{ ...S.small, marginBottom: 6 }}>이번 달 목표</div>
+                <input style={S.input} value={monthGoal} onChange={(e) => setMonthGoal(e.target.value)} placeholder="예: 30건 계약" />
+              </div>
 
-                <div>
-                  <div style={{ ...S.small, marginBottom: 6 }}>카테고리</div>
-                  <select style={S.scheduleSmallInput as any} value={scheduleCat} onChange={(e) => setScheduleCat(e.target.value)} aria-label="category">
-                    <option value="상담">상담</option>
-                    <option value="방문">방문</option>
-                    <option value="해피콜">해피콜</option>
-                    <option value="사은품">사은품</option>
-                    <option value="배송">배송</option>
-                    <option value="회의">회의</option>
-                    <option value="교육">교육</option>
-                    <option value="행사/이벤트">행사/이벤트</option>
+              <div style={S.field}>
+                <div style={{ ...S.small, marginBottom: 6 }}>이번 주 목표</div>
+                <input style={S.input} value={weekGoal} onChange={(e) => setWeekGoal(e.target.value)} placeholder="예: 신규고객 3명" />
+              </div>
 
-                    <option value="출근">출근</option>
-                    <option value="지각">지각</option>
-                    <option value="조퇴">조퇴</option>
-                    <option value="외출">외출</option>
-                    <option value="결근">결근</option>
-                    <option value="출장">출장</option>
-                    <option value="퇴근">퇴근</option>
-
-                    <option value="기타">기타</option>
-                  </select>
-                </div>
-
-                <div>
-                  <div style={{ ...S.small, marginBottom: 6 }}>내용</div>
-                  <input style={S.input} value={scheduleTitle} onChange={(e) => setScheduleTitle(e.target.value)} placeholder="예: 해피콜 10명 / 미팅 / 교육 / 방문 2건..." />
-                </div>
+              <div style={S.field}>
+                <div style={{ ...S.small, marginBottom: 6 }}>오늘 목표</div>
+                <input style={S.input} value={dayGoal} onChange={(e) => setDayGoal(e.target.value)} placeholder="예: 안부문자 10명" />
               </div>
 
               <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                <button type="button" style={S.saveBtn} onClick={addSchedule}>
-                  스케줄 저장
+                <button type="button" style={S.saveBtn} onClick={saveGoals}>
+                  목표 저장
                 </button>
-                <span style={{ ...S.pill, opacity: 0.92 }}>
-                  선택 날짜 스케줄 <b style={{ marginLeft: 6 }}>{selectedSchedules.length}개</b>
-                </span>
+                <div style={{ ...S.pill, opacity: 0.9 }}>
+                  최종 목표: <b style={{ marginLeft: 6 }}>{me?.main_goal || '프로필에서 최종 목표를 설정해 주세요'}</b>
+                </div>
               </div>
 
-              {selectedSchedules.length === 0 ? (
-                <div style={{ marginTop: 10, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>이 날짜엔 아직 스케줄이 없어요.</div>
-              ) : (
-                <div style={{ marginTop: 10 }}>
-                  {selectedSchedules.map((s) => {
-                    const meta = getScheduleCategoryMeta(s.category);
-                    return (
-                      <div key={s.id} style={S.item}>
-                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
-                          <div style={{ minWidth: 54, fontWeight: 950, opacity: 0.8 }}>{(s.schedule_time || '--:--').slice(0, 5)}</div>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 950, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</div>
-                            <div style={{ marginTop: 4, fontSize: 12, fontWeight: 950, opacity: 0.75 }}>
-                              <span className={meta.badgeClass}>{meta.label}</span>
-                            </div>
+              {/* 오늘 할 일 입력 */}
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>오늘 할 일 입력</div>
+
+                <div style={S.taskRow}>
+                  <input
+                    style={{ ...S.input, flex: '1 1 280px' }}
+                    value={taskInput}
+                    onChange={(e) => setTaskInput(e.target.value)}
+                    placeholder="할 일 한 줄 입력 (예: 해피콜 10명)"
+                  />
+                  <button type="button" style={S.taskBtn} onClick={addTask}>
+                    추가
+                  </button>
+                </div>
+
+                {tasks.length === 0 ? (
+                  <div style={{ marginTop: 10, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>등록된 할 일이 없어요.</div>
+                ) : (
+                  <div style={{ marginTop: 10 }}>
+                    {tasks.map((t) => (
+                      <div key={t.id} style={{ ...S.item, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: 1, minWidth: 0 }}>
+                          <button type="button" style={S.checkBtn} onClick={() => toggleTask(t)} aria-label="체크">
+                            {t.done ? '✓' : ''}
+                          </button>
+                          <div
+                            style={{
+                              fontWeight: 950,
+                              textDecoration: t.done ? 'line-through' : 'none',
+                              opacity: t.done ? 0.55 : 1,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {t.content}
                           </div>
                         </div>
-                        <button type="button" style={{ ...S.ghostBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => deleteSchedule(s.id)}>
+                        <button type="button" style={{ ...S.ghostBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => deleteTask(t.id)}>
                           삭제
                         </button>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                    ))}
+                  </div>
+                )}
 
-            {/* 하루 회고 */}
-            <div style={{ marginTop: 18 }}>
-              <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>하루 회고</div>
-              <div style={S.sectionSub}>저장 버튼을 누르면 로컬 + DB(가능하면)로 저장됩니다.</div>
-
-              <div style={S.field}>
-                <div style={{ ...S.small, marginBottom: 6 }}>오늘 잘한 점</div>
-                <textarea style={S.textarea} value={good} onChange={(e) => setGood(e.target.value)} placeholder="예: 거절에도 흔들리지 않고 15명에게 연락함" />
+                {selectedYMD !== todayYMD ? (
+                  <div style={{ marginTop: 8, fontSize: 12, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>
+                    ※ 홈 체크리스트는 “오늘({todayYMD})”만 보여요. 오늘 체크 연동이 목적이면 달력에서 오늘을 선택해 입력하세요.
+                  </div>
+                ) : null}
               </div>
-
-              <div style={S.field}>
-                <div style={{ ...S.small, marginBottom: 6 }}>오늘 아쉬웠던 점</div>
-                <textarea style={S.textarea} value={bad} onChange={(e) => setBad(e.target.value)} placeholder="예: 일정이 밀리면서 방문 동선이 비효율적이었음" />
-              </div>
-
-              <div style={S.field}>
-                <div style={{ ...S.small, marginBottom: 6 }}>내일 할 일</div>
-                <textarea style={S.textarea} value={tomorrowPlan} onChange={(e) => setTomorrowPlan(e.target.value)} placeholder="예: 오전 해피콜 10명 + 오후 방문 1건 확정" />
-              </div>
-
-              <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <button type="button" style={S.saveBtn} onClick={saveReflect}>
-                  회고 저장
-                </button>
-              </div>
-
-              {err ? <div style={S.warn}>{err}</div> : null}
             </div>
           </div>
+
+          {/* 달력 */}
+          <div style={{ ...S.card, marginTop: 12 }}>
+            <div style={S.calTop}>
+              <button
+                type="button"
+                style={S.calBtn}
+                onClick={() => {
+                  const d = new Date(monthCursor);
+                  d.setMonth(d.getMonth() - 1);
+                  setMonthCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+                }}
+              >
+                ◀
+              </button>
+
+              <div style={{ fontSize: 16, fontWeight: 950, color: '#2a0f3a' }}>{monthLabel}</div>
+
+              <button
+                type="button"
+                style={S.calBtn}
+                onClick={() => {
+                  const d = new Date(monthCursor);
+                  d.setMonth(d.getMonth() + 1);
+                  setMonthCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+                }}
+              >
+                ▶
+              </button>
+            </div>
+
+            <div style={{ padding: '0 14px 12px' }}>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <span style={S.pill}>
+                  <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ ...S.dot, ...S.dotAttend }} />
+                    근태 <b style={{ marginLeft: 4 }}>{monthLegendCounts.attend}</b>
+                  </span>
+                </span>
+                <span style={S.pill}>
+                  <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ ...S.dot, ...S.dotWork }} />
+                    업무 <b style={{ marginLeft: 4 }}>{monthLegendCounts.work}</b>
+                  </span>
+                </span>
+                <span style={S.pill}>
+                  <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ ...S.dot, ...S.dotEtc }} />
+                    기타 <b style={{ marginLeft: 4 }}>{monthLegendCounts.etc}</b>
+                  </span>
+                </span>
+                <span style={{ ...S.pill, opacity: 0.85 }}>🙂 기분</span>
+              </div>
+            </div>
+
+            <div style={S.calGridWrap}>
+              <div style={S.weekHead}>
+                {['일', '월', '화', '수', '목', '금', '토'].map((w) => (
+                  <div key={w} style={S.weekHeadCell}>
+                    {w}
+                  </div>
+                ))}
+              </div>
+
+              <div style={S.daysGrid}>
+                {gridDays.map((d) => {
+                  const ymd = fmtYMD(d);
+                  const inMonth = d.getMonth() === monthCursor.getMonth();
+                  const selected = sameYMD(d, selectedDate);
+                  const isToday = sameYMD(d, today);
+
+                  const list = schedulesByDate[ymd] || [];
+                  let workN = 0;
+                  let attendN = 0;
+                  let etcN = 0;
+
+                  list.forEach((s) => {
+                    const meta = getScheduleCategoryMeta(s.category);
+                    if (meta.kind === 'attendance') attendN += 1;
+                    else if (meta.kind === 'work') workN += 1;
+                    else etcN += 1;
+                  });
+
+                  const moodCode = upByDate[ymd]?.mood ?? '';
+
+                  const style: any = {
+                    ...S.dayCell,
+                    ...(selected ? S.dayCellSelected : null),
+                    ...(isToday ? S.dayCellToday : null),
+                    opacity: inMonth ? 1 : 0.35,
+                  };
+
+                  return (
+                    <div key={ymd} style={style} onClick={() => setSelectedDate(d)} title={ymd}>
+                      <div style={S.dayHead}>
+                        <div style={S.dayNum}>{d.getDate()}</div>
+                        {moodCode ? <div style={S.moodMini}>{getMoodEmoji(moodCode)}</div> : <div style={{ ...S.moodMini, opacity: 0.35 }}> </div>}
+                      </div>
+
+                      {(attendN > 0 || workN > 0 || etcN > 0) && (
+                        <div style={S.dotRow}>
+                          {attendN > 0 && (
+                            <span style={S.dotItem} title="근태">
+                              <span style={{ ...S.dot, ...S.dotAttend }} />
+                              {attendN}
+                            </span>
+                          )}
+                          {workN > 0 && (
+                            <span style={S.dotItem} title="업무">
+                              <span style={{ ...S.dot, ...S.dotWork }} />
+                              {workN}
+                            </span>
+                          )}
+                          {etcN > 0 && (
+                            <span style={S.dotItem} title="기타">
+                              <span style={{ ...S.dot, ...S.dotEtc }} />
+                              {etcN}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 선택 날짜 스케줄 */}
+            <div style={{ padding: 14, borderTop: '1px solid rgba(60,30,90,0.08)' }}>
+              <div style={S.sectionTitle}>선택한 날짜: {fmtKoreanDate(selectedDate)}</div>
+
+              {/* 스케줄 입력 */}
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>스케줄 입력 (달력 연동)</div>
+
+                <div style={S.scheduleGrid}>
+                  <div>
+                    <div style={{ ...S.small, marginBottom: 6 }}>시간</div>
+                    <input style={S.scheduleSmallInput} type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} aria-label="time" />
+                  </div>
+
+                  <div>
+                    <div style={{ ...S.small, marginBottom: 6 }}>카테고리</div>
+                    <select style={S.scheduleSmallInput as any} value={scheduleCat} onChange={(e) => setScheduleCat(e.target.value)} aria-label="category">
+                      <option value="상담">상담</option>
+                      <option value="방문">방문</option>
+                      <option value="해피콜">해피콜</option>
+                      <option value="사은품">사은품</option>
+                      <option value="배송">배송</option>
+                      <option value="회의">회의</option>
+                      <option value="교육">교육</option>
+                      <option value="행사/이벤트">행사/이벤트</option>
+
+                      <option value="출근">출근</option>
+                      <option value="지각">지각</option>
+                      <option value="조퇴">조퇴</option>
+                      <option value="외출">외출</option>
+                      <option value="결근">결근</option>
+                      <option value="출장">출장</option>
+                      <option value="퇴근">퇴근</option>
+
+                      <option value="기타">기타</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div style={{ ...S.small, marginBottom: 6 }}>내용</div>
+                    <input style={S.input} value={scheduleTitle} onChange={(e) => setScheduleTitle(e.target.value)} placeholder="예: 해피콜 10명 / 미팅 / 교육 / 방문 2건..." />
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button type="button" style={S.saveBtn} onClick={addSchedule}>
+                    스케줄 저장
+                  </button>
+                  <span style={{ ...S.pill, opacity: 0.92 }}>
+                    선택 날짜 스케줄 <b style={{ marginLeft: 6 }}>{selectedSchedules.length}개</b>
+                  </span>
+                </div>
+
+                {selectedSchedules.length === 0 ? (
+                  <div style={{ marginTop: 10, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>이 날짜엔 아직 스케줄이 없어요.</div>
+                ) : (
+                  <div style={{ marginTop: 10 }}>
+                    {selectedSchedules.map((s) => {
+                      const meta = getScheduleCategoryMeta(s.category);
+                      return (
+                        <div key={s.id} style={S.item}>
+                          <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
+                            <div style={{ minWidth: 54, fontWeight: 950, opacity: 0.8 }}>{(s.schedule_time || '--:--').slice(0, 5)}</div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 950, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</div>
+                              <div style={{ marginTop: 4, fontSize: 12, fontWeight: 950, opacity: 0.75 }}>
+                                <span className={meta.badgeClass}>{meta.label}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <button type="button" style={{ ...S.ghostBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => deleteSchedule(s.id)}>
+                            삭제
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 하루 회고 */}
+              <div style={{ marginTop: 18 }}>
+                <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>하루 회고</div>
+                <div style={S.sectionSub}>저장 버튼을 누르면 로컬 + DB(가능하면)로 저장됩니다.</div>
+
+                <div style={S.field}>
+                  <div style={{ ...S.small, marginBottom: 6 }}>오늘 잘한 점</div>
+                  <textarea style={S.textarea} value={good} onChange={(e) => setGood(e.target.value)} placeholder="예: 거절에도 흔들리지 않고 15명에게 연락함" />
+                </div>
+
+                <div style={S.field}>
+                  <div style={{ ...S.small, marginBottom: 6 }}>오늘 아쉬웠던 점</div>
+                  <textarea style={S.textarea} value={bad} onChange={(e) => setBad(e.target.value)} placeholder="예: 일정이 밀리면서 방문 동선이 비효율적이었음" />
+                </div>
+
+                <div style={S.field}>
+                  <div style={{ ...S.small, marginBottom: 6 }}>내일 할 일</div>
+                  <textarea style={S.textarea} value={tomorrowPlan} onChange={(e) => setTomorrowPlan(e.target.value)} placeholder="예: 오전 해피콜 10명 + 오후 방문 1건 확정" />
+                </div>
+
+                <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button type="button" style={S.saveBtn} onClick={saveReflect}>
+                    회고 저장
+                  </button>
+                </div>
+
+                {err ? <div style={S.warn}>{err}</div> : null}
+              </div>
+            </div>
+          </div>
+
+          {loading ? <div style={{ marginTop: 14, fontWeight: 950, opacity: 0.7, color: '#2a0f3a' }}>불러오는 중...</div> : null}
+
+          <style jsx>{`
+            @keyframes floaty {
+              0% {
+                transform: translateY(0px);
+              }
+              50% {
+                transform: translateY(-8px);
+              }
+              100% {
+                transform: translateY(0px);
+              }
+            }
+
+            :global(*),
+            :global(*::before),
+            :global(*::after) {
+              box-sizing: border-box;
+            }
+
+            :global(.cat-work) {
+              display: inline-flex;
+              padding: 5px 10px;
+              border-radius: 999px;
+              border: 1px solid rgba(34, 197, 94, 0.22);
+              background: rgba(236, 253, 245, 0.75);
+              color: #065f46;
+              font-weight: 950;
+            }
+            :global(.cat-attend) {
+              display: inline-flex;
+              padding: 5px 10px;
+              border-radius: 999px;
+              border: 1px solid rgba(245, 158, 11, 0.24);
+              background: rgba(255, 247, 237, 0.75);
+              color: #7c2d12;
+              font-weight: 950;
+            }
+            :global(.cat-edu) {
+              display: inline-flex;
+              padding: 5px 10px;
+              border-radius: 999px;
+              border: 1px solid rgba(59, 130, 246, 0.22);
+              background: rgba(239, 246, 255, 0.78);
+              color: #1e40af;
+              font-weight: 950;
+            }
+            :global(.cat-event) {
+              display: inline-flex;
+              padding: 5px 10px;
+              border-radius: 999px;
+              border: 1px solid rgba(168, 85, 247, 0.22);
+              background: rgba(243, 232, 255, 0.75);
+              color: #5b21b6;
+              font-weight: 950;
+            }
+            :global(.cat-etc) {
+              display: inline-flex;
+              padding: 5px 10px;
+              border-radius: 999px;
+              border: 1px solid rgba(236, 72, 153, 0.18);
+              background: rgba(255, 241, 242, 0.75);
+              color: #9f1239;
+              font-weight: 950;
+            }
+          `}</style>
         </div>
-
-        {loading ? <div style={{ marginTop: 14, fontWeight: 950, opacity: 0.7, color: '#2a0f3a' }}>불러오는 중...</div> : null}
-
-        <style jsx>{`
-          @keyframes floaty {
-            0% {
-              transform: translateY(0px);
-            }
-            50% {
-              transform: translateY(-8px);
-            }
-            100% {
-              transform: translateY(0px);
-            }
-          }
-
-          :global(*),
-          :global(*::before),
-          :global(*::after) {
-            box-sizing: border-box;
-          }
-
-          :global(.cat-work) {
-            display: inline-flex;
-            padding: 5px 10px;
-            border-radius: 999px;
-            border: 1px solid rgba(34, 197, 94, 0.22);
-            background: rgba(236, 253, 245, 0.75);
-            color: #065f46;
-            font-weight: 950;
-          }
-          :global(.cat-attend) {
-            display: inline-flex;
-            padding: 5px 10px;
-            border-radius: 999px;
-            border: 1px solid rgba(245, 158, 11, 0.24);
-            background: rgba(255, 247, 237, 0.75);
-            color: #7c2d12;
-            font-weight: 950;
-          }
-          :global(.cat-edu) {
-            display: inline-flex;
-            padding: 5px 10px;
-            border-radius: 999px;
-            border: 1px solid rgba(59, 130, 246, 0.22);
-            background: rgba(239, 246, 255, 0.78);
-            color: #1e40af;
-            font-weight: 950;
-          }
-          :global(.cat-event) {
-            display: inline-flex;
-            padding: 5px 10px;
-            border-radius: 999px;
-            border: 1px solid rgba(168, 85, 247, 0.22);
-            background: rgba(243, 232, 255, 0.75);
-            color: #5b21b6;
-            font-weight: 950;
-          }
-          :global(.cat-etc) {
-            display: inline-flex;
-            padding: 5px 10px;
-            border-radius: 999px;
-            border: 1px solid rgba(236, 72, 153, 0.18);
-            background: rgba(255, 241, 242, 0.75);
-            color: #9f1239;
-            font-weight: 950;
-          }
-        `}</style>
       </div>
     </ClientShell>
   );

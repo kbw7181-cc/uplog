@@ -752,8 +752,6 @@ export default function CustomersPage() {
       return;
     }
 
-    // ✅✅✅ (요청 반영)
-    // - “해피콜이면…” 제약 제거: 어떤 카테고리든 “달력 스케줄에 저장” 체크 가능
     const next: ManageLog = {
       id: makeLogId(),
       tsISO: nowISO(),
@@ -987,7 +985,6 @@ export default function CustomersPage() {
     const toInsert = scheduleJobs.filter((x) => x.enabled && x.date && isYMD(x.date));
 
     for (const item of toInsert) {
-      // ✅✅✅ 카테고리에 종류를 넣어서(고객관리/해피콜 등) 달력 dot 색상 구분 가능
       const payloadSch: any = {
         user_id: userId,
         title: buildScheduleTitle(name, item.label, cStage),
@@ -1240,6 +1237,7 @@ export default function CustomersPage() {
       boxSizing: 'border-box' as const,
     },
 
+    // ✅✅✅ 고객추가/수정 모달 “잘 보이도록” (오버레이/스크롤 개선)
     overlay: {
       position: 'fixed' as const,
       inset: 0,
@@ -1247,19 +1245,22 @@ export default function CustomersPage() {
       backdropFilter: 'blur(6px)',
       zIndex: 50,
       display: 'flex',
-      alignItems: 'center',
+      alignItems: 'flex-start', // ✅ 상단부터 보이게
       justifyContent: 'center',
-      padding: 14,
+      padding: '14px 14px 24px',
+      overflowY: 'auto' as const, // ✅ 오버레이 자체 스크롤
+      WebkitOverflowScrolling: 'touch' as const,
     },
     modal: {
       width: 'min(980px, 100%)',
-      maxHeight: 'min(86vh, 900px)',
-      overflow: 'auto' as const,
+      maxHeight: 'none', // ✅ 오버레이가 스크롤 담당
+      overflow: 'visible' as const,
       borderRadius: 22,
       background:
         'radial-gradient(900px 420px at 18% 18%, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0) 58%), linear-gradient(135deg, rgba(255,219,239,0.92), rgba(226,214,255,0.92))',
       border: '1px solid rgba(255,90,200,0.22)',
       boxShadow: '0 30px 90px rgba(10, 0, 30, 0.35)',
+      marginTop: 10, // ✅ 너무 위에 붙지 않게
     },
     modalPad: { padding: 14 },
     modalTitle: { fontSize: 18, fontWeight: 950, color: '#2a0f3a' },
@@ -1294,7 +1295,6 @@ export default function CustomersPage() {
       userSelect: 'none' as const,
     },
 
-    // ✅ (요청) 닫기 버튼을 X로
     closeX: {
       width: 42,
       height: 42,
@@ -1310,9 +1310,11 @@ export default function CustomersPage() {
       alignItems: 'center',
       justifyContent: 'center',
       lineHeight: 1,
+      position: 'sticky' as const, // ✅ 스크롤해도 닫기 버튼이 따라오게
+      top: 10,
+      zIndex: 3,
     },
 
-    // ✅ (요청) 모달 하단 저장 바
     bottomBar: {
       position: 'sticky' as const,
       bottom: 0,
@@ -1322,8 +1324,10 @@ export default function CustomersPage() {
       background: 'linear-gradient(180deg, rgba(255,255,255,0.65), rgba(255,255,255,0.92))',
       backdropFilter: 'blur(6px)',
       display: 'flex',
-      justifyContent: 'flex-end',
+      justifyContent: 'space-between',
       gap: 10,
+      alignItems: 'center',
+      flexWrap: 'wrap' as const,
     },
   };
 
@@ -1345,10 +1349,8 @@ export default function CustomersPage() {
             <div style={S.title}>고객관리</div>
           </div>
 
+          {/* ✅ 상단 홈버튼 삭제, 고객추가만 유지 */}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button type="button" style={S.ghostBtn} onClick={() => router.push('/home')}>
-              홈
-            </button>
             <button type="button" style={S.saveBtn} onClick={openNew}>
               + 고객 추가
             </button>
@@ -1368,7 +1370,7 @@ export default function CustomersPage() {
               <img
                 src="/upzzu9.png"
                 onError={(e: any) => {
-                  e.currentTarget.src = '/lolo.png';
+                  e.currentTarget.src = '/assets/gogo.png';
                 }}
                 alt="upzzu"
                 style={S.mascot}
@@ -1603,7 +1605,6 @@ export default function CustomersPage() {
                 const hasAny = list.length > 0;
                 const hasCustomer = list.some((x) => String(x.category || '').includes('고객관리'));
 
-                // ✅✅✅ 카테고리별 dot 색상: 그 날짜에 있는 종류를 최대 3개까지 보여줌
                 const kinds = Array.from(new Set(list.map((x) => scheduleKindFromRow(x)))).slice(0, 3);
 
                 const style: any = {
@@ -1702,7 +1703,6 @@ export default function CustomersPage() {
           >
             <div ref={modalRef as any} style={S.modal}>
               <div style={S.modalPad}>
-                {/* ✅✅✅ (요청) 상단 저장 제거 + 닫기 버튼 X로 */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
                   <div>
                     <div style={S.modalTitle}>{editId ? '고객 정보 수정' : '고객 추가'}</div>
@@ -2095,7 +2095,6 @@ export default function CustomersPage() {
                         </div>
 
                         <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                          {/* ✅✅✅ “해피콜이면…” 제약 제거: 항상 체크 가능 */}
                           <label style={S.toggle} onClick={() => setLogSaveSchedule((v) => !v)}>
                             <input type="checkbox" checked={logSaveSchedule} readOnly />
                             <span>달력 스케줄에 저장</span>
@@ -2104,8 +2103,6 @@ export default function CustomersPage() {
                           <button type="button" style={S.saveBtn} onClick={addManageLog}>
                             + 이력 추가
                           </button>
-
-                          {/* ✅✅✅ 입력 초기화 버튼 삭제 */}
                         </div>
                       </div>
                     </div>
@@ -2122,22 +2119,43 @@ export default function CustomersPage() {
                             return (
                               <div key={x.id} style={{ ...S.item, marginTop: 0, alignItems: 'flex-start' }}>
                                 <div style={{ minWidth: 0, flex: 1 }}>
-                                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                                    <span style={{ ...S.chip, background: b.bg, borderColor: b.bd, color: b.tx, boxShadow: 'none' }}>
-                                      {b.emoji} {x.category}
+                                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <span
+                                      style={{
+                                        ...S.chip,
+                                        padding: '6px 9px',
+                                        background: b.bg,
+                                        borderColor: b.bd,
+                                        color: b.tx,
+                                        boxShadow: 'none',
+                                      }}
+                                    >
+                                      <span style={{ width: 10, height: 10, borderRadius: 99, background: b.dot, display: 'inline-block' }} />
+                                      <span>
+                                        {b.emoji} {x.category}
+                                      </span>
                                     </span>
-                                    <span style={{ ...S.chip, opacity: 0.9 }}>🗓 {x.date}</span>
-                                    <span style={{ ...S.chip, opacity: 0.9 }}>⏰ {x.time}</span>
-                                    {x.saveSchedule ? <span style={{ ...S.chip, opacity: 0.95 }}>📌 스케줄 저장</span> : null}
+
+                                    <span style={{ ...S.chip, boxShadow: 'none', opacity: 0.95 }}>
+                                      🗓 {x.date} {x.time}
+                                    </span>
+
+                                    {x.saveSchedule ? (
+                                      <span style={{ ...S.chip, boxShadow: 'none', borderColor: 'rgba(34,197,94,0.22)' }}>✅ 스케줄 저장</span>
+                                    ) : (
+                                      <span style={{ ...S.chip, boxShadow: 'none', opacity: 0.75 }}>⏸ 스케줄 미저장</span>
+                                    )}
                                   </div>
 
-                                  <div style={{ marginTop: 8, fontWeight: 950, lineHeight: 1.35 }}>{x.content}</div>
-                                  {x.memo ? <div style={{ marginTop: 6, fontWeight: 900, opacity: 0.82 }}>📝 {x.memo}</div> : null}
+                                  <div style={{ marginTop: 8, fontWeight: 950 }}>{x.content}</div>
+                                  {x.memo ? <div style={{ marginTop: 6, fontWeight: 900, opacity: 0.78 }}>메모: {x.memo}</div> : null}
                                 </div>
 
-                                <button type="button" style={{ ...S.dangerBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => removeManageLog(x.id)}>
-                                  삭제
-                                </button>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                  <button type="button" style={{ ...S.dangerBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => removeManageLog(x.id)}>
+                                    삭제
+                                  </button>
+                                </div>
                               </div>
                             );
                           })}
@@ -2145,11 +2163,35 @@ export default function CustomersPage() {
                     )}
                   </div>
                 </div>
+              </div>
 
-                {err ? <div style={S.warn}>{err}</div> : null}
+              {/* ✅ 하단 저장 바 */}
+              <div style={S.bottomBar}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {err ? <span style={{ ...S.chip, background: 'rgba(255,235,245,0.85)', borderColor: 'rgba(255,80,160,0.18)', color: '#6a1140' }}>⚠ {err}</span> : null}
+                </div>
 
-                {/* ✅✅✅ 상단 저장 제거 → 맨 아래 저장 버튼 */}
-                <div style={S.bottomBar}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {editId ? (
+                    <button
+                      type="button"
+                      style={S.dangerBtn}
+                      onClick={async () => {
+                        if (!editId || !userId) return;
+                        const ok = window.confirm('이 고객을 삭제할까요?');
+                        if (!ok) return;
+                        await deleteCustomer(editId);
+                        setOpen(false);
+                      }}
+                    >
+                      삭제
+                    </button>
+                  ) : null}
+
+                  <button type="button" style={S.ghostBtn} onClick={() => setOpen(false)}>
+                    닫기
+                  </button>
+
                   <button type="button" style={S.saveBtn} onClick={saveCustomer}>
                     저장
                   </button>
@@ -2165,16 +2207,17 @@ export default function CustomersPage() {
               transform: translateY(0px);
             }
             50% {
-              transform: translateY(-6px);
+              transform: translateY(-8px);
             }
             100% {
               transform: translateY(0px);
             }
           }
 
-          @media (max-width: 920px) {
-            div[style*='repeat(2, minmax(0, 1fr))'] {
-              grid-template-columns: 1fr !important;
+          /* ✅ 모달 안에서 작은 화면일 때 그리드 자동 1열로 (보기 편하게) */
+          @media (max-width: 760px) {
+            :global(body) {
+              overflow-x: hidden;
             }
           }
         `}</style>

@@ -39,7 +39,7 @@ export default function AppHeader() {
           }}
         >
           <Image
-            src="/lolo.png"
+            src="/gogo.png"
             alt="UPLOG"
             width={36}
             height={36}

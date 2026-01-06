@@ -76,6 +76,9 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // ✅ 버튼 네온 hover state(게이트와 동일 컨셉)
+  const [hoverBtn, setHoverBtn] = useState<'primary' | 'ghost' | 'mini' | 'miniGhost' | null>(null);
+
   const canSubmit = useMemo(() => {
     const e = email.trim();
     const p = pw.trim();
@@ -184,6 +187,113 @@ export default function RegisterPage() {
     }
   }
 
+  // ✅ 게이트와 같은 “무조건 보이는” 네온 버튼 스타일(인라인)
+  const baseNeonBtn: React.CSSProperties = useMemo(
+    () => ({
+      width: '100%',
+      height: 58,
+      borderRadius: 999,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      textDecoration: 'none',
+      color: '#fff',
+      fontFamily: "Pretendard, SUIT, system-ui, -apple-system, 'Segoe UI', sans-serif",
+      fontSize: 18,
+      fontWeight: 1000,
+      letterSpacing: '-0.2px',
+      userSelect: 'none',
+      WebkitTapHighlightColor: 'transparent',
+      border: '2px solid rgba(255,255,255,0.34)',
+      textShadow: '0 2px 14px rgba(0,0,0,0.45)',
+      transition: 'transform .18s ease, filter .18s ease, box-shadow .22s ease, border-color .18s ease',
+    }),
+    []
+  );
+
+  const primaryBtnStyle: React.CSSProperties = useMemo(() => {
+    const on = hoverBtn === 'primary';
+    return {
+      ...baseNeonBtn,
+      background: 'linear-gradient(90deg, rgba(255,77,184,0.96) 0%, rgba(184,107,255,0.92) 55%, rgba(124,58,237,0.92) 100%)',
+      boxShadow: on
+        ? '0 0 0 2px rgba(255,255,255,1), 0 0 40px rgba(255,77,184,0.92), 0 0 90px rgba(168,85,247,0.70), 0 28px 70px rgba(0,0,0,0.55)'
+        : '0 0 0 1px rgba(255,255,255,0.58), 0 0 14px rgba(255,77,184,0.28), 0 0 22px rgba(168,85,247,0.20), 0 16px 34px rgba(0,0,0,0.42)',
+      borderColor: on ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.34)',
+      transform: on ? 'translateY(-2px) scale(1.02)' : 'translateY(0px) scale(1)',
+      filter: on ? 'brightness(1.10)' : 'brightness(1)',
+      cursor: loading ? 'not-allowed' : 'pointer',
+      opacity: !canSubmit ? 0.55 : 1,
+    };
+  }, [baseNeonBtn, hoverBtn, loading, canSubmit]);
+
+  const ghostBtnStyle: React.CSSProperties = useMemo(() => {
+    const on = hoverBtn === 'ghost';
+    return {
+      ...baseNeonBtn,
+      height: 54,
+      background: 'rgba(255,255,255,0.10)',
+      boxShadow: on
+        ? '0 0 0 2px rgba(255,255,255,0.95), 0 0 34px rgba(168,85,247,0.55), 0 0 70px rgba(255,77,184,0.35), 0 22px 54px rgba(0,0,0,0.45)'
+        : '0 0 0 1px rgba(255,255,255,0.42), 0 16px 34px rgba(0,0,0,0.38)',
+      borderColor: on ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.26)',
+      transform: on ? 'translateY(-2px) scale(1.01)' : 'translateY(0px) scale(1)',
+      filter: on ? 'brightness(1.08)' : 'brightness(1)',
+      cursor: 'pointer',
+    };
+  }, [baseNeonBtn, hoverBtn]);
+
+  // 미니 버튼도 “불 들어오는” 느낌 통일
+  const miniBase: React.CSSProperties = useMemo(
+    () => ({
+      height: 40,
+      borderRadius: 16,
+      border: '1px solid rgba(255,255,255,0.28)',
+      background: 'rgba(0,0,0,0.18)',
+      color: '#fff',
+      fontWeight: 950,
+      cursor: 'pointer',
+      width: 220,
+      maxWidth: '100%',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      textShadow: '0 2px 12px rgba(0,0,0,0.45)',
+      transition: 'transform .16s ease, filter .16s ease, box-shadow .20s ease, border-color .16s ease',
+      userSelect: 'none',
+      WebkitTapHighlightColor: 'transparent',
+    }),
+    []
+  );
+
+  const miniBtnStyle: React.CSSProperties = useMemo(() => {
+    const on = hoverBtn === 'mini';
+    return {
+      ...miniBase,
+      borderColor: on ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.28)',
+      boxShadow: on
+        ? '0 0 0 2px rgba(255,255,255,0.75), 0 0 22px rgba(255,77,184,0.35), 0 0 44px rgba(168,85,247,0.28)'
+        : 'none',
+      transform: on ? 'translateY(-1px)' : 'translateY(0px)',
+      filter: on ? 'brightness(1.06)' : 'brightness(1)',
+      opacity: loading ? 0.7 : 1,
+      cursor: loading ? 'not-allowed' : 'pointer',
+    };
+  }, [miniBase, hoverBtn, loading]);
+
+  const miniGhostStyle: React.CSSProperties = useMemo(() => {
+    const on = hoverBtn === 'miniGhost';
+    return {
+      ...miniBase,
+      opacity: 0.9,
+      borderColor: on ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.28)',
+      boxShadow: on ? '0 0 0 2px rgba(255,255,255,0.65), 0 0 18px rgba(168,85,247,0.28)' : 'none',
+      transform: on ? 'translateY(-1px)' : 'translateY(0px)',
+      filter: on ? 'brightness(1.06)' : 'brightness(1)',
+      cursor: loading ? 'not-allowed' : 'pointer',
+    };
+  }, [miniBase, hoverBtn, loading]);
+
   return (
     <main className="auth">
       <div className="bg" aria-hidden="true" />
@@ -205,12 +315,26 @@ export default function RegisterPage() {
               {avatarPreview ? <img src={avatarPreview} alt="" className="avatarImg" /> : <div className="avatarPh">🙂</div>}
             </div>
             <div className="avatarBtns">
-              <button type="button" className="miniBtn" onClick={() => fileRef.current?.click()} disabled={loading}>
-                프로필 이미지 선택
-              </button>
               <button
                 type="button"
-                className="miniBtn ghost"
+                style={miniBtnStyle}
+                onMouseEnter={() => setHoverBtn('mini')}
+                onMouseLeave={() => setHoverBtn(null)}
+                onFocus={() => setHoverBtn('mini')}
+                onBlur={() => setHoverBtn(null)}
+                onClick={() => fileRef.current?.click()}
+                disabled={loading}
+              >
+                프로필 이미지 선택
+              </button>
+
+              <button
+                type="button"
+                style={miniGhostStyle}
+                onMouseEnter={() => setHoverBtn('miniGhost')}
+                onMouseLeave={() => setHoverBtn(null)}
+                onFocus={() => setHoverBtn('miniGhost')}
+                onBlur={() => setHoverBtn(null)}
                 onClick={() => {
                   setAvatarFile(null);
                   setAvatarPreview(null);
@@ -220,6 +344,7 @@ export default function RegisterPage() {
               >
                 제거
               </button>
+
               <input
                 ref={fileRef}
                 type="file"
@@ -267,7 +392,6 @@ export default function RegisterPage() {
             </label>
           </div>
 
-          {/* ✅ 업종 + 직접입력(옆) */}
           <div className="grid2">
             <label className="label">
               <span>업종</span>
@@ -316,11 +440,26 @@ export default function RegisterPage() {
 
           {msg ? <div className="msg">{msg}</div> : null}
 
-          <button className="btn primary" disabled={!canSubmit} type="submit">
+          <button
+            type="submit"
+            style={primaryBtnStyle}
+            disabled={!canSubmit}
+            onMouseEnter={() => setHoverBtn('primary')}
+            onMouseLeave={() => setHoverBtn(null)}
+            onFocus={() => setHoverBtn('primary')}
+            onBlur={() => setHoverBtn(null)}
+          >
             {loading ? '처리 중…' : '회원가입 완료'}
           </button>
 
-          <Link className="btn ghost" href="/login">
+          <Link
+            href="/login"
+            style={ghostBtnStyle}
+            onMouseEnter={() => setHoverBtn('ghost')}
+            onMouseLeave={() => setHoverBtn(null)}
+            onFocus={() => setHoverBtn('ghost')}
+            onBlur={() => setHoverBtn(null)}
+          >
             로그인 하러가기
           </Link>
         </form>
@@ -347,7 +486,7 @@ export default function RegisterPage() {
           position: fixed;
           inset: 0;
           background: radial-gradient(circle at 18% 10%, rgba(255, 90, 210, 0.34), transparent 55%),
-            radial-gradient(circle at 88% 18%, rgba(145, 80, 255, 0.40), transparent 52%),
+            radial-gradient(circle at 88% 18%, rgba(145, 80, 255, 0.4), transparent 52%),
             radial-gradient(circle at 45% 95%, rgba(255, 170, 235, 0.22), transparent 50%),
             linear-gradient(135deg, #a23ea7 0%, #7b3fe6 100%);
           filter: saturate(1.05);
@@ -358,7 +497,7 @@ export default function RegisterPage() {
           width: min(980px, 96vw);
           border-radius: 28px;
           padding: 24px 22px 22px;
-          background: rgba(0, 0, 0, 0.22); /* ✅ 더 진하게(가독성) */
+          background: rgba(0, 0, 0, 0.22);
           border: 1px solid rgba(255, 255, 255, 0.22);
           box-shadow: 0 18px 70px rgba(0, 0, 0, 0.35);
           backdrop-filter: blur(12px);
@@ -401,7 +540,7 @@ export default function RegisterPage() {
           font-size: 26px;
           font-weight: 1000;
           letter-spacing: 0.4px;
-          color: #ffffff; /* ✅ 완전 흰색 */
+          color: #ffffff;
           text-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
         }
 
@@ -409,7 +548,7 @@ export default function RegisterPage() {
           margin-top: 4px;
           font-size: 16px;
           font-weight: 900;
-          color: rgba(255, 255, 255, 0.88); /* ✅ 더 밝게 */
+          color: rgba(255, 255, 255, 0.88);
         }
 
         .form {
@@ -456,22 +595,6 @@ export default function RegisterPage() {
           gap: 8px;
         }
 
-        .miniBtn {
-          height: 40px;
-          border-radius: 16px;
-          border: 1px solid rgba(255, 255, 255, 0.28);
-          background: rgba(0, 0, 0, 0.18);
-          color: #ffffff;
-          font-weight: 950;
-          cursor: pointer;
-          width: 220px;
-          max-width: 100%;
-        }
-
-        .miniBtn.ghost {
-          opacity: 0.88;
-        }
-
         .hint {
           font-size: 12px;
           font-weight: 900;
@@ -493,7 +616,7 @@ export default function RegisterPage() {
           display: block;
           font-size: 14px;
           font-weight: 950;
-          color: rgba(255, 255, 255, 0.92); /* ✅ 더 밝게 */
+          color: rgba(255, 255, 255, 0.92);
           margin: 10px 0 8px;
         }
 
@@ -504,10 +627,8 @@ export default function RegisterPage() {
           padding: 0 16px;
           font-size: 16px;
           color: #ffffff;
-
-          /* ✅ 입력칸 더 밝게(안 보인다는 문제 해결) */
           background: rgba(255, 255, 255, 0.14);
-          border: 1px solid rgba(255, 255, 255, 0.30);
+          border: 1px solid rgba(255, 255, 255, 0.3);
           outline: none;
           display: block;
         }
@@ -516,9 +637,28 @@ export default function RegisterPage() {
           appearance: none;
         }
 
-        .input::placeholder {
-          color: rgba(255, 255, 255, 0.72);
-        }
+       /* ✅ 업종 드롭다운(네이티브) 가독성 강제 */
+.input.select {
+  color: #ffffff !important;
+  background: linear-gradient(90deg, rgba(255, 77, 184, 0.34) 0%, rgba(184, 107, 255, 0.26) 55%, rgba(124, 58, 237, 0.28) 100%) !important;
+  border-color: rgba(255, 255, 255, 0.34) !important;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.18), 0 10px 30px rgba(0,0,0,0.20);
+  color-scheme: dark;
+}
+
+/* ✅ 핵심: 옵션 리스트는 OS가 그리지만, 많은 브라우저에서 이건 먹음 */
+.input.select option {
+  background: #ffffff !important; /* ✅ 리스트 배경 */
+  color: #111111 !important;      /* ✅ 리스트 글씨 */
+}
+
+/* (일부 브라우저) 선택된 항목/hover 시 대비 */
+.input.select option:checked,
+.input.select option:hover {
+  background: #f3e8ff !important;
+  color: #111111 !important;
+}
+
 
         .input:focus {
           border-color: rgba(255, 77, 184, 0.75);
@@ -545,54 +685,6 @@ export default function RegisterPage() {
           color: #ffffff;
           font-size: 14px;
           font-weight: 950;
-        }
-
-        .btn {
-          height: 56px;
-          border-radius: 999px;
-          display: grid;
-          place-items: center;
-          font-size: 18px;
-          font-weight: 1000;
-          text-decoration: none;
-          user-select: none;
-          width: 100%;
-
-          border: 2px solid rgba(255, 255, 255, 0.34);
-          transition: transform 0.14s ease, filter 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
-        }
-
-        .primary {
-          margin-top: 6px;
-          background: linear-gradient(90deg, #ff4db8 0%, #b86bff 55%, #7c3aed 100%);
-          color: #fff;
-          box-shadow: 0 18px 42px rgba(255, 77, 184, 0.2);
-          cursor: pointer;
-        }
-
-        .primary:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 24px 58px rgba(0, 0, 0, 0.45), 0 0 18px rgba(255, 77, 184, 0.22), 0 0 22px rgba(184, 107, 255, 0.18);
-          filter: brightness(1.05);
-          border-color: rgba(255, 255, 255, 0.55);
-        }
-
-        .primary:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-          transform: none;
-        }
-
-        .ghost {
-          background: rgba(255, 255, 255, 0.08);
-          color: rgba(255, 255, 255, 0.95);
-        }
-
-        .ghost:hover {
-          transform: translateY(-1px);
-          border-color: rgba(255, 255, 255, 0.55);
-          box-shadow: 0 18px 44px rgba(0, 0, 0, 0.35);
-          filter: brightness(1.05);
         }
       `}</style>
     </main>
