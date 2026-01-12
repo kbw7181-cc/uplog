@@ -1,6 +1,7 @@
+// ✅✅✅ 전체복붙: src/app/register/page.tsx
 'use client';
 
-import { FormEvent, useMemo, useRef, useState } from 'react';
+import { FormEvent, useMemo, useRef, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
@@ -121,7 +122,7 @@ export default function RegisterPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || loading) return;
 
     setLoading(true);
     setMsg(null);
@@ -130,6 +131,7 @@ export default function RegisterPage() {
     const finalIndustry = industryCustom.trim().length >= 1 ? industryCustom.trim() : industry;
 
     try {
+      // 1) Auth 계정 생성
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password: pw.trim(),
@@ -141,14 +143,27 @@ export default function RegisterPage() {
       }
 
       const userId = data.user?.id;
+
+      // ✅ 어떤 환경에서는 signUp 직후 user가 null일 수 있음 -> 그래도 “가입 요청”은 된 상태로 안내
       if (!userId) {
-        setMsg('계정은 만들어졌는데 사용자 ID를 못 가져왔어요. 다시 시도해 주세요.');
+        setMsg('회원가입 요청은 완료됐어요. 이메일 인증을 확인하고 로그인해 주세요.');
+        setTimeout(() => router.replace('/login'), 900);
         return;
       }
 
+      // 2) 아바타 업로드(실패해도 가입 흐름은 계속)
       let avatarPath: string | null = null;
-      if (avatarFile) avatarPath = await uploadAvatarIfAny(avatarFile, userId);
+      if (avatarFile) {
+        try {
+          avatarPath = await uploadAvatarIfAny(avatarFile, userId);
+        } catch (avatarErr: any) {
+          // ✅ 업로드 실패는 치명적 실패가 아님(가입은 진행)
+          setMsg(`(참고) 프로필 이미지 업로드 실패: ${avatarErr?.message || '업로드 오류'}`);
+          avatarPath = null;
+        }
+      }
 
+      // 3) profiles upsert(실패해도 가입 성공 흐름은 유지)
       const payload: any = {
         user_id: userId,
         email: email.trim(),
@@ -168,18 +183,20 @@ export default function RegisterPage() {
 
       const { error: upsertErr } = await supabase.from('profiles').upsert(payload, { onConflict: 'user_id' });
 
-      if (upsertErr) {
-        setMsg(`프로필 저장 실패: ${upsertErr.message}`);
-        return;
-      }
+      // ✅ 여기서 return 금지: RLS 때문에 실패하면 “가입완료 안됨”처럼 보이기 때문
+      const profileWarn = upsertErr ? ` (프로필 저장은 실패했어요: ${upsertErr.message})` : '';
 
+      // 4) 세션 유무에 따라 분기(이메일 인증 ON이면 session이 null인 경우가 흔함)
       if (data.session) {
+        // ✅ 즉시 로그인 가능한 설정이면 홈으로
+        setMsg(`회원가입 완료!${profileWarn}`);
         router.replace('/home');
         return;
       }
 
-      setMsg('회원가입 완료! 이메일 인증 후 로그인해 주세요.');
-      setTimeout(() => router.replace('/login'), 900);
+      // ✅ 이메일 인증 필요한 설정이면: 안내 + 로그인으로 이동
+      setMsg(`회원가입 요청 완료! 이메일 인증 후 로그인해 주세요.${profileWarn}`);
+      setTimeout(() => router.replace('/login'), 1100);
     } catch (err: any) {
       setMsg(err?.message || '회원가입 중 오류가 발생했어요.');
     } finally {
@@ -188,7 +205,7 @@ export default function RegisterPage() {
   }
 
   // ✅ 게이트와 같은 “무조건 보이는” 네온 버튼 스타일(인라인)
-  const baseNeonBtn: React.CSSProperties = useMemo(
+  const baseNeonBtn: CSSProperties = useMemo(
     () => ({
       width: '100%',
       height: 58,
@@ -211,11 +228,12 @@ export default function RegisterPage() {
     []
   );
 
-  const primaryBtnStyle: React.CSSProperties = useMemo(() => {
+  const primaryBtnStyle: CSSProperties = useMemo(() => {
     const on = hoverBtn === 'primary';
     return {
       ...baseNeonBtn,
-      background: 'linear-gradient(90deg, rgba(255,77,184,0.96) 0%, rgba(184,107,255,0.92) 55%, rgba(124,58,237,0.92) 100%)',
+      background:
+        'linear-gradient(90deg, rgba(255,77,184,0.96) 0%, rgba(184,107,255,0.92) 55%, rgba(124,58,237,0.92) 100%)',
       boxShadow: on
         ? '0 0 0 2px rgba(255,255,255,1), 0 0 40px rgba(255,77,184,0.92), 0 0 90px rgba(168,85,247,0.70), 0 28px 70px rgba(0,0,0,0.55)'
         : '0 0 0 1px rgba(255,255,255,0.58), 0 0 14px rgba(255,77,184,0.28), 0 0 22px rgba(168,85,247,0.20), 0 16px 34px rgba(0,0,0,0.42)',
@@ -227,7 +245,7 @@ export default function RegisterPage() {
     };
   }, [baseNeonBtn, hoverBtn, loading, canSubmit]);
 
-  const ghostBtnStyle: React.CSSProperties = useMemo(() => {
+  const ghostBtnStyle: CSSProperties = useMemo(() => {
     const on = hoverBtn === 'ghost';
     return {
       ...baseNeonBtn,
@@ -244,7 +262,7 @@ export default function RegisterPage() {
   }, [baseNeonBtn, hoverBtn]);
 
   // 미니 버튼도 “불 들어오는” 느낌 통일
-  const miniBase: React.CSSProperties = useMemo(
+  const miniBase: CSSProperties = useMemo(
     () => ({
       height: 40,
       borderRadius: 16,
@@ -266,7 +284,7 @@ export default function RegisterPage() {
     []
   );
 
-  const miniBtnStyle: React.CSSProperties = useMemo(() => {
+  const miniBtnStyle: CSSProperties = useMemo(() => {
     const on = hoverBtn === 'mini';
     return {
       ...miniBase,
@@ -281,7 +299,7 @@ export default function RegisterPage() {
     };
   }, [miniBase, hoverBtn, loading]);
 
-  const miniGhostStyle: React.CSSProperties = useMemo(() => {
+  const miniGhostStyle: CSSProperties = useMemo(() => {
     const on = hoverBtn === 'miniGhost';
     return {
       ...miniBase,
@@ -362,7 +380,7 @@ export default function RegisterPage() {
           <div className="grid2">
             <label className="label">
               <span>이름</span>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="이름" />
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="이름" autoComplete="name" />
             </label>
             <label className="label">
               <span>닉네임</span>
@@ -373,7 +391,14 @@ export default function RegisterPage() {
           <div className="grid2">
             <label className="label">
               <span>전화번호</span>
-              <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01012345678" inputMode="tel" />
+              <input
+                className="input"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="01012345678"
+                inputMode="tel"
+                autoComplete="tel"
+              />
             </label>
             <label className="label">
               <span>생년월일</span>
@@ -413,11 +438,25 @@ export default function RegisterPage() {
           <div className="grid2">
             <label className="label">
               <span>이메일</span>
-              <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@email.com" inputMode="email" />
+              <input
+                className="input"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@email.com"
+                inputMode="email"
+                autoComplete="email"
+              />
             </label>
             <label className="label">
               <span>주소(날씨 연동)</span>
-              <input className="input" value={addressText} onChange={(e) => setAddressText(e.target.value)} onBlur={onAddressBlur} placeholder="예: 대전 서구…" />
+              <input
+                className="input"
+                value={addressText}
+                onChange={(e) => setAddressText(e.target.value)}
+                onBlur={onAddressBlur}
+                placeholder="예: 대전 서구…"
+                autoComplete="street-address"
+              />
             </label>
           </div>
 
@@ -430,11 +469,25 @@ export default function RegisterPage() {
           <div className="grid2">
             <label className="label">
               <span>비밀번호</span>
-              <input className="input" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="8자 이상" type="password" />
+              <input
+                className="input"
+                value={pw}
+                onChange={(e) => setPw(e.target.value)}
+                placeholder="8자 이상"
+                type="password"
+                autoComplete="new-password"
+              />
             </label>
             <label className="label">
               <span>비밀번호 확인</span>
-              <input className="input" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="한 번 더" type="password" />
+              <input
+                className="input"
+                value={pw2}
+                onChange={(e) => setPw2(e.target.value)}
+                placeholder="한 번 더"
+                type="password"
+                autoComplete="new-password"
+              />
             </label>
           </div>
 
@@ -443,7 +496,7 @@ export default function RegisterPage() {
           <button
             type="submit"
             style={primaryBtnStyle}
-            disabled={!canSubmit}
+            disabled={!canSubmit || loading}
             onMouseEnter={() => setHoverBtn('primary')}
             onMouseLeave={() => setHoverBtn(null)}
             onFocus={() => setHoverBtn('primary')}
@@ -637,28 +690,30 @@ export default function RegisterPage() {
           appearance: none;
         }
 
-       /* ✅ 업종 드롭다운(네이티브) 가독성 강제 */
-.input.select {
-  color: #ffffff !important;
-  background: linear-gradient(90deg, rgba(255, 77, 184, 0.34) 0%, rgba(184, 107, 255, 0.26) 55%, rgba(124, 58, 237, 0.28) 100%) !important;
-  border-color: rgba(255, 255, 255, 0.34) !important;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.18), 0 10px 30px rgba(0,0,0,0.20);
-  color-scheme: dark;
-}
+        /* ✅ 업종 드롭다운(네이티브) 가독성 강제 */
+        .input.select {
+          color: #ffffff !important;
+          background: linear-gradient(
+            90deg,
+            rgba(255, 77, 184, 0.34) 0%,
+            rgba(184, 107, 255, 0.26) 55%,
+            rgba(124, 58, 237, 0.28) 100%
+          ) !important;
+          border-color: rgba(255, 255, 255, 0.34) !important;
+          box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 10px 30px rgba(0, 0, 0, 0.2);
+          color-scheme: dark;
+        }
 
-/* ✅ 핵심: 옵션 리스트는 OS가 그리지만, 많은 브라우저에서 이건 먹음 */
-.input.select option {
-  background: #ffffff !important; /* ✅ 리스트 배경 */
-  color: #111111 !important;      /* ✅ 리스트 글씨 */
-}
+        .input.select option {
+          background: #ffffff !important;
+          color: #111111 !important;
+        }
 
-/* (일부 브라우저) 선택된 항목/hover 시 대비 */
-.input.select option:checked,
-.input.select option:hover {
-  background: #f3e8ff !important;
-  color: #111111 !important;
-}
-
+        .input.select option:checked,
+        .input.select option:hover {
+          background: #f3e8ff !important;
+          color: #111111 !important;
+        }
 
         .input:focus {
           border-color: rgba(255, 77, 184, 0.75);
@@ -685,6 +740,7 @@ export default function RegisterPage() {
           color: #ffffff;
           font-size: 14px;
           font-weight: 950;
+          white-space: pre-wrap;
         }
       `}</style>
     </main>

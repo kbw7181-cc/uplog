@@ -420,7 +420,12 @@ async function safeUpsertUpLog(uid: string, ymd: string, payload: Record<string,
 
     const lower = msg.toLowerCase();
     const looksLikeConflictSpec =
-      lower.includes('on conflict') || lower.includes('conflict') || lower.includes('unique') || lower.includes('exclusion constraint') || lower.includes('no unique') || lower.includes('42p10');
+      lower.includes('on conflict') ||
+      lower.includes('conflict') ||
+      lower.includes('unique') ||
+      lower.includes('exclusion constraint') ||
+      lower.includes('no unique') ||
+      lower.includes('42p10');
 
     if (looksLikeConflictSpec) {
       try {
@@ -612,11 +617,8 @@ export default function MyUpPage() {
     if (!userId) return;
     (async () => {
       const t = await loadDailyTasks(userId, selectedYMD);
-      if (t.error) {
-        setTasks([]);
-      } else {
-        setTasks(t.rows);
-      }
+      if (t.error) setTasks([]);
+      else setTasks(t.rows);
     })();
   }, [userId, selectedYMD]);
 
@@ -823,7 +825,7 @@ export default function MyUpPage() {
       month_goal: payload.month_goal ?? '',
     });
 
-    // ✅ upLogs 상태만 갱신 (스케줄 건드리지 않음!!)
+    // ✅ upLogs 상태만 갱신
     setUpLogs((prev) => {
       const next = prev.slice();
       const idx = next.findIndex((x) => (x.log_date || '').slice(0, 10) === selectedYMD);
@@ -843,15 +845,11 @@ export default function MyUpPage() {
     if (!userId) return;
     setErr(null);
 
-    // ✅ 로컬도 항상 저장(혹시 네트워크/정책 실패 대비)
+    // ✅ 로컬도 항상 저장
     lsSetJson(reflectKey, { good, bad, tomorrow: tomorrowPlan });
 
-    // ✅ DB 저장: up_reflections에 날짜별로 업서트
-    const res = await saveReflection(userId, selectedYMD, {
-      good,
-      bad,
-      tomorrow: tomorrowPlan,
-    });
+    // ✅ DB 저장: up_reflections
+    const res = await saveReflection(userId, selectedYMD, { good, bad, tomorrow: tomorrowPlan });
 
     if (!res.ok) {
       setErr(`회고 저장 실패 (DB): ${res.error}`);
@@ -888,7 +886,7 @@ export default function MyUpPage() {
       prev.map((t) => (t.id === optimisticId ? ({ id: data!.id, task_date: data!.task_date, content: data!.content ?? '', done: !!data!.done } as any) : t))
     );
 
-    // ✅✅✅ 정확히 재계산(날짜 days 포함)
+    // ✅ 정확히 재계산
     const ms = await loadMonthlyTaskStats(userId, monthCursor);
     if (!ms.error) setMonthTaskStats(ms.stats);
   }
@@ -926,9 +924,12 @@ export default function MyUpPage() {
     if (error) setErr(`할 일 삭제 실패: ${error.message}`);
   }
 
-  // ✅✅✅ 배경을 "밝은 핑크/퍼플"로 강제 (ClientShell이 어둡게 깔아도 위에서 덮음)
+  // ✅✅✅ 말풍선/마스코트 “고정 규격”(customers/home 과 동일 톤)
+  const HEADER_MASCOT_SIZE = 132; // 고정
+  const HEADER_BUBBLE_MIN_H = 96; // 고정
+
+  // ✅✅✅ 배경을 "밝은 핑크/퍼플"로 강제
   const S: any = {
-    // ✅ 페이지 전체 배경(밝게) + 내용은 위에 떠있게
     shell: {
       minHeight: '100vh',
       width: '100%',
@@ -942,7 +943,6 @@ export default function MyUpPage() {
     top: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
     titleWrap: { display: 'flex', flexDirection: 'column', gap: 4 },
 
-    // ✅ 제목이 어두운 배경에 묻지 않게: 더 진한 글자 + 미세 그림자
     title: {
       fontSize: 26,
       fontWeight: 950,
@@ -961,9 +961,16 @@ export default function MyUpPage() {
       backdropFilter: 'blur(6px)',
     },
     coachWrap: { padding: 14 },
-    coachRow: { display: 'flex', gap: 10, alignItems: 'stretch' },
+
+    // ✅✅✅ bubble+mascot 정렬/크기 고정
+    coachRow: {
+      display: 'grid',
+      gridTemplateColumns: `1fr ${HEADER_MASCOT_SIZE}px`,
+      gap: 12,
+      alignItems: 'center',
+    },
+
     bubble: {
-      flex: 1,
       padding: '12px 14px',
       borderRadius: 18,
       border: '1px solid rgba(255,90,200,0.20)',
@@ -973,19 +980,31 @@ export default function MyUpPage() {
       boxShadow: '0 14px 30px rgba(255,120,190,0.10)',
       lineHeight: 1.35,
       position: 'relative',
-      minHeight: 92,
+      minHeight: HEADER_BUBBLE_MIN_H, // ✅ 고정
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
     },
     bubbleSub: { marginTop: 6, fontSize: 12, opacity: 0.78, fontWeight: 900 },
+
+    mascotWrap: {
+      width: HEADER_MASCOT_SIZE,
+      height: HEADER_MASCOT_SIZE,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: 26,
+      background: 'transparent',
+      overflow: 'visible',
+    },
     mascot: {
-      width: 110,
-      height: 110,
-      borderRadius: 28,
+      width: HEADER_MASCOT_SIZE,
+      height: HEADER_MASCOT_SIZE,
       objectFit: 'contain',
       background: 'transparent',
       filter: 'drop-shadow(0 14px 22px rgba(180,76,255,0.22))',
-      flex: '0 0 auto',
       animation: 'floaty 3.8s ease-in-out infinite',
-      alignSelf: 'center',
+      flex: '0 0 auto',
     },
 
     card: {
@@ -1115,7 +1134,6 @@ export default function MyUpPage() {
     dayCellToday: { borderColor: 'rgba(109,40,217,0.35)' },
     dayHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
     dayNum: { fontSize: 13, fontWeight: 950, color: '#2a0f3a' },
-    moodMini: { fontSize: 14, fontWeight: 950 },
 
     dotRow: { marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' },
     dotItem: { display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 950, fontSize: 12, color: '#2a0f3a', opacity: 0.92 },
@@ -1222,7 +1240,6 @@ export default function MyUpPage() {
 
   return (
     <ClientShell>
-      {/* ✅✅✅ 밝은 배경 레이어 */}
       <div style={S.shell}>
         <div style={S.page}>
           <div style={S.top}>
@@ -1241,20 +1258,22 @@ export default function MyUpPage() {
                   <div style={S.bubbleSub}>멘탈 한 줄: {mentalLine}</div>
                 </div>
 
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/upzzu6.png"
-                  onError={(e: any) => {
-                    e.currentTarget.src = '/gogo.png';
-                  }}
-                  alt="upzzu"
-                  style={S.mascot}
-                />
+                <div style={S.mascotWrap}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/upzzu6.png"
+                    onError={(e: any) => {
+                      e.currentTarget.src = '/gogo.png';
+                    }}
+                    alt="upzzu"
+                    style={S.mascot}
+                  />
+                </div>
               </div>
             </div>
           </div>
 
-          {/* ✅✅✅ 이번달 활동 카운트 배지 */}
+          {/* ✅ 이번달 활동 카운트 */}
           <div style={{ ...S.card, marginTop: 12 }}>
             <div style={S.pad}>
               <div style={S.sectionTitle}>이번달 활동 카운트</div>
@@ -1332,7 +1351,7 @@ export default function MyUpPage() {
             </div>
           </div>
 
-          {/* ✅✅✅ 기분/목표/할일: 달력 "위"로 이동 */}
+          {/* ✅ 기분/목표/할일 */}
           <div style={{ ...S.card, marginTop: 12 }}>
             <div style={S.pad}>
               {/* 오늘 기분 체크 */}
@@ -1348,8 +1367,10 @@ export default function MyUpPage() {
                   );
                 })}
               </div>
+
+              {/* ✅✅✅ 달력 셀에서는 기분 이모지 제거, 상세에서만 표시 */}
               <div style={{ marginTop: 8, fontSize: 12, fontWeight: 900, opacity: 0.75, color: '#2a0f3a' }}>
-                현재 선택: <b>{getMoodEmoji(selectedMood) || '미선택'}</b>
+                선택 날짜 기분: <b>{getMoodEmoji(selectedMood) || '미선택'}</b>
               </div>
 
               {/* 목표 입력 */}
@@ -1374,9 +1395,7 @@ export default function MyUpPage() {
                 <button type="button" style={S.saveBtn} onClick={saveGoals}>
                   목표 저장
                 </button>
-                <div style={{ ...S.pill, opacity: 0.9 }}>
-                  최종 목표: <b style={{ marginLeft: 6 }}>{me?.main_goal || '프로필에서 최종 목표를 설정해 주세요'}</b>
-                </div>
+                {/* ✅✅✅ “최종 목표” 문구/표시 없음 */}
               </div>
 
               {/* 오늘 할 일 입력 */}
@@ -1485,7 +1504,7 @@ export default function MyUpPage() {
                     기타 <b style={{ marginLeft: 4 }}>{monthLegendCounts.etc}</b>
                   </span>
                 </span>
-                <span style={{ ...S.pill, opacity: 0.85 }}>🙂 기분</span>
+                {/* ✅✅✅ “🙂 기분” 범례도 제거 (상세에서만 표시) */}
               </div>
             </div>
 
@@ -1498,6 +1517,7 @@ export default function MyUpPage() {
                 ))}
               </div>
 
+              {/* ✅✅✅ 달력 셀: 기분 이모지 표시 제거 */}
               <div style={S.daysGrid}>
                 {gridDays.map((d) => {
                   const ymd = fmtYMD(d);
@@ -1517,8 +1537,6 @@ export default function MyUpPage() {
                     else etcN += 1;
                   });
 
-                  const moodCode = upByDate[ymd]?.mood ?? '';
-
                   const style: any = {
                     ...S.dayCell,
                     ...(selected ? S.dayCellSelected : null),
@@ -1530,7 +1548,7 @@ export default function MyUpPage() {
                     <div key={ymd} style={style} onClick={() => setSelectedDate(d)} title={ymd}>
                       <div style={S.dayHead}>
                         <div style={S.dayNum}>{d.getDate()}</div>
-                        {moodCode ? <div style={S.moodMini}>{getMoodEmoji(moodCode)}</div> : <div style={{ ...S.moodMini, opacity: 0.35 }}> </div>}
+                        <div style={{ width: 14 }} />
                       </div>
 
                       {(attendN > 0 || workN > 0 || etcN > 0) && (
@@ -1564,6 +1582,13 @@ export default function MyUpPage() {
             {/* 선택 날짜 스케줄 */}
             <div style={{ padding: 14, borderTop: '1px solid rgba(60,30,90,0.08)' }}>
               <div style={S.sectionTitle}>선택한 날짜: {fmtKoreanDate(selectedDate)}</div>
+
+              {/* ✅✅✅ 상세에서만 기분 표시 */}
+              <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ ...S.pill, opacity: 0.92 }}>
+                  🙂 기분 <b style={{ marginLeft: 6 }}>{getMoodEmoji(selectedMood) || '미선택'}</b>
+                </span>
+              </div>
 
               {/* 스케줄 입력 */}
               <div style={{ marginTop: 16 }}>
@@ -1737,6 +1762,13 @@ export default function MyUpPage() {
               background: rgba(255, 241, 242, 0.75);
               color: #9f1239;
               font-weight: 950;
+            }
+
+            /* ✅ 모바일에서 말풍선/마스코트 더 안정적으로 */
+            @media (max-width: 520px) {
+              :global(.__myup_header_grid_fix) {
+                display: grid;
+              }
             }
           `}</style>
         </div>

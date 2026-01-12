@@ -1,468 +1,371 @@
+// ✅✅✅ 전체복붙: src/app/components/ScheduleMonthlyCalendar.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import React, { useMemo } from 'react';
 
-type ScheduleRow = {
-    id: string;
-    user_id: string;
-    schedule_date: string; // YYYY-MM-DD
-    schedule_type: string;
-    content: string;
-    status: string | null;
-    created_at: string;
+export type CalendarDot = {
+  key: string;
+  color: string;
+  count: number;
+  emoji?: string | null; // key==='mood' 일 때 사용
 };
 
-function getScheduleColor(type: string) {
-    const t = (type || '').toLowerCase();
-
-    // 지각/조퇴/결근/고객상담/해피콜/방문예약/교육/미팅/연장/마감/기타
-    if (t.includes('지각')) return 'bg-amber-300';
-    if (t.includes('조퇴')) return 'bg-orange-400';
-    if (t.includes('결근')) return 'bg-red-500';
-    if (t.includes('상담') || t.includes('고객')) return 'bg-emerald-400';
-    if (t.includes('해피')) return 'bg-sky-400';
-    if (t.includes('방문') || t.includes('예약')) return 'bg-yellow-300';
-    if (t.includes('교육')) return 'bg-indigo-400';
-    if (t.includes('미팅') || t.includes('회의')) return 'bg-pink-400';
-    if (t.includes('연장')) return 'bg-violet-400';
-    if (t.includes('마감') || t.includes('중요')) return 'bg-rose-500';
-    if (t.includes('기타')) return 'bg-slate-400';
-
-    return 'bg-purple-400';
-}
-
-function formatDateLabel(iso: string) {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${mm}-${dd}`;
-}
-
-type Props = {
-    userId: string | null;
+export type ScheduleMonthlyCalendarProps = {
+  monthDate: Date;
+  monthTitle?: string;
+  selectedYMD?: string | null;
+  onSelectDate?: (ymd: string) => void;
+  onPrevMonth?: () => void;
+  onNextMonth?: () => void;
+  dotsByDate?: Record<string, CalendarDot[]>;
+  weekStartsOn?: 0 | 1;
+  allowOutOfMonthClick?: boolean;
 };
 
-export default function ScheduleCalendar({ userId }: Props) {
-    const [calendarMonth, setCalendarMonth] = useState<Date>(() => {
-        const now = new Date();
-        return new Date(now.getFullYear(), now.getMonth(), 1);
-    });
-    const [selectedDate, setSelectedDate] = useState<string>('');
-    const [scheduleType, setScheduleType] = useState<string>('고객상담');
-    const [scheduleContent, setScheduleContent] = useState<string>('');
-    const [scheduleSaving, setScheduleSaving] = useState(false);
-    const [scheduleLoading, setScheduleLoading] = useState(false);
-    const [allSchedules, setAllSchedules] = useState<ScheduleRow[]>([]);
+function pad2(n: number) {
+  return String(n).padStart(2, '0');
+}
+function toYMD(d: Date) {
+  const y = d.getFullYear();
+  const m = pad2(d.getMonth() + 1);
+  const day = pad2(d.getDate());
+  return `${y}-${m}-${day}`;
+}
+function sameYMD(a?: string | null, b?: string | null) {
+  return !!a && !!b && a === b;
+}
 
-    // 초기 날짜 설정
-    useEffect(() => {
-        const today = new Date();
-        const tStr = today.toISOString().slice(0, 10);
-        setSelectedDate(tStr);
-    }, []);
+type Cell = {
+  ymd: string;
+  day: number;
+  inMonth: boolean;
+  isToday: boolean;
+  dots: CalendarDot[]; // mood 제외한 dots
+  more: number;
+  moodEmoji?: string | null;
+};
 
-    // 스케줄 로딩
-    useEffect(() => {
-        if (!userId) return;
+export default function ScheduleMonthlyCalendar({
+  monthDate,
+  monthTitle,
+  selectedYMD,
+  onSelectDate,
+  onPrevMonth,
+  onNextMonth,
+  dotsByDate = {},
+  weekStartsOn = 0,
+  allowOutOfMonthClick = true,
+}: ScheduleMonthlyCalendarProps) {
+  const todayYMD = useMemo(() => toYMD(new Date()), []);
 
-        async function loadSchedules() {
-            setScheduleLoading(true);
-            try {
-                const y = calendarMonth.getFullYear();
-                const m = calendarMonth.getMonth();
-                const start = new Date(y, m, 1).toISOString().slice(0, 10);
-                const end = new Date(y, m + 1, 0).toISOString().slice(0, 10);
+  const { title, cells } = useMemo(() => {
+    const base = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+    const year = base.getFullYear();
+    const month = base.getMonth();
 
-                const { data, error } = await supabase
-                    .from('schedule_events')
-                    .select('*')
-                    .eq('user_id', userId)
-                    .gte('schedule_date', start)
-                    .lte('schedule_date', end)
-                    .order('schedule_date', { ascending: true })
-                    .order('created_at', { ascending: true });
+    const autoTitle = `${year}년 ${month + 1}월`;
+    const startOfMonth = new Date(year, month, 1);
 
-                if (error) throw error;
-                setAllSchedules((data || []) as ScheduleRow[]);
-            } catch (e) {
-                console.error(e);
-            } finally {
-                setScheduleLoading(false);
-            }
-        }
+    const startDow = startOfMonth.getDay();
+    const offset = weekStartsOn === 1 ? (startDow === 0 ? 6 : startDow - 1) : startDow;
 
-        loadSchedules();
-    }, [userId, calendarMonth]);
+    const firstCellDate = new Date(year, month, 1 - offset);
+    const arr: Cell[] = [];
 
-    const calendarDays = useMemo(() => {
-        const y = calendarMonth.getFullYear();
-        const m = calendarMonth.getMonth();
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(firstCellDate);
+      d.setDate(firstCellDate.getDate() + i);
 
-        const first = new Date(y, m, 1);
-        const firstWeekday = first.getDay();
-        const daysInMonth = new Date(y, m + 1, 0).getDate();
+      const ymd = toYMD(d);
+      const inMonth = d.getMonth() === month;
+      const day = d.getDate();
+      const isToday = ymd === todayYMD;
 
-        const cells: { dateStr: string | null; dayNumber: number | null }[] = [];
-        for (let i = 0; i < firstWeekday; i++) {
-            cells.push({ dateStr: null, dayNumber: null });
-        }
-        for (let d = 1; d <= daysInMonth; d++) {
-            const iso = new Date(y, m, d).toISOString().slice(0, 10);
-            cells.push({ dateStr: iso, dayNumber: d });
-        }
-        while (cells.length < 42) {
-            cells.push({ dateStr: null, dayNumber: null });
-        }
-        return cells;
-    }, [calendarMonth]);
+      const rawDots = Array.isArray(dotsByDate[ymd]) ? dotsByDate[ymd] : [];
 
-    const calendarWeeks = useMemo(() => {
-        const weeks: { dateStr: string | null; dayNumber: number | null }[][] = [];
-        for (let i = 0; i < calendarDays.length; i += 7) {
-            weeks.push(calendarDays.slice(i, i + 7));
-        }
-        return weeks;
-    }, [calendarDays]);
+      const mood = rawDots.find(
+        (x: any) => x?.key === 'mood' && typeof x?.emoji === 'string' && x.emoji.trim().length > 0
+      );
+      const moodEmoji = mood?.emoji ?? null;
 
-    const scheduleMap = useMemo(() => {
-        const map: Record<string, ScheduleRow[]> = {};
-        for (const s of allSchedules) {
-            const key = (s.schedule_date || '').slice(0, 10);
-            if (!key) continue;
-            if (!map[key]) map[key] = [];
-            map[key].push(s);
-        }
-        return map;
-    }, [allSchedules]);
+      const filtered = rawDots.filter((x: any) => !(x?.key === 'mood' && typeof x?.emoji === 'string'));
 
-    const selectedDateSchedules = selectedDate
-        ? scheduleMap[selectedDate] || []
-        : [];
+      const clean = filtered.filter((x) => x && typeof x.count === 'number' && x.count > 0);
 
-    async function handleSaveSchedule() {
-        if (!userId) {
-            alert('로그인이 필요합니다.');
-            return;
-        }
-        if (!selectedDate) {
-            alert('날짜를 먼저 선택해 주세요.');
-            return;
-        }
-        if (!scheduleContent.trim()) {
-            alert('스케줄 내용을 입력해 주세요.');
-            return;
-        }
+      // ✅ 셀 안에서 "줄"이 들쑥날쑥 안 나게: 2줄까지만(최대 4개) 보여주고 나머진 +N
+      const showMax = 4;
+      const show = clean.slice(0, showMax);
+      const more = Math.max(0, clean.length - show.length);
 
-        setScheduleSaving(true);
-        try {
-            const { error } = await supabase.from('schedule_events').insert({
-                user_id: userId,
-                schedule_date: selectedDate,
-                schedule_type: scheduleType,
-                content: scheduleContent.trim(),
-                status: 'scheduled',
-            });
-            if (error) throw error;
-
-            setScheduleContent('');
-
-            const y = calendarMonth.getFullYear();
-            const m = calendarMonth.getMonth();
-            const start = new Date(y, m, 1).toISOString().slice(0, 10);
-            const end = new Date(y, m + 1, 0).toISOString().slice(0, 10);
-
-            const { data } = await supabase
-                .from('schedule_events')
-                .select('*')
-                .eq('user_id', userId)
-                .gte('schedule_date', start)
-                .lte('schedule_date', end)
-                .order('schedule_date', { ascending: true })
-                .order('created_at', { ascending: true });
-
-            setAllSchedules((data || []) as ScheduleRow[]);
-        } catch (e: unknown) {
-            console.error(e);
-            let msg = '오류가 발생했습니다.';
-            if (e instanceof Error) msg = e.message;
-            alert('스케줄 저장 중 오류가 발생했습니다.\n' + msg);
-        } finally {
-            setScheduleSaving(false);
-        }
+      arr.push({ ymd, day, inMonth, isToday, dots: show, more, moodEmoji });
     }
 
-    function moveMonth(offset: number) {
-        setCalendarMonth((prev) => {
-            const y = prev.getFullYear();
-            const m = prev.getMonth();
-            return new Date(y, m + offset, 1);
-        });
-    }
+    return { title: monthTitle ?? autoTitle, cells: arr };
+  }, [monthDate, monthTitle, dotsByDate, todayYMD, weekStartsOn]);
 
-    const monthLabel = (() => {
-        const y = calendarMonth.getFullYear();
-        const m = calendarMonth.getMonth() + 1;
-        return `${y}년 ${m}월`;
-    })();
+  const weekLabels = useMemo(() => {
+    const labelsSun = ['일', '월', '화', '수', '목', '금', '토'];
+    if (weekStartsOn === 1) return ['월', '화', '수', '목', '금', '토', '일'];
+    return labelsSun;
+  }, [weekStartsOn]);
 
-    const todayDateStr = new Date().toISOString().slice(0, 10);
+  return (
+    <section className="cal-wrap" aria-label="월간 달력">
+      <header className="cal-head">
+        <button type="button" className="cal-nav" onClick={onPrevMonth} aria-label="이전 달">
+          ‹
+        </button>
 
-    return (
-        <section className="grid lg:grid-cols-[1.2fr_0.8fr] gap-6 items-start">
-            {/* CALENDAR */}
-            <div className="rounded-3xl bg-white/5 border border-white/10 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.6)] backdrop-blur-sm">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-base md:text-lg font-bold text-slate-100">
-                        📅 이번 달 스케줄
-                    </h2>
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={() => moveMonth(-1)}
-                            className="p-1.5 rounded-full hover:bg-white/10 text-slate-300 transition"
-                        >
-                            ◀
-                        </button>
-                        <span className="text-sm md:text-base font-bold text-white">
-                            {monthLabel}
-                        </span>
-                        <button
-                            type="button"
-                            onClick={() => moveMonth(1)}
-                            className="p-1.5 rounded-full hover:bg-white/10 text-slate-300 transition"
-                        >
-                            ▶
-                        </button>
-                    </div>
-                </div>
+        <div className="cal-title">{title}</div>
 
-                {/* TABLE CALENDAR */}
-                <table className="w-full text-center border-separate border-spacing-1">
-                    <thead>
-                        <tr>
-                            {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
-                                <th
-                                    key={d}
-                                    className={
-                                        'py-2 text-xs md:text-sm font-medium ' +
-                                        (i === 0
-                                            ? 'text-rose-400'
-                                            : i === 6
-                                                ? 'text-indigo-400'
-                                                : 'text-slate-400')
-                                    }
-                                >
-                                    {d}
-                                </th>
-                            ))}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {calendarWeeks.map((week, rowIdx) => (
-                            <tr key={rowIdx}>
-                                {week.map(({ dateStr, dayNumber }, colIdx) => {
-                                    if (!dateStr || !dayNumber) {
-                                        return <td key={colIdx} />;
-                                    }
+        <button type="button" className="cal-nav" onClick={onNextMonth} aria-label="다음 달">
+          ›
+        </button>
+      </header>
 
-                                    const daySchedules = scheduleMap[dateStr] || [];
-                                    const hasSchedules = daySchedules.length > 0;
-                                    const isSelected = selectedDate === dateStr;
-                                    const isToday = todayDateStr === dateStr;
+      <div className="cal-week">
+        {weekLabels.map((w) => (
+          <div key={w} className="cal-week-item">
+            {w}
+          </div>
+        ))}
+      </div>
 
-                                    return (
-                                        <td key={colIdx}>
-                                            <button
-                                                type="button"
-                                                onClick={() => setSelectedDate(dateStr)}
-                                                className={`relative w-full h-[50px] md:h-[56px] rounded-xl border transition-all duration-200 flex flex-col items-center justify-start pt-1.5 gap-0.5
-                              ${isSelected
-                                                        ? 'bg-gradient-to-br from-pink-500/20 to-purple-500/20 border-pink-400 ring-1 ring-pink-400/50 z-10'
-                                                        : hasSchedules
-                                                            ? 'bg-white/5 border-white/10 hover:bg-white/10'
-                                                            : 'bg-transparent border-transparent hover:bg-white/5'
-                                                    }`}
-                                            >
-                                                <span
-                                                    className={
-                                                        'text-sm md:text-base ' +
-                                                        (isToday
-                                                            ? 'font-extrabold text-pink-400'
-                                                            : isSelected
-                                                                ? 'font-bold text-white'
-                                                                : 'font-medium text-slate-300')
-                                                    }
-                                                >
-                                                    {dayNumber}
-                                                </span>
+      <div className="cal-grid" role="grid">
+        {cells.map((c) => {
+          const isSelected = sameYMD(selectedYMD, c.ymd);
+          const disabled = !c.inMonth && !allowOutOfMonthClick;
 
-                                                <div className="flex flex-wrap justify-center gap-0.5 px-1 w-full">
-                                                    {daySchedules.slice(0, 4).map((s) => (
-                                                        <span
-                                                            key={s.id}
-                                                            className={`w-1.5 h-1.5 rounded-full ${getScheduleColor(
-                                                                s.schedule_type,
-                                                            )}`}
-                                                        />
-                                                    ))}
-                                                    {daySchedules.length > 4 && (
-                                                        <span className="text-[8px] text-slate-500 leading-none">
-                                                            +
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </button>
-                                        </td>
-                                    );
-                                })}
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+          return (
+            <button
+              key={c.ymd}
+              type="button"
+              role="gridcell"
+              className={[
+                'cal-cell',
+                c.inMonth ? 'in' : 'out',
+                c.isToday ? 'today' : '',
+                isSelected ? 'sel' : '',
+              ].join(' ')}
+              onClick={() => {
+                if (disabled) return;
+                onSelectDate?.(c.ymd);
+              }}
+              disabled={disabled}
+              aria-selected={isSelected}
+            >
+              {/* ✅ 상단 라인(고정 높이): 날짜 + 이모지를 한 줄로 "박제" */}
+              <div className="cell-top" aria-hidden="true">
+                <span className="day">{c.day}</span>
+                <span className="emoji">{c.moodEmoji ?? ''}</span>
+              </div>
 
-                {/* Legend */}
-                <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 justify-center text-[10px] text-slate-400 bg-black/20 rounded-xl p-2">
-                    {[
-                        { label: '지각', color: 'bg-amber-300' },
-                        { label: '조퇴', color: 'bg-orange-400' },
-                        { label: '결근', color: 'bg-red-500' },
-                        { label: '고객상담', color: 'bg-emerald-400' },
-                        { label: '해피콜', color: 'bg-sky-400' },
-                        { label: '방문예약', color: 'bg-yellow-300' },
-                        { label: '교육', color: 'bg-indigo-400' },
-                        { label: '미팅', color: 'bg-pink-400' },
-                        { label: '연장', color: 'bg-violet-400' },
-                        { label: '마감', color: 'bg-rose-500' },
-                        { label: '기타', color: 'bg-slate-400' },
-                    ].map((item) => (
-                        <span key={item.label} className="flex items-center gap-1">
-                            <span className={`w-2 h-2 rounded-full ${item.color}`} />
-                            {item.label}
-                        </span>
-                    ))}
-                </div>
-            </div>
+              {/* ✅ DOT 영역(고정 높이): 2줄까지만 보이게 */}
+              <div className="cell-dots" aria-hidden="true">
+                {c.dots.map((d) => (
+                  <span key={d.key} className="pill">
+                    <span className="dot" style={{ background: d.color }} />
+                    <span className="count">{d.count}</span>
+                  </span>
+                ))}
+                {c.more > 0 && (
+                  <span className="pill more">
+                    <span className="moreTxt">+{c.more}</span>
+                  </span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
-            {/* SCHEDULE INPUT & LIST */}
-            <div className="flex flex-col gap-4">
-                {/* Selected Date Info */}
-                <div className="rounded-3xl bg-gradient-to-br from-[#1a1033] to-[#0d061f] border border-white/10 p-5 shadow-lg">
-                    <div className="text-xs font-medium text-slate-400 mb-1">
-                        선택한 날짜
-                    </div>
-                    <div className="flex items-end justify-between">
-                        <div className="text-xl md:text-2xl font-bold text-white">
-                            {selectedDate ? formatDateLabel(selectedDate) : '날짜 미선택'}
-                        </div>
-                        <div className="text-xs text-pink-300 font-medium">
-                            {selectedDateSchedules.length}개의 일정
-                        </div>
-                    </div>
+      <style jsx>{`
+        .cal-wrap {
+          width: 100%;
+          border-radius: 18px;
+        }
 
-                    <div className="mt-4 space-y-3">
-                        <div>
-                            <label className="text-[11px] text-slate-400 mb-1 block">
-                                일정 종류
-                            </label>
-                            <select
-                                className="w-full rounded-xl bg-black/30 border border-white/10 text-sm text-slate-200 px-3 py-2.5 focus:border-pink-500/50 focus:outline-none transition"
-                                value={scheduleType}
-                                onChange={(e) => setScheduleType(e.target.value)}
-                            >
-                                <option value="고객상담">고객상담</option>
-                                <option value="해피콜">해피콜</option>
-                                <option value="방문예약">방문예약</option>
-                                <option value="교육">교육</option>
-                                <option value="미팅">미팅</option>
-                                <option value="연장">연장</option>
-                                <option value="마감">마감</option>
-                                <option value="지각">지각</option>
-                                <option value="조퇴">조퇴</option>
-                                <option value="결근">결근</option>
-                                <option value="기타">기타</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="text-[11px] text-slate-400 mb-1 block">
-                                내용 입력
-                            </label>
-                            <div className="flex gap-2">
-                                <input
-                                    className="flex-1 rounded-xl bg-black/30 border border-white/10 text-sm text-slate-200 px-3 py-2.5 focus:border-pink-500/50 focus:outline-none transition placeholder:text-slate-600"
-                                    value={scheduleContent}
-                                    onChange={(e) => setScheduleContent(e.target.value)}
-                                    placeholder="일정 내용을 입력하세요"
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') handleSaveSchedule();
-                                    }}
-                                />
-                                <button
-                                    type="button"
-                                    onClick={handleSaveSchedule}
-                                    disabled={scheduleSaving || !selectedDate}
-                                    className="px-4 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-sm font-bold shadow-lg shadow-pink-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                                >
-                                    저장
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+        .cal-head {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          margin: 6px 0 10px;
+        }
 
-                {/* Schedule List */}
-                <div className="flex-1 rounded-3xl bg-white/5 border border-white/10 p-5 min-h-[200px]">
-                    <h3 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-2">
-                        <span>📝 일정 목록</span>
-                        {scheduleLoading && (
-                            <span className="text-[10px] font-normal text-slate-500">
-                                로딩 중...
-                            </span>
-                        )}
-                    </h3>
+        .cal-title {
+          font-size: 20px;
+          font-weight: 900;
+          color: #2a2451;
+          letter-spacing: -0.2px;
+          min-width: 140px;
+          text-align: center;
+        }
 
-                    {selectedDateSchedules.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs py-8">
-                            <div className="text-2xl mb-2">📭</div>
-                            등록된 일정이 없습니다.
-                        </div>
-                    ) : (
-                        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
-                            {selectedDateSchedules.map((s) => (
-                                <div
-                                    key={s.id}
-                                    className="group relative rounded-xl bg-black/20 border border-white/5 hover:border-white/10 p-3 transition hover:bg-black/30"
-                                >
-                                    <div className="flex items-start gap-3">
-                                        <div
-                                            className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${getScheduleColor(
-                                                s.schedule_type,
-                                            )} shadow-[0_0_8px_currentColor]`}
-                                        />
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between mb-0.5">
-                                                <span className="text-xs font-semibold text-slate-300 group-hover:text-pink-200 transition">
-                                                    {s.schedule_type}
-                                                </span>
-                                                {s.status && (
-                                                    <span className="text-[10px] text-emerald-500/80 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                                                        {s.status === 'scheduled' ? '완료' : s.status}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <p className="text-sm text-slate-100 break-words leading-snug">
-                                                {s.content}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </section>
-    );
+        .cal-nav {
+          width: 38px;
+          height: 38px;
+          border-radius: 999px;
+          border: 1px solid rgba(167, 139, 250, 0.35);
+          background: rgba(255, 255, 255, 0.75);
+          color: #6d28d9;
+          font-size: 22px;
+          font-weight: 900;
+          display: grid;
+          place-items: center;
+          cursor: pointer;
+        }
+
+        .cal-week {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          gap: 10px;
+          padding: 6px 6px 10px;
+        }
+
+        .cal-week-item {
+          text-align: center;
+          font-size: 14px;
+          font-weight: 900;
+          color: rgba(123, 97, 255, 0.9);
+        }
+
+        .cal-grid {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          gap: 12px;
+          padding: 0 6px 6px;
+        }
+
+        .cal-cell {
+          position: relative;
+          height: 64px;
+          border-radius: 16px;
+          border: 1px solid rgba(167, 139, 250, 0.28);
+          background: rgba(255, 255, 255, 0.72);
+          box-shadow: 0 10px 22px rgba(124, 58, 237, 0.08);
+
+          padding: 10px 10px 8px;
+          text-align: left;
+          cursor: pointer;
+          overflow: hidden;
+
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .cal-cell.out {
+          opacity: 0.55;
+        }
+
+        .cal-cell.today {
+          border-color: rgba(236, 72, 153, 0.45);
+          box-shadow: 0 12px 26px rgba(236, 72, 153, 0.12);
+        }
+
+        .cal-cell.sel {
+          border: 2px solid rgba(167, 139, 250, 0.9);
+          box-shadow: 0 16px 30px rgba(124, 58, 237, 0.16);
+        }
+
+        /* ✅ 상단 라인 고정: 이 줄 때문에 "들쑥날쑥"이 사라짐 */
+        .cell-top {
+          height: 18px; /* 고정 */
+          display: flex;
+          align-items: center;
+          justify-content: flex-start;
+          gap: 6px;
+          padding-left: 2px;
+        }
+
+        .cell-top .day {
+          font-size: 16px;
+          font-weight: 900;
+          color: #1f1747;
+          line-height: 1;
+          letter-spacing: -0.2px;
+        }
+
+        .cell-top .emoji {
+          width: 18px; /* 고정 폭 */
+          height: 18px;
+          display: grid;
+          place-items: center;
+          font-size: 16px;
+          line-height: 1;
+          filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.08));
+        }
+
+        /* ✅ DOT 영역 고정(2줄) */
+        .cell-dots {
+          height: 44px; /* 18px*2 + gap 여유 */
+          display: grid;
+          grid-template-columns: max-content;
+          grid-auto-rows: 18px;
+          row-gap: 6px;
+          align-content: start;
+          justify-content: start;
+          overflow: hidden;
+        }
+
+        .pill {
+          height: 18px;
+          border-radius: 999px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: flex-start;
+          gap: 6px;
+          padding: 0 8px;
+          width: fit-content;
+
+          border: 1px solid rgba(167, 139, 250, 0.25);
+          background: rgba(240, 244, 255, 0.95);
+          box-shadow: 0 10px 18px rgba(59, 130, 246, 0.08);
+        }
+
+        .dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          flex: 0 0 8px;
+          box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        .count {
+          font-size: 12px;
+          font-weight: 900;
+          color: #2a2451;
+          line-height: 1;
+        }
+
+        .more {
+          background: rgba(255, 255, 255, 0.78);
+          border-style: dashed;
+        }
+        .moreTxt {
+          font-size: 12px;
+          font-weight: 900;
+          color: #7c3aed;
+          line-height: 1;
+        }
+
+        @media (max-width: 430px) {
+          .cal-grid {
+            gap: 10px;
+          }
+          .cal-cell {
+            height: 62px;
+          }
+          .cal-title {
+            font-size: 18px;
+          }
+          .cell-dots {
+            height: 42px;
+            row-gap: 6px;
+          }
+        }
+      `}</style>
+    </section>
+  );
 }
