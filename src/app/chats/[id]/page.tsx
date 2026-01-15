@@ -1,3 +1,4 @@
+// ✅✅✅ 전체복붙: src/app/chats/[id]/page.tsx
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -10,6 +11,7 @@ type RoomRow = {
   id: string;
   user1_id: string;
   user2_id: string;
+  created_at: string;
 };
 
 type MsgRow = {
@@ -17,6 +19,7 @@ type MsgRow = {
   room_id: string;
   sender_id: string;
   content: string | null;
+  image_url?: string | null;
   created_at: string;
 };
 
@@ -25,6 +28,7 @@ type ProfileRow = {
   nickname: string | null;
   name: string | null;
   avatar_url: string | null;
+  email?: string | null;
 };
 
 function isUuid(v: string) {
@@ -32,86 +36,137 @@ function isUuid(v: string) {
 }
 
 function pickName(p?: { nickname?: string | null; name?: string | null } | null) {
-  return p?.nickname || p?.name || '상대';
+  return p?.nickname || p?.name || '친구';
 }
 
 function readKey(roomId: string) {
   return `uplog.chat.readAt.${roomId}`;
 }
+function safeSetReadAt(roomId: string, ts: number) {
+  try {
+    localStorage.setItem(readKey(roomId), String(ts));
+  } catch {}
+}
+
+function timeLabel(iso: string) {
+  try {
+    const d = new Date(iso);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  } catch {
+    return '';
+  }
+}
 
 export default function ChatRoomPage() {
-  const params = useParams();
   const router = useRouter();
-  const roomId = String((params as any)?.id || '');
+  const params = useParams();
 
-  const [loading, setLoading] = useState(true);
+  const roomId = (params?.id as string) || '';
+  const canUseRoomId = roomId && isUuid(roomId);
+
+  const FALLBACK_AVATAR = '/gogo.png';
+
   const [meId, setMeId] = useState('');
-  const [meProfile, setMeProfile] = useState<ProfileRow | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const [room, setRoom] = useState<RoomRow | null>(null);
   const [otherId, setOtherId] = useState('');
   const [otherProfile, setOtherProfile] = useState<ProfileRow | null>(null);
 
-  const [msgs, setMsgs] = useState<MsgRow[]>([]);
+  const [messages, setMessages] = useState<MsgRow[]>([]);
   const [text, setText] = useState('');
 
-  const listRef = useRef<HTMLDivElement | null>(null);
+  const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const endRef = useRef<HTMLDivElement | null>(null);
+
+  function avatarOrGogo(raw: string | null | undefined) {
+    const v = getAvatarSrc((raw || '').toString().trim());
+    return v || FALLBACK_AVATAR;
+  }
+  function forceGogo(e: any) {
+    try {
+      if (e?.currentTarget?.src && !e.currentTarget.src.endsWith('/gogo.png')) {
+        e.currentTarget.src = FALLBACK_AVATAR;
+      }
+    } catch {}
+  }
 
   const otherName = useMemo(() => pickName(otherProfile), [otherProfile]);
+  const otherAvatar = useMemo(() => avatarOrGogo(otherProfile?.avatar_url || ''), [otherProfile]);
 
-  const lastMsgAt = useMemo(() => {
-    if (!msgs.length) return '';
-    return msgs[msgs.length - 1]?.created_at || '';
-  }, [msgs]);
-
-  const readAt = useMemo(() => {
+  function scrollToEnd() {
     try {
-      const v = localStorage.getItem(readKey(roomId));
-      return v ? Number(v) : 0;
-    } catch {
-      return 0;
-    }
-  }, [roomId]);
-
-  const isUnread = useMemo(() => {
-    if (!lastMsgAt) return false;
-    const t = new Date(lastMsgAt).getTime();
-    return Number.isFinite(t) && t > readAt;
-  }, [lastMsgAt, readAt]);
-
-  const meName = useMemo(() => pickName(meProfile), [meProfile]);
-  const meAvatar = useMemo(() => getAvatarSrc(meProfile?.avatar_url || ''), [meProfile]);
-  const otherAvatar = useMemo(() => getAvatarSrc(otherProfile?.avatar_url || ''), [otherProfile]);
-
-  // ✅ 메시지 늘어나면 하단으로
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
-    }, 60);
-    return () => clearTimeout(t);
-  }, [msgs.length]);
-
-  // ✅ 방 들어오면 읽음 처리(로컬)
-  useEffect(() => {
-    if (!roomId || !isUuid(roomId)) return;
-    if (!msgs.length) return;
-    try {
-      localStorage.setItem(readKey(roomId), String(Date.now()));
+      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     } catch {}
-  }, [roomId, msgs.length]);
+  }
+
+  async function loadRoomAndMessages(uid: string) {
+    if (!canUseRoomId) {
+      setLoading(false);
+      return;
+    }
+
+    const { data: r, error: rErr } = await supabase
+      .from('chat_rooms')
+      .select('id,user1_id,user2_id,created_at')
+      .eq('id', roomId)
+      .maybeSingle();
+
+    if (rErr || !r) {
+      setRoom(null);
+      setLoading(false);
+      return;
+    }
+
+    setRoom(r as any);
+
+    const oId =
+      (r as any).user1_id === uid
+        ? (r as any).user2_id
+        : (r as any).user2_id === uid
+        ? (r as any).user1_id
+        : '';
+
+    setOtherId(oId);
+
+    if (oId && isUuid(oId)) {
+      const { data: p } = await supabase
+        .from('profiles')
+        .select('user_id,nickname,name,avatar_url,email')
+        .eq('user_id', oId)
+        .maybeSingle();
+      setOtherProfile((p as any) || null);
+    }
+
+    const { data: ms } = await supabase
+      .from('chat_messages')
+      .select('id,room_id,sender_id,content,image_url,created_at')
+      .eq('room_id', roomId)
+      .order('created_at', { ascending: true })
+      .limit(500);
+
+    setMessages(Array.isArray(ms) ? (ms as any) : []);
+    setLoading(false);
+
+    safeSetReadAt(roomId, Date.now());
+    setTimeout(scrollToEnd, 50);
+  }
 
   useEffect(() => {
     let alive = true;
-    let cleanup: null | (() => void) = null;
 
-    async function boot() {
+    (async () => {
       try {
-        if (!roomId || !isUuid(roomId)) {
-          router.replace('/chats');
+        if (!canUseRoomId) {
+          setLoading(false);
           return;
         }
 
-        // 1) 내 uid
         const { data: auth } = await supabase.auth.getUser();
         const uid = auth?.user?.id || '';
         if (!uid) {
@@ -119,358 +174,387 @@ export default function ChatRoomPage() {
           return;
         }
         if (!alive) return;
+
         setMeId(uid);
+        await loadRoomAndMessages(uid);
 
-        // 2) 내 프로필
-        const { data: mp } = await supabase
-          .from('profiles')
-          .select('user_id,nickname,name,avatar_url')
-          .eq('user_id', uid)
-          .maybeSingle();
-        if (alive) setMeProfile((mp as any) || null);
-
-        // 3) 방
-        const { data: r, error: rErr } = await supabase
-          .from('chat_rooms')
-          .select('id,user1_id,user2_id')
-          .eq('id', roomId)
-          .maybeSingle();
-
-        if (rErr) console.error('roomErr', rErr);
-        if (!r) {
-          router.replace('/chats');
-          return;
-        }
-        if (!alive) return;
-        setRoom(r as any);
-
-        // 4) 상대 uid
-        const other =
-          r.user1_id === uid ? r.user2_id : r.user2_id === uid ? r.user1_id : '';
-        setOtherId(other || '');
-
-        // 5) 상대 프로필
-        if (other && isUuid(other)) {
-          const { data: op } = await supabase
-            .from('profiles')
-            .select('user_id,nickname,name,avatar_url')
-            .eq('user_id', other)
-            .maybeSingle();
-          if (alive) setOtherProfile((op as any) || null);
-        }
-
-        // 6) 메시지 로드 (✅ content만)
-        const { data: m, error: mErr } = await supabase
-          .from('chat_messages')
-          .select('id,room_id,sender_id,content,created_at')
-          .eq('room_id', roomId)
-          .order('created_at', { ascending: true });
-
-        if (mErr) console.error('msgsErr', mErr);
-        if (alive) setMsgs((m as any) || []);
-
-        // 7) realtime
-        const channel = supabase
+        const ch = supabase
           .channel(`room:${roomId}`)
           .on(
             'postgres_changes',
             { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${roomId}` },
             (payload) => {
-              const row = payload.new as any;
-              const safe: MsgRow = {
-                id: row.id,
-                room_id: row.room_id,
-                sender_id: row.sender_id,
-                content: row.content ?? '',
-                created_at: row.created_at,
-              };
-              setMsgs((prev) => [...prev, safe]);
+              const row = payload.new as any as MsgRow;
+              setMessages((prev) => [...prev, row]);
+              safeSetReadAt(roomId, Date.now());
+              setTimeout(scrollToEnd, 20);
             }
           )
           .subscribe();
 
-        cleanup = () => {
-          supabase.removeChannel(channel);
+        return () => {
+          try {
+            supabase.removeChannel(ch);
+          } catch {}
         };
-
-        if (alive) setLoading(false);
       } catch (e) {
         console.error(e);
-        if (alive) setLoading(false);
+        setLoading(false);
       }
-    }
-
-    boot();
+    })();
 
     return () => {
       alive = false;
-      if (cleanup) cleanup();
     };
-  }, [roomId, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
 
-  async function send() {
-    const v = text.trim();
-    if (!v) return;
-    if (!meId || !isUuid(roomId)) return;
+  async function sendText() {
+    const t = (text || '').trim();
+    if (!t || sending) return;
+    if (!meId || !roomId) return;
 
-    setText('');
-
-    const { error } = await supabase.from('chat_messages').insert([
-      { room_id: roomId, sender_id: meId, content: v },
-    ]);
-
-    if (error) {
-      console.error('sendErr', error);
-      setText(v);
+    setSending(true);
+    try {
+      const { error } = await supabase.from('chat_messages').insert([
+        { room_id: roomId, sender_id: meId, content: t, image_url: null },
+      ]);
+      if (error) console.error('sendText error', error);
+      setText('');
+      safeSetReadAt(roomId, Date.now());
+    } finally {
+      setSending(false);
     }
   }
 
-  if (loading) {
-    return (
-      <ClientShell>
-        <div style={{ padding: 24, fontSize: 18, fontWeight: 950, color: '#2a1236' }}>
-          채팅 불러오는 중…
-        </div>
-      </ClientShell>
-    );
+  async function sendImage(file: File) {
+    if (!file || uploading) return;
+    if (!meId || !roomId) return;
+    if (!file.type.startsWith('image/')) return;
+
+    setUploading(true);
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const safeExt = ext.replace(/[^a-z0-9]/g, '') || 'jpg';
+      const path = `rooms/${roomId}/${meId}/${Date.now()}-${Math.random().toString(16).slice(2)}.${safeExt}`;
+
+      const up = await supabase.storage.from('chat_uploads').upload(path, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type,
+      });
+
+      if (up.error) {
+        console.error('upload error', up.error);
+        return;
+      }
+
+      const pub = supabase.storage.from('chat_uploads').getPublicUrl(path);
+      const publicUrl = (pub?.data?.publicUrl || '').toString();
+
+      const { error } = await supabase.from('chat_messages').insert([
+        { room_id: roomId, sender_id: meId, content: null, image_url: publicUrl || path },
+      ]);
+
+      if (error) {
+        console.error('insert image message error', error);
+        return;
+      }
+
+      safeSetReadAt(roomId, Date.now());
+      setTimeout(scrollToEnd, 30);
+    } finally {
+      setUploading(false);
+    }
   }
+
+  function onPickImage() {
+    if (uploading) return;
+    fileRef.current?.click();
+  }
+
+  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    await sendImage(f);
+  }
+
+  function resolveImageSrc(v: string | null | undefined) {
+    const raw = (v || '').toString().trim();
+    if (!raw) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    try {
+      const pub = supabase.storage.from('chat_uploads').getPublicUrl(raw);
+      return (pub?.data?.publicUrl || '').toString() || '';
+    } catch {
+      return '';
+    }
+  }
+
+  const headerDotOn = useMemo(() => {
+    const last = messages.length ? messages[messages.length - 1] : null;
+    if (!last?.created_at) return false;
+    const t = new Date(last.created_at).getTime();
+    return Date.now() - t < 2 * 60 * 1000;
+  }, [messages]);
 
   return (
     <ClientShell>
-      <div style={{ maxWidth: 980, margin: '0 auto', padding: '10px 10px 110px' }}>
-        <div
-          style={{
-            background: 'rgba(255,255,255,0.92)',
-            borderRadius: 26,
-            border: '1px solid rgba(90,40,120,0.14)',
-            boxShadow: '0 22px 60px rgba(40,10,70,0.14)',
-            overflow: 'hidden',
-          }}
-        >
-          {/* ✅ 깔끔 상단: 상대 프로필 + 닉네임 + 와의 UP채팅방 + 읽음점 + 목록 */}
-          <div
-            style={{
-              padding: '16px 18px',
-              borderBottom: '1px solid rgba(90,40,120,0.10)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 12,
-              background: 'rgba(255,255,255,0.90)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
-              <div
-                style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: 999,
-                  overflow: 'hidden',
-                  border: '3px solid rgba(255,79,161,0.55)',
-                  background: '#fff',
-                  flex: '0 0 auto',
-                  display: 'grid',
-                  placeItems: 'center',
-                }}
-                title={otherName}
-              >
-                {otherAvatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={otherAvatar} alt={otherName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <span style={{ fontSize: 26 }}>🙂</span>
-                )}
-              </div>
+      <div className="wrap">
+        <div className="topBar">
+          <div className="topLeft">
+            <button type="button" className="backBtn" onClick={() => router.push('/chats')}>
+              ←
+            </button>
 
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 20,
-                      fontWeight: 950,
-                      color: '#2a1236',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      maxWidth: '58vw',
-                    }}
-                  >
-                    {otherName}
-                  </div>
-
-                  {/* ✅ 읽음/안읽음 점 */}
-                  <span
-                    title={isUnread ? '안읽음' : '읽음'}
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: 999,
-                      background: isUnread ? '#ff2d55' : '#22c55e',
-                      boxShadow: isUnread ? '0 0 0 3px rgba(255,45,85,0.12)' : '0 0 0 3px rgba(34,197,94,0.10)',
-                      display: 'inline-block',
-                      flex: '0 0 auto',
-                    }}
-                  />
-                </div>
-                <div style={{ marginTop: 2, fontSize: 14, fontWeight: 850, color: 'rgba(42,18,54,0.55)' }}>
-                  와의 UP채팅방
-                </div>
-              </div>
+            <div className="avatarRing">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={otherAvatar} onError={forceGogo} alt={otherName} />
+              <span className={`dot ${headerDotOn ? 'on' : 'off'}`} />
             </div>
 
-            <button
-              onClick={() => router.push('/chats')}
-              style={{
-                height: 42,
-                padding: '0 16px',
-                borderRadius: 14,
-                border: '1px solid rgba(168,85,247,0.45)',
-                background: '#fff',
-                cursor: 'pointer',
-                fontWeight: 950,
-                fontSize: 14,
-                color: '#2a1236',
-                flex: '0 0 auto',
-              }}
-            >
-              목록
-            </button>
+            <div className="topText">
+              <div className="roomName">{otherName}</div>
+              <div className="roomSub">와의 U P채팅방</div>
+            </div>
           </div>
 
-          {/* ✅ 메시지 리스트 */}
-          <div
-            ref={listRef}
-            style={{
-              padding: 16,
-              height: 'min(66vh, 640px)',
-              overflow: 'auto',
-              background:
-                'radial-gradient(900px 500px at 15% 18%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 60%),' +
-                'radial-gradient(900px 520px at 78% 22%, rgba(243,232,255,0.85) 0%, rgba(255,255,255,0) 60%),' +
-                'linear-gradient(180deg, #f8f4ff 0%, #f5f9ff 50%, #f8f4ff 100%)',
-            }}
-          >
-            {msgs.map((m) => {
-              const mine = m.sender_id === meId;
-              const whoName = mine ? meName : otherName;
-              const whoAvatar = mine ? meAvatar : otherAvatar;
+          <button type="button" className="listBtn" onClick={() => router.push('/chats')}>
+            목록
+          </button>
+        </div>
 
-              return (
-                <div
-                  key={m.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: mine ? 'flex-end' : 'flex-start',
-                    marginBottom: 12,
-                  }}
-                >
-                  <div style={{ display: 'flex', flexDirection: mine ? 'row-reverse' : 'row', gap: 10, alignItems: 'flex-end' }}>
-                    {/* 아바타 */}
-                    <div
-                      style={{
-                        width: 42,
-                        height: 42,
-                        borderRadius: 999,
-                        overflow: 'hidden',
-                        border: mine ? '3px solid rgba(255,79,161,0.45)' : '3px solid rgba(168,85,247,0.32)',
-                        background: '#fff',
-                        flex: '0 0 auto',
-                        display: 'grid',
-                        placeItems: 'center',
-                      }}
-                      title={whoName}
-                    >
-                      {whoAvatar ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={whoAvatar} alt={whoName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        <span style={{ fontSize: 18 }}>🙂</span>
-                      )}
-                    </div>
+        <div className="chatBox">
+          {loading ? (
+            <div className="centerHint">불러오는 중…</div>
+          ) : !room ? (
+            <div className="centerHint">채팅방을 찾을 수 없어요.</div>
+          ) : (
+            <>
+              <div className="msgList">
+                {messages.map((m) => {
+                  const mine = m.sender_id === meId;
+                  const imgSrc = resolveImageSrc((m as any).image_url);
+                  const hasImg = !!imgSrc;
 
-                    {/* 닉네임 + 버블 */}
-                    <div style={{ display: 'grid', justifyItems: mine ? 'end' : 'start', gap: 4 }}>
-                      <div style={{ fontSize: 14, fontWeight: 900, color: 'rgba(42,18,54,0.68)' }}>{whoName}</div>
+                  return (
+                    <div key={m.id} className={`msgRow ${mine ? 'mine' : 'theirs'}`}>
+                      <div className={`bubble ${mine ? 'bMine' : 'bTheirs'}`}>
+                        {hasImg ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={imgSrc}
+                            alt="photo"
+                            className="photo"
+                            onError={(e) => {
+                              try {
+                                (e.currentTarget as any).style.display = 'none';
+                              } catch {}
+                            }}
+                          />
+                        ) : null}
 
-                      <div
-                        style={{
-                          maxWidth: '78vw',
-                          width: 'fit-content',
-                          padding: '10px 12px',
-                          borderRadius: 16,
-                          background: mine ? 'linear-gradient(90deg,#ff4fa1,#a855f7)' : 'rgba(255,255,255,0.92)',
-                          color: mine ? '#fff' : '#2a1236',
-                          border: mine ? '0' : '1px solid rgba(90,40,120,0.12)',
-                          boxShadow: mine ? '0 12px 22px rgba(168,85,247,0.22)' : '0 10px 18px rgba(40,10,70,0.08)',
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-word',
-                          fontWeight: 850,
-                          lineHeight: 1.35,
-                        }}
-                      >
-                        {m.content || ''}
+                        {m.content ? <div className="txt">{m.content}</div> : null}
+                        <div className="meta">{m.created_at ? timeLabel(m.created_at) : ''}</div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+                <div ref={endRef} />
+              </div>
+
+              {/* ✅ 입력바: 높이 줄이고(2줄까지), 버튼도 작게 + 플러스 */}
+              <div className="inputBar">
+                <input ref={fileRef} type="file" accept="image/*" onChange={onFileChange} style={{ display: 'none' }} />
+
+                <button
+                  type="button"
+                  className={`plusBtn ${uploading ? 'disabled' : ''}`}
+                  onClick={onPickImage}
+                  title="사진/파일"
+                >
+                  +
+                </button>
+
+                <textarea
+                  className="input"
+                  value={text}
+                  onChange={(e) => setText((e.target as HTMLTextAreaElement).value || '')}
+                  placeholder="메시지 입력..."
+                  rows={1}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendText();
+                    }
+                  }}
+                />
+
+                <button type="button" className={`sendBtn ${(sending || uploading) ? 'disabled' : ''}`} onClick={sendText}>
+                  전송
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* ✅ 하단 입력바 */}
-        <div
-          style={{
-            position: 'fixed',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 2147483647,
-            padding: '12px 14px 16px',
-            background: 'rgba(255,255,255,0.96)',
-            borderTop: '2px solid rgba(255,79,161,0.55)',
-            backdropFilter: 'blur(10px)',
-            display: 'grid',
-            placeItems: 'center',
-          }}
-        >
-          <div style={{ width: 'min(980px, 100%)', display: 'grid', gridTemplateColumns: '1fr auto', gap: 10 }}>
-            <input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="메시지 입력…"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') send();
-              }}
-              style={{
-                height: 56,
-                borderRadius: 18,
-                border: '1px solid rgba(90,40,120,0.18)',
-                padding: '0 14px',
-                fontSize: 16,
-                fontWeight: 900,
-                outline: 'none',
-              }}
-            />
-            <button
-              onClick={send}
-              style={{
-                height: 56,
-                padding: '0 18px',
-                borderRadius: 18,
-                border: 0,
-                cursor: 'pointer',
-                fontSize: 16,
-                fontWeight: 950,
-                color: '#fff',
-                background: 'linear-gradient(90deg,#ff4fa1,#a855f7)',
-                boxShadow: '0 14px 28px rgba(168,85,247,0.22)',
-              }}
-            >
-              전송
-            </button>
-          </div>
-        </div>
+        <style jsx>{`
+          .wrap { max-width: 980px; margin: 0 auto; padding: 10px 10px 12px; }
+
+          .topBar{
+            display:flex; align-items:center; justify-content:space-between; gap:10px;
+            padding:12px; border-radius:22px; background: rgba(255,255,255,0.90);
+            border:1px solid rgba(90,40,120,0.12); box-shadow: 0 18px 46px rgba(40,10,70,0.12);
+          }
+          .topLeft{ display:flex; align-items:center; gap:10px; min-width:0; }
+          .backBtn{
+            width:44px; height:44px; border-radius:999px;
+            border:1px solid rgba(90,40,120,0.16); background: rgba(255,255,255,0.95);
+            font-weight:950; color:#2a1236; cursor:pointer; flex:0 0 auto;
+          }
+
+          .avatarRing{
+            width:56px; height:56px; border-radius:999px; overflow:hidden;
+            border:3px solid rgba(168,85,247,0.22); background:#fff; position:relative; flex:0 0 auto;
+          }
+          .avatarRing img{ width:100%; height:100%; object-fit:cover; display:block; }
+          .dot{
+            position:absolute; right:-2px; bottom:-2px; width:12px; height:12px; border-radius:999px;
+            border:2px solid #fff; box-shadow: 0 10px 18px rgba(0,0,0,0.12);
+          }
+          .dot.on{ background:#ff2d55; box-shadow: 0 0 0 4px rgba(255,45,85,0.12), 0 10px 18px rgba(0,0,0,0.12); }
+          .dot.off{ background:#c7c7d1; box-shadow: 0 0 0 4px rgba(120,120,150,0.08), 0 10px 18px rgba(0,0,0,0.12); }
+
+          .topText{ min-width:0; }
+          .roomName{
+            font-size:20px; font-weight:950; color:#2a1236; line-height:1.05;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:52vw;
+          }
+          .roomSub{ margin-top:4px; font-size:13px; font-weight:900; color: rgba(42,18,54,0.62); }
+
+          .listBtn{
+            padding:10px 14px; border-radius:999px;
+            border:1px solid rgba(124,58,237,0.22); background: rgba(124,58,237,0.10);
+            font-weight:950; color:#2a1236; cursor:pointer; flex:0 0 auto;
+          }
+
+          .chatBox{
+            margin-top:12px; border-radius:26px; background: rgba(255,255,255,0.86);
+            border:1px solid rgba(90,40,120,0.12); box-shadow: 0 18px 58px rgba(40,10,70,0.12);
+            overflow:hidden; min-height: calc(100vh - 180px); display:flex; flex-direction:column;
+          }
+          .centerHint{ padding:18px; font-size:14px; font-weight:900; color: rgba(42,18,54,0.70); }
+
+          .msgList{
+            flex:1; padding:14px; overflow:auto;
+            background:
+              radial-gradient(800px 420px at 50% 0%, rgba(255,45,85,0.08), transparent 60%),
+              radial-gradient(900px 520px at 60% 30%, rgba(124,58,237,0.08), transparent 62%);
+          }
+          .msgRow{ display:flex; margin:10px 0; }
+          .msgRow.mine{ justify-content:flex-end; }
+          .msgRow.theirs{ justify-content:flex-start; }
+
+          .bubble{
+            max-width:min(78%, 520px);
+            border-radius:18px; padding:10px 10px 8px;
+            border:1px solid rgba(90,40,120,0.12);
+            box-shadow: 0 12px 26px rgba(40,10,70,0.08);
+          }
+          .bMine{ background: linear-gradient(135deg, rgba(255,45,85,0.16), rgba(124,58,237,0.12)); }
+          .bTheirs{ background: rgba(255,255,255,0.92); }
+
+          .photo{
+            width:100%; max-height:360px; object-fit:cover; border-radius:14px; display:block;
+            border:1px solid rgba(90,40,120,0.12); margin-bottom:8px;
+          }
+          .txt{
+            font-size:14px; font-weight:900; color:#2a1236;
+            white-space:pre-wrap; word-break:break-word; line-height:1.35;
+          }
+          .meta{ margin-top:6px; font-size:11px; font-weight:900; color: rgba(42,18,54,0.50); text-align:right; }
+
+          /* ✅✅✅ 핵심 수정: 입력바 줄이고 버튼들도 덜 커지게 */
+          .inputBar{
+            padding:10px 10px 12px;
+            display:grid;
+            grid-template-columns: 44px 1fr 72px;
+            gap:10px;
+            align-items:end;
+            border-top:1px solid rgba(90,40,120,0.12);
+            background: rgba(255,255,255,0.92);
+          }
+
+          /* ✅ 플러스 버튼: 작고 테두리 얇게 */
+          .plusBtn{
+            width:44px;
+            height:44px;
+            border-radius:14px;
+            border:1px solid rgba(90,40,120,0.16);
+            background: rgba(255,255,255,0.95);
+            font-weight:950;
+            font-size:22px;
+            line-height:1;
+            cursor:pointer;
+            color:#2a1236;
+            display:grid;
+            place-items:center;
+            box-shadow: 0 10px 22px rgba(40,10,70,0.08);
+          }
+          .plusBtn.disabled{ opacity:0.6; cursor:default; }
+
+          /* ✅ textarea: 높이 줄이고 2줄까지 자동 */
+          .input{
+            min-height:44px;
+            max-height:88px; /* 2줄 정도 */
+            resize:none;
+            border-radius:14px;
+            border:1px solid rgba(90,40,120,0.16);
+            background: rgba(255,255,255,0.98);
+            outline:none;
+            padding:12px 12px;
+            font-size:14px;
+            font-weight:900;
+            color:#2a1236;
+            line-height:1.2;
+            overflow:auto;
+          }
+
+          /* ✅ 전송 버튼: 폭/높이 줄여서 글자 안 잘리게 */
+          .sendBtn{
+            height:44px;
+            border-radius:14px;
+            border:1px solid rgba(255,45,85,0.22);
+            background: linear-gradient(135deg, rgba(255,45,85,0.92), rgba(124,58,237,0.92));
+            color:#fff;
+            font-weight:950;
+            cursor:pointer;
+            font-size:14px;
+            letter-spacing:-0.2px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding:0 10px;
+            white-space:nowrap;
+          }
+          .sendBtn.disabled{ opacity:0.6; cursor:default; }
+
+          @media (max-width: 520px){
+            .roomName{ max-width:46vw; font-size:18px; }
+            .msgList{ padding:12px; }
+            .bubble{ max-width:86%; }
+
+            .inputBar{
+              grid-template-columns: 42px 1fr 70px;
+              gap:8px;
+              padding:10px 10px 12px;
+            }
+            .plusBtn{ width:42px; height:42px; font-size:22px; border-radius:14px; }
+            .input{ min-height:42px; }
+            .sendBtn{ height:42px; font-size:13px; }
+          }
+        `}</style>
       </div>
     </ClientShell>
   );

@@ -8,22 +8,15 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 /* =========================================================
    ✅ Home 올인원(달력/채팅 흐름 유지)
-   - ✅ 친구목록: 목업 제거 → "내 계정" 기준 DB에서 불러오기(다른계정 가입해도 안 섞임)
+   - ✅ 친구목록: ✅✅✅ 요청대로 "완전 삭제"(UI/상태/로딩/스타일/핸들러 전부 제거)
    - ✅ 관리자 버튼: profiles.role === 'admin' 이면 표시(메인에서 다시 보이게)
-   - ✅ 메뉴버튼: 모바일에서 3개 + 2개(넘어가지 않게)
+   - ✅ 메뉴버튼: ✅ 모바일에서 3열 2행(정렬 고정, 넘침 방지)
    - ✅ 채팅(/chats/open?to=UID) 유지
-   - ✅ 말풍선 안에 "최종 목표" 문구/표시 절대 없음(완전 제거)
-   - ✅ "월·주·일 목표" 카드에서도 "최종 목표" 문구/표시 완전 제거
-   - ✅ 달력 DOT/숫자 pill 밀림(오른쪽 튐) 방지 + 보기 좋은 정렬
-   - ✅ 친구 검색(닉네임) 확실히 동작(입력/필터/가드)
+   - ✅ 말풍선/목표 카드 어디에도 "최종 목표" 문구/표시 절대 없음(완전 제거)
+   - ✅ 달력 DOT/숫자 pill: ✅✅✅ "도트 테두리/링 제거" + "오른쪽 치우침" 방지(정렬 고정)
    - ✅ 이미지 경로: public 기준 (/gogo.png, /upzzu1.png) ✅ assets 금지
-   - ✅ [1번] 메인 달력 DOT "테두리/링/외곽선" 완전 제거(순수 색상 DOT)
-   - ✅ [2번] 상세영역(선택한 날짜 상세)에 "기분"이 눈에 띄게 표시(칩 + 큰 이모지)
    - ✅ (추가) 말풍선/글씨가 기기마다 커지지 않게 text-size-adjust 강제 고정
    - ✅ (추가) 별(✨) 제거해서 마스코트 눈 가림 방지
-   - Supabase ENV 필요:
-     NEXT_PUBLIC_SUPABASE_URL
-     NEXT_PUBLIC_SUPABASE_ANON_KEY
 ========================================================= */
 
 /** ✅ Supabase (올인원) */
@@ -155,43 +148,31 @@ async function fetchLiveWeatherSlots(lat: number, lon: number): Promise<WeatherS
   }
 }
 
-/** ✅ 관리자 버튼 (profiles.role === 'admin' 기준) */
-function AdminEntryButton({ label = '관리자', size = 'sm' }: { label?: string; size?: 'sm' | 'md' }) {
+/** ✅ 관리자 버튼 (pure component) */
+function AdminEntryButton({
+  label = '관리자',
+  size = 'sm',
+  show,
+}: {
+  label?: string;
+  size?: 'sm' | 'md';
+  show: boolean;
+}) {
   const router = useRouter();
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const sb = getSupabase();
-        const { data } = await sb.auth.getUser();
-        const uid = data?.user?.id;
-        if (!uid) return;
-
-        const { data: prof } = await sb.from('profiles').select('role').eq('user_id', uid).maybeSingle();
-        setIsAdmin(String((prof as any)?.role ?? '') === 'admin');
-      } catch {
-        setIsAdmin(false);
-      }
-    })();
-  }, []);
-
-  if (!isAdmin) return null;
+  if (!show) return null;
 
   return (
     <button
-      type="button"
-      className={'admin-btn ' + (size === 'md' ? 'admin-btn-md' : 'admin-btn-sm')}
       onClick={() => router.push('/admin')}
-      aria-label="관리자 진입"
-      title="관리자"
+      className={`admin-btn ${size === 'md' ? 'admin-btn-md' : 'admin-btn-sm'}`}
+      type="button"
     >
       {label}
     </button>
   );
 }
 
-/** ✅ 홈 메뉴(이모지 없음 / 1줄 고정 / UPLOG채팅 버튼 감성) */
+/** ✅ 홈 메뉴(이모지 없음 / 1줄 고정 / 모바일 3x2 정렬) */
 type HomeMenuItem = { label: string; href: string };
 function HomeMenuRow({ items }: { items: HomeMenuItem[] }) {
   return (
@@ -212,21 +193,6 @@ const EMO_QUOTES: string[] = [
   '거절은 숫자일 뿐, 대표님의 실력은 계속 쌓이고 있어요.',
   '오늘 1건의 계약도 내일 10건의 씨앗이 됩니다.',
 ];
-
-type Friend = { user_id: string; nickname: string; online: boolean; role?: string | null; avatar_url?: string | null };
-
-type FriendProfileData = {
-  user_id: string;
-  nickname: string | null;
-  name: string | null;
-  career: string | null;
-  company: string | null;
-  team: string | null;
-  grade: string | null;
-  avatar_url: string | null;
-  badges: { code: string; name: string }[];
-  counts: { likes: number; posts: number; feedback: number };
-};
 
 type ScheduleRow = {
   id: string;
@@ -274,8 +240,7 @@ function getScheduleCategoryMeta(category: string | null | undefined): ScheduleC
   if (c === 'consult' || c === '상담') return { label: '상담', badgeClass: 'schedule-cat-work', kind: 'work' };
   if (c === 'visit' || c === '방문') return { label: '방문', badgeClass: 'schedule-cat-work', kind: 'work' };
   if (c === 'happy' || c === '해피콜') return { label: '해피콜', badgeClass: 'schedule-cat-work', kind: 'work' };
-  if (c === 'gift' || c === 'present' || c === '선물' || c === '사은품')
-    return { label: '사은품', badgeClass: 'schedule-cat-work', kind: 'work' };
+  if (c === 'gift' || c === 'present' || c === '선물' || c === '사은품') return { label: '사은품', badgeClass: 'schedule-cat-work', kind: 'work' };
   if (c === 'delivery' || c === '택배' || c === '배송') return { label: '배송', badgeClass: 'schedule-cat-work', kind: 'work' };
   if (c === 'meeting' || c === '회의') return { label: '회의', badgeClass: 'schedule-cat-work', kind: 'work' };
   if (c === 'edu' || c === 'education' || c === '교육') return { label: '교육', badgeClass: 'schedule-cat-edu', kind: 'work' };
@@ -337,28 +302,13 @@ function pickContractLevel(statusRaw: any): ContractLevel | null {
   return null;
 }
 
-function lsGetJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    const v = JSON.parse(raw);
-    return (v ?? fallback) as T;
-  } catch {
-    return fallback;
-  }
-}
-function lsSetJson(key: string, value: any) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {}
-}
-
 const MENU_ITEMS: HomeMenuItem[] = [
   { label: '나의 U P 관리', href: '/my-up' },
   { label: '고객관리', href: '/customers' },
   { label: '반론 아카이브', href: '/rebuttal' },
   { label: '커뮤니티', href: '/community' },
   { label: '문자 도우미', href: '/sms-helper' },
+  { label: 'UPLOG채팅', href: '/chats' },
 ];
 
 export default function HomePage() {
@@ -379,6 +329,8 @@ export default function HomePage() {
   const [department, setDepartment] = useState<string | null>(null);
   const [team, setTeam] = useState<string | null>(null);
 
+  const [isAdmin, setIsAdmin] = useState(false);
+
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -394,6 +346,7 @@ export default function HomePage() {
   const [todayTasks, setTodayTasks] = useState<DailyTask[]>([]);
   const [contractDays, setContractDays] = useState<ContractDay[]>([]);
   const [moodByDate, setMoodByDate] = useState<Record<string, string>>({});
+
   const [weatherLabel, setWeatherLabel] = useState<string>('서울');
   const [weatherLat, setWeatherLat] = useState<number>(37.5665);
   const [weatherLon, setWeatherLon] = useState<number>(126.978);
@@ -420,30 +373,6 @@ export default function HomePage() {
   const [myBadges, setMyBadges] = useState<{ code: string; name: string }[]>([]);
 
   const [emotionIndex, setEmotionIndex] = useState(0);
-
-  // ✅✅✅ 친구목록: 목업 제거하고 DB에서 내 친구만 로드
-  const [friends, setFriends] = useState<Friend[]>([]);
-  const [friendsLoading, setFriendsLoading] = useState(false);
-
-  const [friendQuery, setFriendQuery] = useState('');
-
-  // ✅✅✅ 검색 확실히: 닉네임 / 공백/가드
-  const filteredFriends = useMemo(() => {
-    const q = (friendQuery ?? '').trim().toLowerCase();
-    if (!q) return friends;
-    return (friends ?? []).filter((f) => {
-      const nn = String(f?.nickname ?? '').toLowerCase();
-      return nn.includes(q);
-    });
-  }, [friendQuery, friends]);
-
-  const [cheerCounts, setCheerCounts] = useState<Record<string, number>>({});
-  const [cheerPopKey, setCheerPopKey] = useState<string | null>(null);
-
-  const [fpOpen, setFpOpen] = useState(false);
-  const [fpLoading, setFpLoading] = useState(false);
-  const [fpData, setFpData] = useState<FriendProfileData | null>(null);
-  const [fpError, setFpError] = useState<string | null>(null);
 
   const badgeIcon = (code: string) => {
     const c = (code || '').toLowerCase();
@@ -486,153 +415,11 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    const savedCounts = lsGetJson<Record<string, number>>('uplog_cheer_counts', {});
-    setCheerCounts(savedCounts);
-  }, []);
-
-  const persistCheerCounts = (next: Record<string, number>) => {
-    setCheerCounts(next);
-    lsSetJson('uplog_cheer_counts', next);
-  };
-
-  const getDailyKey = () => `uplog_cheer_daily_${todayStr}`;
-  const getDailyMap = () => lsGetJson<Record<string, number>>(getDailyKey(), {});
-  const setDailyMap = (m: Record<string, number>) => lsSetJson(getDailyKey(), m);
-
-  const canCheerToday = (toUid: string) => {
-    const m = getDailyMap();
-    return (m[toUid] ?? 0) < 3;
-  };
-  const incDaily = (toUid: string) => {
-    const m = getDailyMap();
-    m[toUid] = (m[toUid] ?? 0) + 1;
-    setDailyMap(m);
-  };
-
-  // ✅ 채팅 라우트 유지
-  const goDirectChat = (toUid: string) => {
-    if (!toUid) return;
-    router.push(`/chats/open?to=${encodeURIComponent(toUid)}`);
-  };
-
-  const handleCheerRemote = async (toUid: string) => {
-    if (!toUid) return;
-
-    const limitKey = `LIMIT_${toUid}`;
-    if (!canCheerToday(toUid)) {
-      setCheerPopKey(limitKey);
-      window.setTimeout(() => setCheerPopKey((cur) => (cur === limitKey ? null : cur)), 650);
-      return;
-    }
-
-    const prevCounts = cheerCounts ?? {};
-    const optimisticCounts = { ...prevCounts, [toUid]: (prevCounts[toUid] ?? 0) + 1 };
-    persistCheerCounts(optimisticCounts);
-    incDaily(toUid);
-
-    setCheerPopKey(toUid);
-    window.setTimeout(() => setCheerPopKey((cur) => (cur === toUid ? null : cur)), 520);
-
-    try {
-      const { data, error } = await sb.rpc('cheer_friend', { p_to: toUid });
-      if (error || !(data as any)?.ok) console.warn('cheer_friend rpc skipped/fail', error, data);
-    } catch (e) {
-      console.warn('cheer_friend rpc fatal (ignored)', e);
-    }
-  };
-
-  const openFriendProfile = async (targetUserId: string) => {
-    if (!targetUserId) return;
-
-    setFpOpen(true);
-    setFpLoading(true);
-    setFpError(null);
-    setFpData(null);
-
-    const timeout = window.setTimeout(() => {
-      setFpLoading(false);
-      setFpError('프로필 정보를 불러오지 못했어요.');
-    }, 6000);
-
-    try {
-      const { data: prof } = await sb
-        .from('profiles')
-        .select('user_id, nickname, name, career, company, team, grade, avatar_url')
-        .eq('user_id', targetUserId)
-        .maybeSingle();
-
-      const today = formatDate(new Date());
-      const { data: bData } = await sb
-        .from('monthly_badges')
-        .select('badge_code, badge_name, month_start, month_end')
-        .eq('winner_user_id', targetUserId)
-        .lte('month_start', today)
-        .gte('month_end', today);
-
-      const { count: postsCount } = await sb.from('community_posts').select('id', { count: 'exact', head: true }).eq('user_id', targetUserId);
-
-      let feedbackCount = 0;
-      try {
-        const { count } = await sb.from('objection_feedbacks').select('id', { count: 'exact', head: true }).eq('user_id', targetUserId);
-        feedbackCount = count ?? 0;
-      } catch {
-        feedbackCount = 0;
-      }
-
-      let likesCount = 0;
-      try {
-        const { count } = await sb.from('post_likes').select('id', { count: 'exact', head: true }).eq('user_id', targetUserId);
-        likesCount = count ?? 0;
-      } catch {
-        likesCount = 0;
-      }
-
-      const row: any =
-        prof ??
-        ({
-          user_id: targetUserId,
-          nickname: null,
-          name: null,
-          career: null,
-          company: null,
-          team: null,
-          grade: null,
-          avatar_url: null,
-        } as any);
-
-      const badges = (bData ?? []).map((x: any) => ({ code: String(x.badge_code ?? ''), name: String(x.badge_name ?? '') })).filter((x) => x.code || x.name);
-
-      setFpData({
-        user_id: row.user_id,
-        nickname: row.nickname ?? null,
-        name: row.name ?? null,
-        career: row.career ?? null,
-        company: row.company ?? null,
-        team: row.team ?? null,
-        grade: row.grade ?? null,
-        avatar_url: row.avatar_url ?? null,
-        badges,
-        counts: { likes: likesCount ?? 0, posts: postsCount ?? 0, feedback: feedbackCount ?? 0 },
-      });
-
-      setFpLoading(false);
-    } catch (e) {
-      console.warn('openFriendProfile fatal', e);
-      setFpLoading(false);
-      setFpError('프로필 정보를 불러오지 못했어요.');
-    } finally {
-      window.clearTimeout(timeout);
-    }
-  };
-
-  const newRebuttalCount = useMemo(() => recentRebuttals.length, [recentRebuttals]);
-  const newScheduleCountToday = useMemo(() => schedules.filter((s) => s.schedule_date === todayStr).length, [schedules, todayStr]);
-
-  useEffect(() => {
     if (EMO_QUOTES.length === 0) return;
     const timer = setInterval(() => setEmotionIndex((prev) => (prev + 1) % EMO_QUOTES.length), 5000);
     return () => clearInterval(timer);
   }, []);
+
   const loadDashboardData = async (uid: string, baseMonth: Date, lat: number, lon: number) => {
     const monthStart = new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1, 0, 0, 0);
     const monthEnd = new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 0, 23, 59, 59);
@@ -730,7 +517,12 @@ export default function HomePage() {
 
     setMoodByDate(moodMap);
 
-    const { data: rebutRows } = await sb.from('rebuttals').select('id, category, content').eq('user_id', uid).order('id', { ascending: false }).limit(3);
+    const { data: rebutRows } = await sb
+      .from('rebuttals')
+      .select('id, category, content')
+      .eq('user_id', uid)
+      .order('id', { ascending: false })
+      .limit(3);
     setRecentRebuttals((rebutRows ?? []) as RebuttalSummary[]);
 
     const today = formatDate(new Date());
@@ -763,83 +555,6 @@ export default function HomePage() {
     }
   };
 
-  /** ✅✅✅ 내 친구 로드: friends 테이블이 있으면 사용(없거나 RLS로 막히면 빈 목록) */
-  const loadMyFriends = async (uid: string) => {
-    setFriendsLoading(true);
-    try {
-      const { data: relRows, error: relErr } = await sb
-        .from('friends')
-        .select('user_id, friend_user_id, status, created_at')
-        .or(`user_id.eq.${uid},friend_user_id.eq.${uid}`)
-        .limit(200);
-
-      if (relErr) {
-        console.warn('[HOME] friends table read blocked/missing:', relErr);
-        setFriends([]);
-        setFriendsLoading(false);
-        return;
-      }
-
-      const rel = (relRows ?? []) as any[];
-
-      const accepted = rel.filter((r) => {
-        const s = String(r?.status ?? '').toLowerCase().trim();
-        if (!s) return true;
-        return s === 'accepted' || s === 'friend' || s === 'ok';
-      });
-
-      const ids = Array.from(
-        new Set(
-          accepted
-            .map((r) => {
-              const a = String(r?.user_id ?? '');
-              const b = String(r?.friend_user_id ?? '');
-              if (!a || !b) return '';
-              return a === uid ? b : a;
-            })
-            .filter(Boolean),
-        ),
-      );
-
-      if (ids.length === 0) {
-        setFriends([]);
-        setFriendsLoading(false);
-        return;
-      }
-
-      const { data: profs, error: profErr } = await sb.from('profiles').select('user_id, nickname, name, role, avatar_url').in('user_id', ids);
-
-      if (profErr) {
-        console.warn('[HOME] profiles for friends blocked:', profErr);
-        setFriends(ids.map((id) => ({ user_id: id, nickname: '친구', online: false })));
-        setFriendsLoading(false);
-        return;
-      }
-
-      const map = new Map<string, any>();
-      (profs ?? []).forEach((p: any) => map.set(String(p.user_id), p));
-
-      const list: Friend[] = ids.map((id) => {
-        const p = map.get(id);
-        const nick = String(p?.nickname ?? '').trim() || String(p?.name ?? '').trim() || '친구';
-        return {
-          user_id: id,
-          nickname: nick,
-          online: false,
-          role: p?.role ? String(p.role) : null,
-          avatar_url: p?.avatar_url ? String(p.avatar_url) : null,
-        };
-      });
-
-      setFriends(list);
-      setFriendsLoading(false);
-    } catch (e) {
-      console.warn('[HOME] loadMyFriends fatal', e);
-      setFriends([]);
-      setFriendsLoading(false);
-    }
-  };
-
   useEffect(() => {
     const init = async () => {
       const { data, error: userError } = await sb.auth.getUser();
@@ -855,7 +570,7 @@ export default function HomePage() {
 
       const { data: profile } = await sb
         .from('profiles')
-        .select('name, nickname, industry, grade, career, company, department, team, avatar_url, address_text, lat, lon')
+        .select('name, nickname, industry, grade, career, company, department, team, avatar_url, address_text, lat, lon, role')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -865,6 +580,9 @@ export default function HomePage() {
 
       if (profile) {
         const p: any = profile;
+
+        const role = String(p?.role ?? '').trim().toLowerCase();
+        setIsAdmin(role === 'admin');
 
         if (p.nickname) setNickname(p.nickname);
         else if (p.name) setNickname(p.name);
@@ -892,7 +610,6 @@ export default function HomePage() {
 
       await loadDashboardData(user.id, currentMonth, lat, lon);
       await loadMyMonthlyBadges(user.id);
-      await loadMyFriends(user.id);
 
       setLoading(false);
     };
@@ -944,7 +661,7 @@ export default function HomePage() {
     return { total, newCount: row.newCount, c1: row.c1, c2: row.c2, c3: row.c3 };
   }, [contractDays, selectedDate]);
 
-  // ✅✅✅ [2번] 상세영역: 선택한 날짜 기분 표시(칩 + 큰 이모지)
+  // ✅ 상세영역: 선택한 날짜 기분 표시(칩 + 큰 이모지)
   const selectedMoodEmoji = useMemo(() => {
     const raw = moodByDate?.[selectedDate];
     return raw ? getMoodEmoji(raw) : '';
@@ -987,6 +704,9 @@ export default function HomePage() {
     return { work, attend, etc, newContracts };
   }, [schedules, contractDays]);
 
+  const newRebuttalCount = useMemo(() => recentRebuttals.length, [recentRebuttals]);
+  const newScheduleCountToday = useMemo(() => schedules.filter((s) => s.schedule_date === todayStr).length, [schedules, todayStr]);
+
   if (loading) {
     return (
       <div className="home-root">
@@ -1022,7 +742,7 @@ export default function HomePage() {
                   <div className="home-logo-sub">오늘도 나를 UP시키다</div>
                 </div>
 
-                <AdminEntryButton label="관리자" size="sm" />
+                <AdminEntryButton label="관리자" size="sm" show={isAdmin} />
               </div>
 
               <div className="home-date">
@@ -1092,9 +812,6 @@ export default function HomePage() {
 
                   <div className="profile-stats">
                     <span className="profile-stat-pill">
-                      친구 <strong>{friends.length}명</strong>
-                    </span>
-                    <span className="profile-stat-pill">
                       새 피드백 <strong>{newRebuttalCount}건</strong>
                     </span>
                     <span className="profile-stat-pill">
@@ -1131,7 +848,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* ✅✅✅ 말풍선/마스코트: "최종 목표" 절대 표시 안 함 */}
+          {/* ✅ 말풍선/마스코트: "최종 목표" 절대 표시 안 함 */}
           <div className="home-header-bottom">
             <div className="coach-row">
               <div className="coach-bubble-panel" aria-live="polite">
@@ -1190,6 +907,7 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
         <main className="home-main">
           <section className="home-top-summary">
             <div className="summary-card goals-card">
@@ -1390,15 +1108,13 @@ export default function HomePage() {
                         {' · '}실적 {selectedDateContract.total}건
                       </div>
 
-                      {/* ✅✅✅ [2번] 기분 표시: 눈에 띄게(칩 + 큰 이모지) */}
                       <div className="mood-row">
-  <span className={'mood-chip ' + (selectedMoodEmoji ? 'is-active' : '')}>
-    <span className="mood-label">기분</span>
-    <span className="mood-emoji">{selectedMoodEmoji || '미선택'}</span>
-  </span>
-  <span className="mood-hint">기분 입력은 ‘나의 U P 관리’에서 해요</span>
-</div>
-
+                        <span className={'mood-chip ' + (selectedMoodEmoji ? 'is-active' : '')}>
+                          <span className="mood-label">기분</span>
+                          <span className="mood-emoji">{selectedMoodEmoji || '미선택'}</span>
+                        </span>
+                        <span className="mood-hint">기분 입력은 ‘나의 U P 관리’에서 해요</span>
+                      </div>
                     </div>
                   </div>
 
@@ -1428,169 +1144,26 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-
-            {/* ✅ 친구 영역 */}
-            <div className="friends-card">
-              <div className="friends-head">
-                <div className="friends-title">
-                  친구 목록 <span className="friends-hint">이름을 누르면 바로 1:1 채팅으로 이동해요</span>
-                </div>
-
-                <div className="friends-right">
-                  <button type="button" className="uplog-chat-btn" onClick={() => router.push('/chats')}>
-                    UPLOG채팅
-                  </button>
-
-                  <div className="friends-search-wrap">
-                    <input
-                      value={friendQuery}
-                      onChange={(e) => setFriendQuery(e.target.value)}
-                      className="friends-search"
-                      placeholder="닉네임 검색"
-                      aria-label="친구 검색"
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="friends-list">
-                {friendsLoading ? (
-                  <div className="friends-empty">친구 목록 불러오는 중...</div>
-                ) : filteredFriends.length === 0 ? (
-                  <div className="friends-empty">아직 친구가 없거나, 검색 결과가 없어요.</div>
-                ) : (
-                  filteredFriends.map((f) => {
-                    const cheerN = cheerCounts?.[f.user_id] ?? 0;
-                    const pop = cheerPopKey === f.user_id;
-                    const limitPop = cheerPopKey === `LIMIT_${f.user_id}`;
-
-                    return (
-                      <div key={f.user_id} className="friend-row">
-                        <button type="button" className="friend-name-btn" onClick={() => goDirectChat(f.user_id)}>
-                          <span className={'friend-dot ' + (f.online ? 'on' : 'off')} />
-                          <span className="friend-nick">
-                            {f.nickname} {f.role ? <span className="friend-role">{f.role}</span> : null}
-                          </span>
-                          <span className="friend-sub">이름 클릭 = 1:1 채팅</span>
-                        </button>
-
-                        <div className="friend-actions">
-                          <button type="button" className="fa-pill fa-profile" onClick={() => openFriendProfile(f.user_id)} title="프로필">
-                            🙂 <span className="fa-txt">프로필</span>
-                          </button>
-
-                          <button type="button" className="fa-pill fa-chat" onClick={() => goDirectChat(f.user_id)} title="채팅">
-                            💬 <span className="fa-txt">채팅</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            className={'fa-pill fa-cheer ' + (limitPop ? 'fa-limit' : '')}
-                            onClick={() => handleCheerRemote(f.user_id)}
-                            title="응원"
-                          >
-                            <span className="fa-heart">❤️</span>
-                            <span className="fa-txt">응원</span>
-                            <span className="fa-cheer-n">{cheerN}</span>
-                            {pop && <span className="fa-pop">팡!</span>}
-                            {limitPop && <span className="fa-pop fa-pop-limit">오늘 3회</span>}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {fpOpen && (
-                <div className="fp-backdrop" onClick={() => setFpOpen(false)}>
-                  <div className="fp-panel" onClick={(e) => e.stopPropagation()}>
-                    <button className="fp-close" type="button" onClick={() => setFpOpen(false)}>
-                      ✕
-                    </button>
-
-                    <div className="fp-title">프로필</div>
-
-                    {fpLoading && <div className="fp-loading">불러오는 중...</div>}
-                    {!fpLoading && fpError && <div className="fp-error">{fpError}</div>}
-
-                    {!fpLoading && !fpError && fpData && (
-                      <div className="fp-body">
-                        <div className="fp-top">
-                          <div className="fp-avatar">
-                            {fpData.avatar_url ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={`${getAvatarSrc(fpData.avatar_url)}?v=${Date.now()}`} alt="프로필" />
-                            ) : (
-                              (fpData.nickname || fpData.name || 'U')[0]
-                            )}
-                          </div>
-
-                          <div className="fp-main">
-                            <div className="fp-name">{fpData.nickname || fpData.name || '익명 영업인'}</div>
-                            <div className="fp-sub">{(fpData.grade || '직함 미설정') + ' · ' + (getCareerLabel(fpData.career) || '경력 미설정')}</div>
-                            <div className="fp-sub">{[fpData.company, fpData.team].filter(Boolean).join(' / ') || '회사/팀 미설정'}</div>
-                          </div>
-                        </div>
-
-                        <div className="fp-badges">
-                          <div className="fp-sec-title">배지</div>
-                          {fpData.badges.length === 0 ? (
-                            <div className="fp-muted">이번 달 배지가 없어요.</div>
-                          ) : (
-                            <div className="fp-badge-row">
-                              {fpData.badges.slice(0, 8).map((b, i) => (
-                                <span key={`${b.code}-${i}`} className="fp-badge" title={b.name}>
-                                  {badgeIcon(b.code)}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="fp-counts">
-                          <div className="fp-count-pill">
-                            좋아요 <b>{fpData.counts.likes}</b>
-                          </div>
-                          <div className="fp-count-pill">
-                            게시글 <b>{fpData.counts.posts}</b>
-                          </div>
-                          <div className="fp-count-pill">
-                            피드백 <b>{fpData.counts.feedback}</b>
-                          </div>
-                        </div>
-
-                        <div className="fp-actions">
-                          <button type="button" className="fp-btn ghost" onClick={() => goDirectChat(fpData.user_id)}>
-                            💬 채팅하기
-                          </button>
-                          <button type="button" className="fp-btn pink" onClick={() => handleCheerRemote(fpData.user_id)}>
-                            ❤️ 응원하기
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
           </section>
+
+          {/* ✅✅✅ 친구 목록 섹션: 요청대로 "완전 삭제" */}
+
+          {/* ✅ 문의하기(실시간 채팅) 플로팅: 블루 원형 */}
+          <button type="button" onClick={() => router.push('/support')} className="floating-support-btn" aria-label="문의하기">
+            <span>문의하기</span>
+            <span> 채팅</span>
+          </button>
         </main>
-
-        {/* ✅ 문의하기(실시간 채팅) 플로팅: 블루 원형 테두리 버전 */}
-        <button type="button" onClick={() => router.push('/support')} className="floating-support-btn" aria-label="문의하기">
-          <span>문의하기</span>
-          <span> 채팅</span>
-        </button>
-
-        <style jsx>{styles}</style>
       </div>
+
+      <style jsx>{styles}</style>
     </div>
   );
 }
 
+/* ===========================
+   ✅ styles (문자열)
+=========================== */
 const styles = `
 :root{
   --uplog-accent-pink:#f472b6;
@@ -1612,9 +1185,14 @@ html,body{margin:0;padding:0;}
 a{color:inherit;text-decoration:none;}
 *{box-sizing:border-box;}
 
-/* ✅ iOS/모바일 자동 글자 확대 방지(말풍선/메뉴 겹침 원인) */
+/* ✅✅✅ 전역 텍스트 인플레이션 방지 */
 .coach-bubble-panel,
 .coach-bubble-panel *{
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%;
+}
+.right-card,
+.right-card *{
   -webkit-text-size-adjust:100%;
   text-size-adjust:100%;
 }
@@ -1831,21 +1409,21 @@ a{color:inherit;text-decoration:none;}
 @keyframes floaty{0%,100%{transform:translateY(8px);}50%{transform:translateY(-2px);}}
 .coach-mascot-img{width:var(--uplog-mascot-size);height:var(--uplog-mascot-size);object-fit:contain;filter:drop-shadow(0 18px 22px rgba(0,0,0,0.22));}
 
-/* ✅ 홈 메뉴 (모바일 3개 + 2개) */
+/* ✅✅✅ 홈 메뉴: 데스크탑 6개 균등 / 모바일 3열 2행 정렬 고정 */
 .home-menu-row{
   margin:18px 0 16px;
   display:grid;
-  grid-template-columns:repeat(5, minmax(0, 1fr));
+  grid-template-columns:repeat(6, minmax(0, 1fr));
   gap:12px;
   width:100%;
   align-items:stretch;
 }
 @media (max-width:760px){
   .home-root{padding:16px;}
-  .home-menu-row{grid-template-columns:repeat(6, minmax(0, 1fr));gap:10px;}
-  .home-menu-row .hm-item{grid-column:span 2;}
-  .home-menu-row .hm-item:nth-child(4){grid-column:2 / span 2;}
-  .home-menu-row .hm-item:nth-child(5){grid-column:4 / span 2;}
+  .home-menu-row{
+    grid-template-columns:repeat(3, minmax(0, 1fr));
+    gap:10px;
+  }
 }
 .hm-item{
   width:100%;
@@ -1931,465 +1509,166 @@ a{color:inherit;text-decoration:none;}
 .nav-btn{height:34px;width:34px;border-radius:999px;border:1px solid #eadcff;background:#fff;color:#5b21b6;font-weight:950;cursor:pointer;box-shadow:0 10px 16px rgba(0,0,0,0.06);}
 .month-label{font-weight:950;color:#2a1236;}
 
-.calendar-legend{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0 12px;}
-.legend-item{display:flex;align-items:center;gap:8px;background:#f7f2ff;border:1px solid #eadcff;border-radius:999px;padding:6px 10px;font-size:12px;color:#3a1f62;}
+.calendar-legend{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0 14px;}
+.legend-item{display:flex;align-items:center;gap:8px;font-size:13px;color:#4b2d7a;}
+.legend-hint{opacity:.85}
 .legend-dot{
-  width:10px;height:10px;border-radius:999px;display:inline-block;
-  border:none !important; outline:none !important; box-shadow:none !important; /* ✅ 링/외곽선 완전 제거 */
+  width:10px;height:10px;border-radius:999px;
+  display:inline-block;
+  flex:0 0 10px;
+  /* ✅ 테두리/링 완전 제거 */
+  border:none; outline:none; box-shadow:none;
 }
 .legend-n{color:#ec4899;}
-.legend-hint{background:transparent;border:none;padding:0;color:#7a69c4;}
 
-.dot-attend{background:#f59e0b;}
+.dot-attend{background:#fbbf24;}
 .dot-work{background:#22c55e;}
-.dot-etc{background:#a78bfa;}
+.dot-etc{background:#60a5fa;}
 .dot-new{background:#ef4444;}
 
-.calendar-layout{display:grid;grid-template-columns:minmax(0, 1.25fr) minmax(0, .9fr);gap:14px;align-items:start;}
-@media (max-width:980px){.calendar-layout{grid-template-columns:1fr;}}
+.calendar-layout{display:grid;grid-template-columns:1.2fr .8fr;gap:12px;align-items:start;}
+@media (max-width:920px){.calendar-layout{grid-template-columns:1fr;}}
 .calendar-board{
   display:grid;
   grid-template-columns:repeat(7, minmax(0, 1fr));
   gap:8px;
 }
-.calendar-weekday-cell{
-  text-align:center;
-  font-weight:950;
-  color:#5b21b6;
-  font-size:13px;
-  padding:8px 0;
-}
+.calendar-weekday-cell{font-size:12px;font-weight:950;color:#6b4cc8;text-align:center;opacity:.9;}
+
 .calendar-cell{
   border:none;
-  width:100%;
+  background:#faf7ff;
   border-radius:16px;
-  background:#fbf9ff;
-  box-shadow:0 10px 18px rgba(0,0,0,0.06);
-  cursor:pointer;
   padding:10px 10px 8px;
-  min-height:78px;
-  display:flex;
-  flex-direction:column;
-  justify-content:space-between;
-  transition:transform .15s ease, box-shadow .15s ease, filter .15s ease;
+  cursor:pointer;
+  box-shadow:0 10px 16px rgba(0,0,0,0.05);
+  transition:transform .15s ease, filter .15s ease;
+  min-height:72px;
 }
-.calendar-cell:hover{transform:translateY(-2px);filter:brightness(1.02);box-shadow:0 14px 26px rgba(0,0,0,0.09);}
-.calendar-cell-out{opacity:0.42;}
-.calendar-cell-today{outline:2px solid rgba(236,72,153,0.70);}
-.calendar-cell-selected{outline:2px solid rgba(91,33,182,0.60);background:#f5f1ff;}
-.cell-top{display:flex;justify-content:space-between;align-items:center;}
-.cell-date{font-weight:950;color:#2a1236;font-size:14px;}
+.calendar-cell:hover{transform:translateY(-2px);filter:brightness(1.02);}
+.calendar-cell-out{opacity:.45;}
+.calendar-cell-today{outline:2px solid rgba(236,72,153,0.30);}
+.calendar-cell-selected{outline:2px solid rgba(124,58,237,0.40);background:#f3e8ff;}
 
-/* ✅✅✅ DOT/숫자 pill "오른쪽 튐/밀림" 방지 */
+.cell-top{display:flex;align-items:center;justify-content:space-between;}
+.cell-date{font-size:14px;font-weight:950;color:#2a1236;}
+
 .cell-bottom{
+  margin-top:8px;
+
   display:flex;
-  gap:6px;
   flex-wrap:wrap;
+  gap:6px;
+
+  width:100%;                 /* ✅ 셀 폭 기준 */
+  justify-content:center;     /* ✅ 중앙 정렬 */
   align-items:center;
-  justify-content:flex-start;
-  padding-top:6px;
+
+  padding:0 2px;              /* ✅ 아주 살짝만 여백 */
+  box-sizing:border-box;
 }
+
+/* ✅✅✅ pill: 더 작게 + 가운데 정렬 + 테두리 제거 */
 .cell-pill{
   display:inline-flex;
   align-items:center;
+  justify-content:center;
+
   gap:5px;
-  padding:4px 7px;
+  padding:3px 7px;
+
   border-radius:999px;
-  background:rgba(243,232,255,0.85);
-  border:1px solid rgba(226,215,255,0.95);
+  background:rgba(255,255,255,0.92);
+
+  border:none !important;
+  box-shadow:0 6px 10px rgba(0,0,0,0.04);
+
   font-size:12px;
-  font-weight:950;
+  font-weight:900;
   color:#2a1236;
   line-height:1;
-  white-space:nowrap;
+
+  max-width:100%;
+  margin:0;                   /* ✅ 혹시 margin-left:auto 같은 거 있으면 무력화 */
 }
+
+/* ✅✅✅ dot: 더 작게 + 링/테두리 완전 제거 */
 .cell-dot{
-  width:9px;height:9px;border-radius:999px;
-  border:none !important; outline:none !important; box-shadow:none !important; /* ✅ 링/외곽선 완전 제거 */
+  width:9px;
+  height:9px;
+  border-radius:999px;
   display:inline-block;
   flex:0 0 9px;
+
+  border:none !important;
+  outline:none !important;
+  box-shadow:none !important;
+
+  transform:translateY(0.5px);    /* ✅ 숫자와 수평 맞춤(미세) */
 }
+
+/* ✅✅✅ 숫자: 폭 고정해서 오른쪽 치우침/흔들림 제거 */
 .cell-num{
-  min-width:12px;
-  text-align:center;
-  font-variant-numeric:tabular-nums;
-}
-
-.calendar-footer{
-  margin-top:10px;
-  padding:10px 12px;
-  border-radius:14px;
-  background:#faf7ff;
-  border:1px solid #eadcff;
-  color:#3a1f62;
-  font-weight:900;
-}
-
-/* Right side */
-.right-card{
-  border-radius:20px;
-  background:#fbf9ff;
-  border:1px solid #eadcff;
-  box-shadow:0 12px 22px rgba(0,0,0,0.07);
-  padding:14px;
-}
-.right-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;}
-.empty-text{
-  border-radius:16px;
-  padding:14px 14px;
-  background:#ffffff;
-  border:1px dashed rgba(165,148,230,0.9);
-  color:#7a69c4;
-  font-weight:800;
-  line-height:1.5;
-}
-
-/* ✅✅✅ [2번] 기분 표시: 칩 + 큰 이모지 (중복 선언 금지, 1세트만) */
-.mood-row{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  margin-top:10px;
-  flex-wrap:wrap;
-}
-
-.mood-chip{
   display:inline-flex;
   align-items:center;
-  gap:8px;
-  padding:6px 10px;
-  border-radius:999px;
-  background:linear-gradient(135deg, rgba(244,114,182,0.18), rgba(168,85,247,0.18));
-  border:1px solid rgba(217,204,255,0.85);
-  color:#2a1236;
-  font-weight:950;
-  font-size:12px;
-  line-height:1.2;
-}
-
-.mood-label{
-  font-size:12px;
-  font-weight:950;
-  color:#5b21b6;
-}
-
-/* 기본(미선택) */
-.mood-emoji{
-  font-size:16px;
-  font-weight:900;
-  opacity:0.55;
+  justify-content:center;
+  width:14px;                     /* ✅ 1~2자리도 정렬 고정 */
+  text-align:center;
   line-height:1;
+  transform:translateY(0.5px);    /* ✅ dot과 수평 맞춤(미세) */
+}
+.day-cell{
+  text-align:center;
 }
 
-/* 선택된 경우만 크게 */
-.mood-chip.is-active .mood-emoji{
-  font-size:24px;
-  opacity:1;
-  filter:drop-shadow(0 6px 10px rgba(0,0,0,0.15));
-}
-
-/* 선택된 칩 배경도 살짝 강조 */
-.mood-chip.is-active{
-  border-color:rgba(168,85,247,0.95);
-  background:linear-gradient(135deg, rgba(244,114,182,0.28), rgba(168,85,247,0.28));
-}
-
-.mood-hint{
-  font-size:12px;
-  color:#7a69c4;
-  font-weight:850;
-}
-
-
-/* Schedule list */
-.schedule-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;}
-.schedule-item{
-  display:grid;
-  grid-template-columns:70px minmax(0,1fr);
-  gap:10px;
-  align-items:center;
-  padding:10px 10px;
-  border-radius:16px;
-  background:#ffffff;
-  border:1px solid rgba(234,220,255,0.95);
-  box-shadow:0 10px 16px rgba(0,0,0,0.05);
-}
-.schedule-time{font-weight:950;color:#5b21b6;font-variant-numeric:tabular-nums;}
-.schedule-content{min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.schedule-title{font-weight:900;color:#2a1236;min-width:0;word-break:keep-all;}
-.schedule-category{
-  display:inline-flex;align-items:center;justify-content:center;
-  padding:4px 9px;border-radius:999px;
-  font-size:12px;font-weight:950;
-  border:1px solid rgba(226,215,255,0.95);
-  background:#f7f2ff;
-  color:#3a1f62;
-  flex:0 0 auto;
-}
-.schedule-cat-work{background:rgba(34,197,94,0.12);border-color:rgba(34,197,94,0.30);color:#166534;}
-.schedule-cat-attend{background:rgba(245,158,11,0.14);border-color:rgba(245,158,11,0.34);color:#92400e;}
-.schedule-cat-etc{background:rgba(167,139,250,0.16);border-color:rgba(167,139,250,0.36);color:#4c1d95;}
-.schedule-cat-edu{background:rgba(59,130,246,0.12);border-color:rgba(59,130,246,0.30);color:#1e40af;}
-.schedule-cat-event{background:rgba(236,72,153,0.12);border-color:rgba(236,72,153,0.30);color:#9d174d;}
-
-/* Friends */
-.friends-card{
-  margin-top:14px;
-  border-radius:22px;
-  background:rgba(255,255,255,0.96);
+/* Right card */
+.right-card{
+  border-radius:18px;
+  background:#fff;
   border:1px solid #e5ddff;
   box-shadow:var(--soft-shadow);
-  padding:14px 14px 12px;
+  padding:14px;
 }
-.friends-head{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-  flex-wrap:wrap;
-  margin-bottom:10px;
-}
-.friends-title{
-  font-size:16px;
-  font-weight:950;
-  color:#2a1236;
-  display:flex;
-  align-items:center;
-  gap:10px;
-  flex-wrap:wrap;
-}
-.friends-hint{font-size:12px;color:#7a69c4;font-weight:850;}
-.friends-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.empty-text{margin-top:10px;border-radius:14px;padding:12px;background:#faf7ff;border:1px dashed rgba(165,148,230,0.9);color:#7461be;font-weight:900;line-height:1.5;}
 
-.uplog-chat-btn{
-  height:38px;
-  padding:0 14px;
+.mood-row{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;}
+.mood-chip{
+  display:inline-flex;align-items:center;gap:10px;
+  padding:10px 12px;
   border-radius:999px;
-  border:1px solid rgba(168,85,247,0.45);
-  background:
-    radial-gradient(80px 40px at 30% 30%, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0) 60%),
-    linear-gradient(135deg, rgba(244,114,182,0.90), rgba(168,85,247,0.92));
-  color:#fff;
-  font-weight:950;
-  cursor:pointer;
-  box-shadow:0 14px 28px rgba(168,85,247,0.35), 0 0 14px rgba(236,72,153,0.35);
-  transition:transform .18s ease, filter .18s ease, box-shadow .18s ease;
-  white-space:nowrap;
-}
-.uplog-chat-btn:hover{
-  transform:translateY(-2px);
-  filter:brightness(1.06);
-  box-shadow:0 18px 40px rgba(168,85,247,0.45), 0 0 20px rgba(236,72,153,0.55);
-}
-
-.friends-search-wrap{display:flex;align-items:center;}
-.friends-search{
-  height:38px;
-  width:180px;
-  max-width:70vw;
-  border-radius:999px;
-  border:1px solid rgba(226,215,255,0.95);
-  background:#fbf9ff;
-  padding:0 12px;
-  font-size:13px;
-  font-weight:850;
-  outline:none;
-  color:#2a1236;
-  box-shadow:0 10px 16px rgba(0,0,0,0.05);
-}
-.friends-search:focus{border-color:rgba(236,72,153,0.55);box-shadow:0 0 0 3px rgba(236,72,153,0.14), 0 10px 16px rgba(0,0,0,0.05);}
-
-.friends-list{display:flex;flex-direction:column;gap:10px;}
-.friends-empty{
-  border-radius:16px;
-  padding:12px 12px;
-  background:#faf7ff;
-  border:1px dashed rgba(165,148,230,0.9);
-  color:#7a69c4;
-  font-weight:850;
-}
-
-.friend-row{
-  border-radius:18px;
-  background:#fbf9ff;
-  border:1px solid rgba(234,220,255,0.95);
-  box-shadow:0 12px 22px rgba(0,0,0,0.06);
-  padding:10px 10px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-}
-@media (max-width:720px){
-  .friend-row{flex-direction:column;align-items:stretch;}
-}
-
-.friend-name-btn{
-  border:none;
-  background:transparent;
-  text-align:left;
-  cursor:pointer;
-  display:flex;
-  align-items:center;
-  gap:10px;
-  min-width:0;
-  flex:1;
-}
-.friend-dot{width:10px;height:10px;border-radius:999px;display:inline-block;box-shadow:none;}
-.friend-dot.on{background:#22c55e;}
-.friend-dot.off{background:#cbd5e1;}
-.friend-nick{
-  font-weight:950;
-  color:#2a1236;
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-}
-.friend-role{
-  margin-left:6px;
-  font-size:11px;
-  font-weight:950;
-  padding:3px 8px;
-  border-radius:999px;
-  border:1px solid rgba(226,215,255,0.95);
   background:#f7f2ff;
-  color:#5b21b6;
-}
-.friend-sub{font-size:12px;color:#7a69c4;font-weight:850;white-space:nowrap;}
-
-.friend-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
-.fa-pill{
-  height:34px;
-  padding:0 12px;
-  border-radius:999px;
-  border:1px solid rgba(226,215,255,0.95);
-  background:#ffffff;
+  border:1px solid #eadcff;
+  font-weight:950;
   color:#2a1236;
-  font-weight:950;
-  font-size:12px;
-  cursor:pointer;
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  box-shadow:0 10px 16px rgba(0,0,0,0.05);
-  transition:transform .16s ease, filter .16s ease, box-shadow .16s ease;
-  white-space:nowrap;
 }
-.fa-pill:hover{transform:translateY(-2px);filter:brightness(1.02);box-shadow:0 14px 22px rgba(0,0,0,0.07);}
-.fa-profile{background:linear-gradient(135deg, rgba(59,130,246,0.10), rgba(168,85,247,0.10));}
-.fa-chat{background:linear-gradient(135deg, rgba(34,197,94,0.10), rgba(59,130,246,0.10));}
-.fa-cheer{
-  min-width:124px; /* ✅ 폭 고정(튐 방지) */
-  justify-content:center;
-  background:linear-gradient(135deg, rgba(244,114,182,0.12), rgba(168,85,247,0.12));
-  position:relative;
-  overflow:hidden;
-}
-.fa-cheer-n{
-  margin-left:2px;
-  font-variant-numeric:tabular-nums;
-  color:#ec4899;
-  font-size:13px;
-}
-.fa-heart{filter:drop-shadow(0 8px 12px rgba(236,72,153,0.20));}
-.fa-pop{
-  position:absolute;
-  top:-10px;
-  right:10px;
-  font-size:12px;
-  font-weight:950;
-  color:#ff3fa3;
-  background:#fff;
-  border:1px solid rgba(236,72,153,0.35);
-  padding:4px 8px;
-  border-radius:999px;
-  box-shadow:0 12px 18px rgba(0,0,0,0.10);
-  animation: popUp .55s ease-out forwards;
-  pointer-events:none;
-}
-.fa-pop-limit{color:#7c3aed;border-color:rgba(124,58,237,0.35);}
-@keyframes popUp{0%{transform:translateY(10px);opacity:0;}40%{opacity:1;}100%{transform:translateY(0);opacity:0;}}
+.mood-chip.is-active{background:linear-gradient(135deg, rgba(244,114,182,0.22), rgba(168,85,247,0.18));}
+.mood-label{font-size:12px;opacity:.9;}
+.mood-emoji{font-size:22px;line-height:1;}
+.mood-hint{font-size:12px;color:#7a69c4;font-weight:900;}
 
-.fa-limit{border-color:rgba(124,58,237,0.55);box-shadow:0 0 0 3px rgba(124,58,237,0.12), 0 10px 16px rgba(0,0,0,0.05);}
+.schedule-list{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:8px;}
+.schedule-item{display:flex;align-items:center;gap:10px;border-radius:14px;padding:10px;background:#faf7ff;border:1px solid rgba(212,200,255,0.9);}
+.schedule-time{width:52px;font-weight:950;color:#5d3bdb;}
+.schedule-content{display:flex;align-items:center;gap:10px;min-width:0;}
+.schedule-title{font-weight:950;color:#2a1236;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.schedule-category{font-size:12px;font-weight:950;padding:4px 10px;border-radius:999px;color:#fff;white-space:nowrap;}
+.schedule-cat-work{background:#22c55e;}
+.schedule-cat-attend{background:#fbbf24;color:#2a1236;}
+.schedule-cat-etc{background:#60a5fa;}
+.schedule-cat-edu{background:#8b5cf6;}
+.schedule-cat-event{background:#ec4899;}
 
-/* Friend Profile Modal */
-.fp-backdrop{position:fixed;inset:0;background:rgba(15,23,42,0.55);display:flex;align-items:center;justify-content:center;z-index:70;padding:16px;}
-.fp-panel{
-  width:420px;
-  max-width:92vw;
-  border-radius:26px;
-  background:#fff;
-  box-shadow:0 24px 54px rgba(15,23,42,0.40);
-  padding:18px 18px 16px;
-  position:relative;
-  border:1px solid rgba(226,232,240,0.9);
-}
-.fp-close{
-  position:absolute;top:10px;right:12px;
-  width:32px;height:32px;border-radius:999px;border:none;
-  background:#f3f4ff;color:#4b2d7a;cursor:pointer;font-size:14px;
-}
-.fp-title{font-size:18px;font-weight:950;color:#1b1030;}
-.fp-loading,.fp-error{margin-top:10px;font-size:14px;color:#7a69c4;font-weight:850;}
-.fp-body{margin-top:12px;display:flex;flex-direction:column;gap:12px;}
-.fp-top{display:flex;align-items:center;gap:12px;}
-.fp-avatar{
-  width:64px;height:64px;border-radius:999px;
-  background:radial-gradient(circle at top left, rgba(244,114,182,0.85) 0, rgba(168,85,247,0.78) 60%);
-  display:flex;align-items:center;justify-content:center;
-  color:#fff;font-weight:950;font-size:22px;overflow:hidden;flex-shrink:0;
-  box-shadow:0 12px 22px rgba(168,85,247,0.22);
-}
-.fp-avatar img{width:100%;height:100%;object-fit:cover;}
-.fp-main{min-width:0;}
-.fp-name{font-size:18px;font-weight:950;color:#2a1236;line-height:1.15;}
-.fp-sub{font-size:13px;color:#7a69c4;font-weight:850;margin-top:2px;}
-
-.fp-badges{border-radius:18px;background:#faf7ff;border:1px solid rgba(226,215,255,0.95);padding:10px 10px;}
-.fp-sec-title{font-size:13px;font-weight:950;color:#5b21b6;margin-bottom:8px;}
-.fp-badge-row{display:flex;gap:8px;flex-wrap:wrap;}
-.fp-badge{
-  width:34px;height:34px;border-radius:999px;
-  display:flex;align-items:center;justify-content:center;
-  background:#fff;border:1px solid rgba(226,215,255,0.95);
-  box-shadow:0 10px 16px rgba(0,0,0,0.05);
-}
-.fp-muted{font-size:13px;color:#7a69c4;font-weight:850;}
-
-.fp-counts{display:flex;gap:8px;flex-wrap:wrap;}
-.fp-count-pill{
-  padding:6px 10px;border-radius:999px;
-  background:#fbf9ff;border:1px solid rgba(226,215,255,0.95);
-  font-size:13px;color:#2a1236;font-weight:900;
-}
-.fp-count-pill b{color:#ec4899;font-weight:950;}
-
-.fp-actions{display:flex;gap:10px;flex-wrap:wrap;}
-.fp-btn{
-  height:40px;
-  padding:0 14px;
-  border-radius:999px;
-  border:1px solid rgba(226,215,255,0.95);
-  background:#fff;
-  color:#2a1236;
-  font-weight:950;
-  cursor:pointer;
-  box-shadow:0 12px 18px rgba(0,0,0,0.06);
-}
-.fp-btn.ghost{background:linear-gradient(135deg, rgba(59,130,246,0.10), rgba(168,85,247,0.10));}
-.fp-btn.pink{background:linear-gradient(135deg, rgba(244,114,182,0.22), rgba(168,85,247,0.22));}
-
-/* ✅ 문의하기(실시간 채팅) 플로팅 버튼: "블루 원형 테두리" 버전 */
+/* Floating support */
 .floating-support-btn{
   position:fixed;
   right:18px;
   bottom:18px;
   width:72px;
   height:72px;
+  border:none;
   border-radius:999px;
   cursor:pointer;
-  z-index:80;
+  z-index:90;
 
   display:flex;
   flex-direction:column;
@@ -2403,36 +1682,12 @@ a{color:inherit;text-decoration:none;}
   line-height:1.05;
   letter-spacing:-0.2px;
 
-  /* ✅ 블루 그라데이션 + 하이라이트 */
   background:
     radial-gradient(60px 60px at 30% 25%, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 60%),
     linear-gradient(135deg, #38bdf8 0%, #2563eb 45%, #1d4ed8 100%);
 
-  /* ✅ "원형 테두리" 느낌 */
-  border:2px solid rgba(255,255,255,0.70);
   box-shadow:
     0 16px 32px rgba(37,99,235,0.35),
-    0 0 18px rgba(56,189,248,0.45),
-    inset 0 0 0 2px rgba(0,0,0,0.10);
-
-  transition:transform .18s ease, filter .18s ease, box-shadow .18s ease;
+    0 8px 14px rgba(0,0,0,0.12);
 }
-.floating-support-btn:hover{
-  transform:translateY(-3px) scale(1.02);
-  filter:brightness(1.06);
-  box-shadow:
-    0 22px 44px rgba(37,99,235,0.45),
-    0 0 26px rgba(56,189,248,0.70),
-    inset 0 0 0 2px rgba(0,0,0,0.12);
-}
-
-/* Small screens */
-@media (max-width:520px){
-  .coach-text{font-size:15px;}
-  .home-logo{width:62px;height:62px;border-radius:20px;}
-  .wave-text span{font-size:32px;letter-spacing:4px;}
-  .friends-search{width:150px;}
-  .floating-support-btn{right:14px;bottom:14px;}
-}
-  
 `;

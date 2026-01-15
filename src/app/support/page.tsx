@@ -624,7 +624,7 @@ export default function SupportPage() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   rows={3}
-                  placeholder="질문을 입력해 주세요. Enter 전송, 줄바꿈은 Shift+Enter"
+                  placeholder="질문을 입력해 주세요.(사진 첨부하시면 더 빠르게 도와드려요)"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -644,7 +644,7 @@ export default function SupportPage() {
               </div>
 
               <div className="hint">
-                운영자 답변은 관리자 페이지(/admin/support)에서 작성됩니다. 필요 시 AI가 먼저 안내하고, 운영자가 이어서 답변해요.
+                운영자 답변은 AI가 먼저 안내하고, 운영자가 이어서 답변해요.
               </div>
             </div>
           </div>
@@ -731,31 +731,27 @@ const styles = `
   justify-content:space-between;
   gap:12px;
 }
+/* ===== 말풍선: 꼬리 제거 + 라운드 카드 ===== */
 .bubble{
   flex:1;
-  border-radius:999px;
+  border-radius:22px;              /* ⬅️ 둥근 카드 */
   background: rgba(255,255,255,0.92);
   border: 1px solid rgba(168,85,247,0.20);
   box-shadow: 0 14px 26px rgba(0,0,0,0.10);
-  padding:12px 16px;
+  padding:14px 18px;               /* 여백 안정화 */
   min-height:64px;
   position:relative;
   display:flex;
   flex-direction:column;
   justify-content:center;
 }
+
+/* ❌ 꼬리 완전 제거 */
 .bubble:after{
-  content:'';
-  position:absolute;
-  right:-6px;
-  top:50%;
-  transform: translateY(-50%) rotate(45deg);
-  width:14px; height:14px;
-  background: rgba(255,255,255,0.92);
-  border-right: 1px solid rgba(168,85,247,0.20);
-  border-bottom: 1px solid rgba(168,85,247,0.20);
-  border-radius:4px;
+  content:none;
 }
+
+
 .bubbleChip{
   align-self:flex-start;
   font-size:11px;

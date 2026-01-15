@@ -1,40 +1,35 @@
-// ✅ 파일: src/lib/getProfileSelect.ts
+// ✅✅✅ 전체복붙: src/lib/getMyProfile.ts
 import { supabase } from '@/lib/supabaseClient';
 
-type ProfileCols = {
-  hasNickname: boolean;
-  hasName: boolean;
-  select: string;
+export type MyProfile = {
+  user_id: string;
+  email?: string | null;
+  nickname?: string | null;
+  name?: string | null;
+  role?: string | null;
+  is_admin?: boolean;
+  avatar_url?: string | null;
+  created_at?: string | null;
+  [key: string]: any;
 };
 
-// 🔒 런타임 동안 1회만 판별
-let cached: ProfileCols | null = null;
+export async function getMyProfileSafe() {
+  // 1) session에서 uid 확보
+  const { data: sess, error: sessErr } = await supabase.auth.getSession();
+  if (sessErr) return { uid: null as string | null, profile: null as MyProfile | null, error: sessErr };
 
-export async function getProfileSelect(): Promise<ProfileCols> {
-  if (cached) return cached;
+  const uid = sess.session?.user?.id ?? null;
+  if (!uid) return { uid, profile: null, error: null };
 
-  // ⚠️ avatar_url은 항상 그대로 유지 (변환 ❌)
-  const base = 'user_id,avatar_url';
+  // 2) profiles: 중복 안전하게 최신 1개만
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('user_id', uid)
+    .order('created_at', { ascending: false })
+    .limit(1);
 
-  // 1️⃣ nickname 컬럼 존재 여부 테스트
-  {
-    const { error } = await supabase.from('profiles').select(`${base},nickname`).limit(1);
-    if (!error) {
-      cached = { hasNickname: true, hasName: false, select: `${base},nickname` };
-      return cached;
-    }
-  }
+  const profile = (data?.[0] ?? null) as MyProfile | null;
 
-  // 2️⃣ name 컬럼 존재 여부 테스트
-  {
-    const { error } = await supabase.from('profiles').select(`${base},name`).limit(1);
-    if (!error) {
-      cached = { hasNickname: false, hasName: true, select: `${base},name` };
-      return cached;
-    }
-  }
-
-  // 3️⃣ 둘 다 없을 때 (최소 안전 셀렉트)
-  cached = { hasNickname: false, hasName: false, select: base };
-  return cached;
+  return { uid, profile, error };
 }
