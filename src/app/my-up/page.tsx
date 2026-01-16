@@ -26,8 +26,8 @@ type ScheduleRow = {
   id: string;
   user_id: string;
   title: string;
-  schedule_date: string; // YYYY-MM-DD
-  schedule_time?: string | null; // "HH:MM"
+  schedule_date: string;
+  schedule_time?: string | null;
   category?: string | null;
   created_at?: string | null;
 };
@@ -78,7 +78,6 @@ function fmtKoreanDate(d: Date) {
 function formatMonthLabel(date: Date) {
   return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' });
 }
-
 function startOfMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
@@ -116,7 +115,6 @@ function getScheduleCategoryMeta(category: string | null | undefined): ScheduleC
   if (c === 'edu' || c === 'education' || c === '교육') return { label: '교육', badgeClass: 'cat-edu', kind: 'work' };
   if (c === 'event' || c === '행사' || c === '행사/이벤트') return { label: '행사/이벤트', badgeClass: 'cat-event', kind: 'work' };
 
-  // 근태
   if (
     c === '근태' ||
     c === 'attendance' ||
@@ -197,6 +195,19 @@ function lsSetJson(key: string, value: any) {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {}
 }
+function lsGetStr(key: string, fallback = '') {
+  try {
+    const v = localStorage.getItem(key);
+    return v ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+function lsSetStr(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value ?? '');
+  } catch {}
+}
 
 function buildAiAdvice(slots: WeatherSlot[], when: Date) {
   const hour = when.getHours();
@@ -235,7 +246,6 @@ function buildAiAdvice(slots: WeatherSlot[], when: Date) {
   return lines.slice(0, 4);
 }
 
-// ✅✅✅ 추가(빨간줄 원인 해결): loadSchedules(uid, monthCursor)
 async function loadSchedules(uid: string, monthCursor: Date) {
   const from = fmtYMD(startOfMonth(monthCursor));
   const to = fmtYMD(endOfMonth(monthCursor));
@@ -266,12 +276,10 @@ async function loadSchedules(uid: string, monthCursor: Date) {
   return { rows, error: null as any };
 }
 
-// ✅✅✅ 교체: loadUpLogs(uid, monthCursor)
 async function loadUpLogs(uid: string, monthCursor: Date) {
   const from = fmtYMD(startOfMonth(monthCursor));
   const to = fmtYMD(endOfMonth(monthCursor));
 
-  // ✅ 서버 order(log_date) 제거 → 400 방지
   const { data, error } = await supabase
     .from('up_logs')
     .select('id, user_id, log_date, mood, day_goal, week_goal, month_goal, good, bad, tomorrow, created_at')
@@ -281,7 +289,6 @@ async function loadUpLogs(uid: string, monthCursor: Date) {
 
   if (error) return { rows: [] as UpLogRow[], error: error.message };
 
-  // ✅ 프론트에서 안전 정렬 (log_date → created_at fallback)
   const rows = ((data || []) as UpLogRow[]).slice().sort((a, b) => {
     const ad = String(a.log_date || '');
     const bd = String(b.log_date || '');
@@ -297,10 +304,8 @@ async function loadUpLogs(uid: string, monthCursor: Date) {
   return { rows, error: null as any };
 }
 
-// ✅✅✅ 회고 전용 로드
 async function loadReflection(uid: string, date: string) {
   const { data, error } = await supabase.from('up_reflections').select('good, bad, tomorrow').eq('user_id', uid).eq('log_date', date).maybeSingle();
-
   if (error) return { row: null as any, error: error.message };
   return {
     row: data
@@ -310,7 +315,6 @@ async function loadReflection(uid: string, date: string) {
   };
 }
 
-// ✅✅✅ 회고 전용 저장(upsert)
 async function saveReflection(uid: string, date: string, payload: { good: string; bad: string; tomorrow: string }) {
   const { error } = await supabase.from('up_reflections').upsert(
     {
@@ -329,7 +333,6 @@ async function saveReflection(uid: string, date: string, payload: { good: string
 
 async function loadDailyTasks(uid: string, date: string) {
   const { data, error } = await supabase.from('daily_tasks').select('id, task_date, content, done').eq('user_id', uid).eq('task_date', date);
-
   if (error) return { rows: [] as DailyTask[], error: error.message };
 
   const rows = ((data || []) as any[])
@@ -340,13 +343,11 @@ async function loadDailyTasks(uid: string, date: string) {
   return { rows, error: null as any };
 }
 
-// ✅✅✅ 이번달 체크리스트 통계(카운트 배지용)
 async function loadMonthlyTaskStats(uid: string, monthCursor: Date) {
   const from = fmtYMD(startOfMonth(monthCursor));
   const to = fmtYMD(endOfMonth(monthCursor));
 
   const { data, error } = await supabase.from('daily_tasks').select('task_date, done').eq('user_id', uid).gte('task_date', from).lte('task_date', to);
-
   if (error) return { stats: { total: 0, done: 0, days: 0 } as MonthTaskStats, error: error.message };
 
   const rows = (data || []) as any[];
@@ -364,12 +365,6 @@ async function loadMonthlyTaskStats(uid: string, monthCursor: Date) {
   return { stats: { total, done, days: daySet.size }, error: null as any };
 }
 
-/**
- * ✅ up_logs 안전 저장 (목표 저장 안 되는 케이스 방어)
- * - 1차: upsert(onConflict: user_id,log_date)
- * - 실패 시: (user_id,log_date)로 기존 row 조회 → update/insert로 fallback
- * - 컬럼 없음(42703 등) 시: 핵심 컬럼만 축소
- */
 async function safeUpsertUpLog(uid: string, ymd: string, payload: Record<string, any>) {
   const base = { user_id: uid, log_date: ymd, ...payload };
 
@@ -451,7 +446,6 @@ export default function MyUpPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-
   const [me, setMe] = useState<Me | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -468,17 +462,14 @@ export default function MyUpPage() {
     const key = Number(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`);
     return EMO_QUOTES[key % EMO_QUOTES.length];
   }, []);
-
   const mentalLine = useMemo(() => EMO_QUOTES[(new Date().getDate() + 2) % EMO_QUOTES.length], []);
 
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
   const [upLogs, setUpLogs] = useState<UpLogRow[]>([]);
   const [tasks, setTasks] = useState<DailyTask[]>([]);
   const [myBadges, setMyBadges] = useState<{ code: string; name: string }[]>([]);
-
   const [todayWeather, setTodayWeather] = useState<WeatherSlot[]>([]);
   const [weatherLabel, setWeatherLabel] = useState('서울');
-
   const [monthTaskStats, setMonthTaskStats] = useState<MonthTaskStats>({ total: 0, done: 0, days: 0 });
 
   const [err, setErr] = useState<string | null>(null);
@@ -501,8 +492,13 @@ export default function MyUpPage() {
   // ✅ 입력 상태(오늘 할 일)
   const [taskInput, setTaskInput] = useState('');
 
+  // ✅✅✅ 버튼 눌림 피드백 상태
+  const [goalsFlash, setGoalsFlash] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [scheduleFlash, setScheduleFlash] = useState<'idle' | 'saving' | 'saved'>('idle');
+
   const reflectKey = useMemo(() => (userId ? `uplog_reflect_${userId}_${selectedYMD}` : `uplog_reflect__${selectedYMD}`), [userId, selectedYMD]);
   const goalsKey = useMemo(() => (userId ? `uplog_goals_${userId}_${selectedYMD}` : `uplog_goals__${selectedYMD}`), [userId, selectedYMD]);
+  const taskDraftKey = useMemo(() => (userId ? `uplog_taskdraft_${userId}_${selectedYMD}` : `uplog_taskdraft__${selectedYMD}`), [userId, selectedYMD]);
 
   const gridDays = useMemo(() => {
     const start = startOfCalendarGrid(monthCursor);
@@ -540,7 +536,6 @@ export default function MyUpPage() {
 
   const aiAdvice = useMemo(() => buildAiAdvice(todayWeather, new Date()), [todayWeather]);
 
-  // ✅ 이번달 업로그 “기록일수” (카운트 배지)
   const monthLogDays = useMemo(() => {
     const set = new Set<string>();
     (upLogs || []).forEach((u) => {
@@ -561,12 +556,10 @@ export default function MyUpPage() {
     return set.size;
   }, [upLogs]);
 
-  // ✅ selectedDate 변경 시: 해당 날짜 up_logs 값으로 입력칸 동기화(+ 회고/목표 로컬 fallback)
   useEffect(() => {
     const row = upByDate[selectedYMD];
 
     const localGoals = lsGetJson<{ day_goal: string; week_goal: string; month_goal: string }>(goalsKey, { day_goal: '', week_goal: '', month_goal: '' });
-
     const nextMood = (row?.mood ?? '🙂') as string;
 
     const nextDay = String((row?.day_goal ?? '') || localGoals.day_goal || '');
@@ -577,10 +570,13 @@ export default function MyUpPage() {
     setDayGoal(nextDay);
     setWeekGoal(nextWeek);
 
-    // ✅✅✅ ASI 꼬임 방지
+    // ✅ ASI 방지
     ;setMonthGoal(nextMonth);
 
-    // ✅ 회고: DB(up_reflections) 우선, 없으면 로컬 fallback
+    // ✅ taskInput draft 로드
+    ;setTaskInput(lsGetStr(taskDraftKey, ''));
+
+    // ✅ 회고 로드
     ;(async () => {
       try {
         if (!userId) {
@@ -610,9 +606,41 @@ export default function MyUpPage() {
         setTomorrowPlan(String(local.tomorrow ?? ''));
       }
     })();
-  }, [selectedYMD, upByDate, goalsKey, userId, reflectKey]);
+  }, [selectedYMD, upByDate, goalsKey, userId, reflectKey, taskDraftKey]);
 
-  // ✅ 선택 날짜 변경 시: 그 날짜 tasks 로드
+  // ✅ 목표 입력 자동저장(로컬)
+  useEffect(() => {
+    let t: any = null;
+    t = setTimeout(() => {
+      lsSetJson(goalsKey, { day_goal: dayGoal ?? '', week_goal: weekGoal ?? '', month_goal: monthGoal ?? '' });
+    }, 250);
+    return () => {
+      if (t) clearTimeout(t);
+    };
+  }, [goalsKey, dayGoal, weekGoal, monthGoal]);
+
+  // ✅ 회고 입력 자동저장(로컬)
+  useEffect(() => {
+    let t: any = null;
+    t = setTimeout(() => {
+      lsSetJson(reflectKey, { good: good ?? '', bad: bad ?? '', tomorrow: tomorrowPlan ?? '' });
+    }, 350);
+    return () => {
+      if (t) clearTimeout(t);
+    };
+  }, [reflectKey, good, bad, tomorrowPlan]);
+
+  // ✅ task draft 자동저장(로컬)
+  useEffect(() => {
+    let t: any = null;
+    t = setTimeout(() => {
+      lsSetStr(taskDraftKey, taskInput ?? '');
+    }, 180);
+    return () => {
+      if (t) clearTimeout(t);
+    };
+  }, [taskDraftKey, taskInput]);
+
   useEffect(() => {
     if (!userId) return;
     (async () => {
@@ -622,7 +650,6 @@ export default function MyUpPage() {
     })();
   }, [userId, selectedYMD]);
 
-  // ✅ 최초 로드 + monthCursor 변경 시: schedules/up_logs + 월간 체크리스트 통계 로드
   useEffect(() => {
     let alive = true;
 
@@ -669,7 +696,7 @@ export default function MyUpPage() {
         lon: prof.lon ?? null,
       });
 
-      // ✅ 월간 배지(이번달만)
+      // 월간 배지(이번달)
       try {
         const todayStr = fmtYMD(new Date());
         const { data: mb, error: mbErr } = await supabase
@@ -760,6 +787,7 @@ export default function MyUpPage() {
     if (!title) return;
 
     setErr(null);
+    setScheduleFlash('saving');
 
     const payload: any = {
       user_id: userId,
@@ -776,13 +804,17 @@ export default function MyUpPage() {
       .maybeSingle();
 
     if (error) {
+      setScheduleFlash('idle');
       setErr(`스케줄 저장 실패: ${error.message}`);
       return;
     }
 
-    setSchedules((prev) => [...prev, data as any].sort((a, b) => (a.schedule_date > b.schedule_date ? 1 : -1)));
+    setSchedules((prev) => [...prev, (data as any)].sort((a, b) => (a.schedule_date > b.schedule_date ? 1 : -1)));
     setScheduleTitle('');
     setScheduleTime(nowHHMM());
+
+    setScheduleFlash('saved');
+    window.setTimeout(() => setScheduleFlash('idle'), 900);
   }
 
   async function deleteSchedule(id: string) {
@@ -812,20 +844,22 @@ export default function MyUpPage() {
     if (!userId) return;
     setErr(null);
 
+    setGoalsFlash('saving');
+
     const payload: any = {
       day_goal: dayGoal.trim() || null,
       week_goal: weekGoal.trim() || null,
       month_goal: monthGoal.trim() || null,
     };
 
-    // ✅ 로컬 저장 (즉시 반영용)
+    // 로컬 저장
     lsSetJson(goalsKey, {
       day_goal: payload.day_goal ?? '',
       week_goal: payload.week_goal ?? '',
       month_goal: payload.month_goal ?? '',
     });
 
-    // ✅ upLogs 상태만 갱신
+    // 상태 갱신
     setUpLogs((prev) => {
       const next = prev.slice();
       const idx = next.findIndex((x) => (x.log_date || '').slice(0, 10) === selectedYMD);
@@ -834,23 +868,25 @@ export default function MyUpPage() {
       return next;
     });
 
-    // ✅ DB 저장
+    // DB 저장
     const res = await safeUpsertUpLog(userId, selectedYMD, payload);
     if (!res.ok) {
+      setGoalsFlash('idle');
       setErr(`목표 저장은 로컬로 저장됨 (DB 정책/제약 확인 필요): ${res.reason || 'unknown'}`);
+      return;
     }
+
+    setGoalsFlash('saved');
+    window.setTimeout(() => setGoalsFlash('idle'), 900);
   }
 
   async function saveReflect() {
     if (!userId) return;
     setErr(null);
 
-    // ✅ 로컬도 항상 저장
     lsSetJson(reflectKey, { good, bad, tomorrow: tomorrowPlan });
 
-    // ✅ DB 저장: up_reflections
     const res = await saveReflection(userId, selectedYMD, { good, bad, tomorrow: tomorrowPlan });
-
     if (!res.ok) {
       setErr(`회고 저장 실패 (DB): ${res.error}`);
       return;
@@ -886,7 +922,6 @@ export default function MyUpPage() {
       prev.map((t) => (t.id === optimisticId ? ({ id: data!.id, task_date: data!.task_date, content: data!.content ?? '', done: !!data!.done } as any) : t))
     );
 
-    // ✅ 정확히 재계산
     const ms = await loadMonthlyTaskStats(userId, monthCursor);
     if (!ms.error) setMonthTaskStats(ms.stats);
   }
@@ -901,7 +936,7 @@ export default function MyUpPage() {
     const { error } = await supabase.from('daily_tasks').update({ done: nextDone }).eq('id', task.id).eq('user_id', userId);
     if (error) {
       setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: task.done } : t)));
-      setMonthTaskStats((prev) => ({ ...prev, done: prev.done + (task.done ? 1 : -1) })); // 롤백
+      setMonthTaskStats((prev) => ({ ...prev, done: prev.done + (task.done ? 1 : -1) }));
       setErr(`체크 저장 실패: ${error.message}`);
     }
   }
@@ -924,11 +959,14 @@ export default function MyUpPage() {
     if (error) setErr(`할 일 삭제 실패: ${error.message}`);
   }
 
-  // ✅✅✅ 말풍선/마스코트 “고정 규격”(customers/home 과 동일 톤)
-  const HEADER_MASCOT_SIZE = 132; // 고정
-  const HEADER_BUBBLE_MIN_H = 96; // 고정
+  // ✅ 말풍선/마스코트 고정
+  const HEADER_MASCOT_SIZE = 132;
+  const HEADER_BUBBLE_MIN_H = 96;
 
-  // ✅✅✅ 배경을 "밝은 핑크/퍼플"로 강제
+  // ✅✅✅ 버튼 시각 피드백(색/텍스트/광)
+  const goalsBtnText = goalsFlash === 'saving' ? '저장 중…' : goalsFlash === 'saved' ? '저장됨 ✓' : '목표 저장';
+  const scheduleBtnText = scheduleFlash === 'saving' ? '저장 중…' : scheduleFlash === 'saved' ? '저장됨 ✓' : '스케줄 저장';
+
   const S: any = {
     shell: {
       minHeight: '100vh',
@@ -937,12 +975,10 @@ export default function MyUpPage() {
       background:
         'radial-gradient(1200px 520px at 12% 10%, rgba(255,120,190,0.20) 0%, rgba(255,120,190,0.00) 60%), radial-gradient(1000px 520px at 88% 16%, rgba(168,85,247,0.18) 0%, rgba(168,85,247,0.00) 62%), linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,243,250,0.92) 35%, rgba(245,243,255,0.92) 100%)',
     },
-
     page: { maxWidth: 1040, margin: '0 auto', padding: '0 14px' },
 
     top: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
     titleWrap: { display: 'flex', flexDirection: 'column', gap: 4 },
-
     title: {
       fontSize: 26,
       fontWeight: 950,
@@ -961,14 +997,7 @@ export default function MyUpPage() {
       backdropFilter: 'blur(6px)',
     },
     coachWrap: { padding: 14 },
-
-    // ✅✅✅ bubble+mascot 정렬/크기 고정
-    coachRow: {
-      display: 'grid',
-      gridTemplateColumns: `1fr ${HEADER_MASCOT_SIZE}px`,
-      gap: 12,
-      alignItems: 'center',
-    },
+    coachRow: { display: 'grid', gridTemplateColumns: `1fr ${HEADER_MASCOT_SIZE}px`, gap: 12, alignItems: 'center' },
 
     bubble: {
       padding: '12px 14px',
@@ -980,7 +1009,7 @@ export default function MyUpPage() {
       boxShadow: '0 14px 30px rgba(255,120,190,0.10)',
       lineHeight: 1.35,
       position: 'relative',
-      minHeight: HEADER_BUBBLE_MIN_H, // ✅ 고정
+      minHeight: HEADER_BUBBLE_MIN_H,
       display: 'flex',
       flexDirection: 'column',
       justifyContent: 'center',
@@ -1075,18 +1104,31 @@ export default function MyUpPage() {
     field: { marginTop: 12 },
     small: { fontSize: 12, opacity: 0.75, fontWeight: 900, color: '#2a0f3a' },
 
-    saveBtn: {
+    saveBtn: (flash: 'idle' | 'saving' | 'saved') => ({
       padding: '11px 14px',
       borderRadius: 14,
-      border: '1px solid rgba(255,60,130,0.25)',
-      background: 'linear-gradient(180deg, rgba(255,120,178,0.95), rgba(255,78,147,0.95))',
+      border: flash === 'saved' ? '1px solid rgba(34,197,94,0.40)' : '1px solid rgba(255,60,130,0.25)',
+      background:
+        flash === 'saved'
+          ? 'linear-gradient(180deg, rgba(34,197,94,0.95), rgba(16,185,129,0.95))'
+          : flash === 'saving'
+          ? 'linear-gradient(180deg, rgba(244,114,182,0.80), rgba(236,72,153,0.80))'
+          : 'linear-gradient(180deg, rgba(255,120,178,0.95), rgba(255,78,147,0.95))',
       color: '#fff',
       fontWeight: 950,
       fontSize: 14,
-      cursor: 'pointer',
-      boxShadow: '0 14px 26px rgba(255,60,130,0.16)',
+      cursor: flash === 'saving' ? 'wait' : 'pointer',
+      boxShadow:
+        flash === 'saved'
+          ? '0 16px 28px rgba(34,197,94,0.20), 0 0 0 6px rgba(34,197,94,0.10)'
+          : '0 14px 26px rgba(255,60,130,0.16)',
       whiteSpace: 'nowrap' as const,
-    },
+      transition: 'transform 0.06s ease, filter 0.18s ease, box-shadow 0.18s ease',
+      position: 'relative' as const,
+      overflow: 'hidden' as const,
+      opacity: flash === 'saving' ? 0.92 : 1,
+    }),
+
     ghostBtn: {
       padding: '11px 14px',
       borderRadius: 14,
@@ -1138,7 +1180,6 @@ export default function MyUpPage() {
     dotRow: { marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' },
     dotItem: { display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 950, fontSize: 12, color: '#2a0f3a', opacity: 0.92 },
     dot: { width: 9, height: 9, borderRadius: 999 },
-
     dotAttend: { background: '#f59e0b' },
     dotWork: { background: '#22c55e' },
     dotEtc: { background: '#ec4899' },
@@ -1177,10 +1218,11 @@ export default function MyUpPage() {
       boxSizing: 'border-box' as const,
     },
 
-    scheduleGrid: {
+    // ✅✅✅ 스케줄 입력 레이아웃: 윗줄(시간/카테고리) + 아랫줄(내용)
+    scheduleRowTop: {
       marginTop: 10,
       display: 'grid',
-      gridTemplateColumns: '110px 140px 1fr',
+      gridTemplateColumns: '110px 1fr',
       gap: 10,
       alignItems: 'end',
     },
@@ -1193,6 +1235,20 @@ export default function MyUpPage() {
       background: 'rgba(255,255,255,0.92)',
       fontWeight: 900,
       fontSize: 13,
+      color: '#2a0f3a',
+      outline: 'none',
+      boxSizing: 'border-box' as const,
+    },
+    // ✅✅✅ (누락됐던) 내용 입력 인풋
+    scheduleContentInput: {
+      width: '100%',
+      maxWidth: '100%',
+      padding: '11px 12px',
+      borderRadius: 14,
+      border: '1px solid rgba(60,30,90,0.12)',
+      background: 'rgba(255,255,255,0.92)',
+      fontWeight: 900,
+      fontSize: 14,
       color: '#2a0f3a',
       outline: 'none',
       boxSizing: 'border-box' as const,
@@ -1273,7 +1329,7 @@ export default function MyUpPage() {
             </div>
           </div>
 
-          {/* ✅ 이번달 활동 카운트 */}
+          {/* 이번달 활동 카운트 */}
           <div style={{ ...S.card, marginTop: 12 }}>
             <div style={S.pad}>
               <div style={S.sectionTitle}>이번달 활동 카운트</div>
@@ -1351,16 +1407,15 @@ export default function MyUpPage() {
             </div>
           </div>
 
-          {/* ✅ 기분/목표/할일 */}
+          {/* 기분/목표/할일 */}
           <div style={{ ...S.card, marginTop: 12 }}>
             <div style={S.pad}>
-              {/* 오늘 기분 체크 */}
               <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>오늘 기분 체크</div>
               <div style={S.moodRow}>
                 {moodOptions.map((m) => {
                   const on = mood === m.code;
                   return (
-                    <button key={m.code} type="button" style={{ ...S.moodBtn, ...(on ? S.moodBtnOn : null) }} onClick={() => saveMood(m.code)} title={m.label}>
+                    <button key={m.code} type="button" className="press-btn" style={{ ...S.moodBtn, ...(on ? S.moodBtnOn : null) }} onClick={() => saveMood(m.code)} title={m.label}>
                       <span style={{ fontSize: 16, marginRight: 6 }}>{m.code}</span>
                       {m.label}
                     </button>
@@ -1368,12 +1423,10 @@ export default function MyUpPage() {
                 })}
               </div>
 
-              {/* ✅✅✅ 달력 셀에서는 기분 이모지 제거, 상세에서만 표시 */}
               <div style={{ marginTop: 8, fontSize: 12, fontWeight: 900, opacity: 0.75, color: '#2a0f3a' }}>
                 선택 날짜 기분: <b>{getMoodEmoji(selectedMood) || '미선택'}</b>
               </div>
 
-              {/* 목표 입력 */}
               <div style={{ marginTop: 14, fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>월/주/오늘 목표</div>
 
               <div style={S.field}>
@@ -1392,13 +1445,19 @@ export default function MyUpPage() {
               </div>
 
               <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                <button type="button" style={S.saveBtn} onClick={saveGoals}>
-                  목표 저장
+                <button
+                  type="button"
+                  className={`press-btn save-flash ${goalsFlash === 'saved' ? 'saved' : ''}`}
+                  style={S.saveBtn(goalsFlash)}
+                  onClick={saveGoals}
+                  disabled={goalsFlash === 'saving'}
+                >
+                  <span className="shine" />
+                  {goalsBtnText}
                 </button>
-                {/* ✅✅✅ “최종 목표” 문구/표시 없음 */}
               </div>
 
-              {/* 오늘 할 일 입력 */}
+              {/* 오늘 할 일 */}
               <div style={{ marginTop: 16 }}>
                 <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>오늘 할 일 입력</div>
 
@@ -1409,7 +1468,7 @@ export default function MyUpPage() {
                     onChange={(e) => setTaskInput(e.target.value)}
                     placeholder="할 일 한 줄 입력 (예: 해피콜 10명)"
                   />
-                  <button type="button" style={S.taskBtn} onClick={addTask}>
+                  <button type="button" className="press-btn" style={S.taskBtn} onClick={addTask}>
                     추가
                   </button>
                 </div>
@@ -1421,7 +1480,7 @@ export default function MyUpPage() {
                     {tasks.map((t) => (
                       <div key={t.id} style={{ ...S.item, alignItems: 'center' }}>
                         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: 1, minWidth: 0 }}>
-                          <button type="button" style={S.checkBtn} onClick={() => toggleTask(t)} aria-label="체크">
+                          <button type="button" className="press-btn" style={S.checkBtn} onClick={() => toggleTask(t)} aria-label="체크">
                             {t.done ? '✓' : ''}
                           </button>
                           <div
@@ -1437,7 +1496,7 @@ export default function MyUpPage() {
                             {t.content}
                           </div>
                         </div>
-                        <button type="button" style={{ ...S.ghostBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => deleteTask(t.id)}>
+                        <button type="button" className="press-btn" style={{ ...S.ghostBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => deleteTask(t.id)}>
                           삭제
                         </button>
                       </div>
@@ -1459,6 +1518,7 @@ export default function MyUpPage() {
             <div style={S.calTop}>
               <button
                 type="button"
+                className="press-btn"
                 style={S.calBtn}
                 onClick={() => {
                   const d = new Date(monthCursor);
@@ -1473,6 +1533,7 @@ export default function MyUpPage() {
 
               <button
                 type="button"
+                className="press-btn"
                 style={S.calBtn}
                 onClick={() => {
                   const d = new Date(monthCursor);
@@ -1504,7 +1565,6 @@ export default function MyUpPage() {
                     기타 <b style={{ marginLeft: 4 }}>{monthLegendCounts.etc}</b>
                   </span>
                 </span>
-                {/* ✅✅✅ “🙂 기분” 범례도 제거 (상세에서만 표시) */}
               </div>
             </div>
 
@@ -1517,7 +1577,6 @@ export default function MyUpPage() {
                 ))}
               </div>
 
-              {/* ✅✅✅ 달력 셀: 기분 이모지 표시 제거 */}
               <div style={S.daysGrid}>
                 {gridDays.map((d) => {
                   const ymd = fmtYMD(d);
@@ -1579,28 +1638,28 @@ export default function MyUpPage() {
               </div>
             </div>
 
-            {/* 선택 날짜 스케줄 */}
+            {/* 선택 날짜 스케줄 + 입력 + 회고 */}
             <div style={{ padding: 14, borderTop: '1px solid rgba(60,30,90,0.08)' }}>
               <div style={S.sectionTitle}>선택한 날짜: {fmtKoreanDate(selectedDate)}</div>
 
-              {/* ✅✅✅ 상세에서만 기분 표시 */}
               <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ ...S.pill, opacity: 0.92 }}>
                   🙂 기분 <b style={{ marginLeft: 6 }}>{getMoodEmoji(selectedMood) || '미선택'}</b>
                 </span>
               </div>
 
-              {/* 스케줄 입력 */}
+              {/* ✅ 스케줄 입력 (중복 블록 제거 완료) */}
               <div style={{ marginTop: 16 }}>
                 <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>스케줄 입력 (달력 연동)</div>
 
-                <div style={S.scheduleGrid}>
-                  <div>
+                {/* 윗줄: 시간 / 카테고리 */}
+                <div style={S.scheduleRowTop}>
+                  <div style={{ minWidth: 0 }}>
                     <div style={{ ...S.small, marginBottom: 6 }}>시간</div>
                     <input style={S.scheduleSmallInput} type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} aria-label="time" />
                   </div>
 
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div style={{ ...S.small, marginBottom: 6 }}>카테고리</div>
                     <select style={S.scheduleSmallInput as any} value={scheduleCat} onChange={(e) => setScheduleCat(e.target.value)} aria-label="category">
                       <option value="상담">상담</option>
@@ -1623,22 +1682,38 @@ export default function MyUpPage() {
                       <option value="기타">기타</option>
                     </select>
                   </div>
-
-                  <div>
-                    <div style={{ ...S.small, marginBottom: 6 }}>내용</div>
-                    <input style={S.input} value={scheduleTitle} onChange={(e) => setScheduleTitle(e.target.value)} placeholder="예: 해피콜 10명 / 미팅 / 교육 / 방문 2건..." />
-                  </div>
                 </div>
 
+                {/* 아랫줄: 내용 */}
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ ...S.small, marginBottom: 6 }}>내용</div>
+                  <input
+                    style={S.scheduleContentInput}
+                    value={scheduleTitle}
+                    onChange={(e) => setScheduleTitle(e.target.value)}
+                    placeholder="예: 해피콜 10명 / 미팅 / 교육 / 방문 2건..."
+                  />
+                </div>
+
+                {/* 버튼 줄 */}
                 <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <button type="button" style={S.saveBtn} onClick={addSchedule}>
-                    스케줄 저장
+                  <button
+                    type="button"
+                    className={`press-btn save-flash ${scheduleFlash === 'saved' ? 'saved' : scheduleFlash === 'saving' ? 'saving' : ''}`}
+                    style={S.saveBtn(scheduleFlash)}
+                    onClick={addSchedule}
+                    disabled={scheduleFlash === 'saving'}
+                  >
+                    <span className="shine" />
+                    {scheduleBtnText}
                   </button>
+
                   <span style={{ ...S.pill, opacity: 0.92 }}>
                     선택 날짜 스케줄 <b style={{ marginLeft: 6 }}>{selectedSchedules.length}개</b>
                   </span>
                 </div>
 
+                {/* 선택 날짜 스케줄 리스트 */}
                 {selectedSchedules.length === 0 ? (
                   <div style={{ marginTop: 10, fontWeight: 900, opacity: 0.7, color: '#2a0f3a' }}>이 날짜엔 아직 스케줄이 없어요.</div>
                 ) : (
@@ -1656,7 +1731,8 @@ export default function MyUpPage() {
                               </div>
                             </div>
                           </div>
-                          <button type="button" style={{ ...S.ghostBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => deleteSchedule(s.id)}>
+
+                          <button type="button" className="press-btn" style={{ ...S.ghostBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => deleteSchedule(s.id)}>
                             삭제
                           </button>
                         </div>
@@ -1669,7 +1745,7 @@ export default function MyUpPage() {
               {/* 하루 회고 */}
               <div style={{ marginTop: 18 }}>
                 <div style={{ fontSize: 14, fontWeight: 950, color: '#2a0f3a' }}>하루 회고</div>
-                <div style={S.sectionSub}>저장 버튼을 누르면 로컬 + DB(가능하면)로 저장됩니다.</div>
+                <div style={S.sectionSub}>저장 버튼을 누르면 DB(가능하면)로 저장됩니다. (작성 중은 로컬 자동 저장)</div>
 
                 <div style={S.field}>
                   <div style={{ ...S.small, marginBottom: 6 }}>오늘 잘한 점</div>
@@ -1687,7 +1763,8 @@ export default function MyUpPage() {
                 </div>
 
                 <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  <button type="button" style={S.saveBtn} onClick={saveReflect}>
+                  <button type="button" className="press-btn save-flash" style={S.saveBtn('idle')} onClick={saveReflect}>
+                    <span className="shine" />
                     회고 저장
                   </button>
                 </div>
@@ -1699,80 +1776,160 @@ export default function MyUpPage() {
 
           {loading ? <div style={{ marginTop: 14, fontWeight: 950, opacity: 0.7, color: '#2a0f3a' }}>불러오는 중...</div> : null}
 
-          <style jsx>{`
-            @keyframes floaty {
-              0% {
-                transform: translateY(0px);
-              }
-              50% {
-                transform: translateY(-8px);
-              }
-              100% {
-                transform: translateY(0px);
-              }
-            }
-
-            :global(*),
-            :global(*::before),
-            :global(*::after) {
-              box-sizing: border-box;
-            }
-
-            :global(.cat-work) {
-              display: inline-flex;
-              padding: 5px 10px;
-              border-radius: 999px;
-              border: 1px solid rgba(34, 197, 94, 0.22);
-              background: rgba(236, 253, 245, 0.75);
-              color: #065f46;
-              font-weight: 950;
-            }
-            :global(.cat-attend) {
-              display: inline-flex;
-              padding: 5px 10px;
-              border-radius: 999px;
-              border: 1px solid rgba(245, 158, 11, 0.24);
-              background: rgba(255, 247, 237, 0.75);
-              color: #7c2d12;
-              font-weight: 950;
-            }
-            :global(.cat-edu) {
-              display: inline-flex;
-              padding: 5px 10px;
-              border-radius: 999px;
-              border: 1px solid rgba(59, 130, 246, 0.22);
-              background: rgba(239, 246, 255, 0.78);
-              color: #1e40af;
-              font-weight: 950;
-            }
-            :global(.cat-event) {
-              display: inline-flex;
-              padding: 5px 10px;
-              border-radius: 999px;
-              border: 1px solid rgba(168, 85, 247, 0.22);
-              background: rgba(243, 232, 255, 0.75);
-              color: #5b21b6;
-              font-weight: 950;
-            }
-            :global(.cat-etc) {
-              display: inline-flex;
-              padding: 5px 10px;
-              border-radius: 999px;
-              border: 1px solid rgba(236, 72, 153, 0.18);
-              background: rgba(255, 241, 242, 0.75);
-              color: #9f1239;
-              font-weight: 950;
-            }
-
-            /* ✅ 모바일에서 말풍선/마스코트 더 안정적으로 */
-            @media (max-width: 520px) {
-              :global(.__myup_header_grid_fix) {
-                display: grid;
-              }
-            }
-          `}</style>
+          {/* ✅✅✅ 스타일은 딱 1번만 (중첩/중복 <style> 제거 완료) */}
+          <style jsx>{PAGE_STYLES}</style>
         </div>
       </div>
     </ClientShell>
   );
 }
+
+/* ✅✅✅ style은 “문자열 변수 1개”로만 관리 (중첩/백틱 사고 방지) */
+const PAGE_STYLES = `
+  @keyframes floaty {
+    0% { transform: translateY(0px); }
+    50% { transform: translateY(-8px); }
+    100% { transform: translateY(0px); }
+  }
+
+  :global(*),
+  :global(*::before),
+  :global(*::after) {
+    box-sizing: border-box;
+  }
+
+  :global(.press-btn){
+    position: relative;
+    transform: translateY(0) scale(1);
+    transition: transform 120ms ease, filter 120ms ease, box-shadow 160ms ease, opacity 160ms ease;
+    will-change: transform, filter;
+  }
+  :global(.press-btn:active){
+    transform: translateY(1px) scale(0.985);
+    filter: brightness(0.98);
+  }
+  :global(.press-btn:focus-visible){
+    outline:none;
+    box-shadow: 0 0 0 3px rgba(255,47,149,0.18);
+  }
+
+  :global(.save-flash.saving){ opacity: 0.78; }
+  :global(.save-flash.saved){ animation: savePop 520ms ease both; }
+
+  @keyframes savePop{
+    0%{ transform: translateY(0) scale(1); }
+    35%{ transform: translateY(-1px) scale(1.03); }
+    100%{ transform: translateY(0) scale(1); }
+  }
+
+  :global(.save-flash .shine){
+    position:absolute;
+    inset:0;
+    border-radius:inherit;
+    pointer-events:none;
+    opacity:0;
+    background: radial-gradient(140px 60px at 22% 22%, rgba(255,255,255,0.38), rgba(255,255,255,0) 60%);
+    transition: opacity 180ms ease;
+  }
+  :global(.save-flash:hover .shine){ opacity: 0.9; }
+
+  /* =========================================================
+     ✅✅✅ 스케줄 입력(달력 연동) - 시간/카테고리/내용 "상담 영역" 슬림화
+     - 로직/구조 건드리지 않고 CSS만 축소
+     ========================================================= */
+
+  /* 1) 시간/카테고리/내용 입력칸 자체 높이 축소 */
+  :global(input[type="text"]),
+  :global(input[type="tel"]),
+  :global(input[type="time"]),
+  :global(input[type="date"]),
+  :global(select),
+  :global(textarea){
+    font-size:13px;
+    line-height:1.2;
+  }
+
+  /* 2) 특히 "카테고리(상담)" 셀렉트가 커 보이는 문제: 높이/패딩 고정 */
+  :global(select),
+  :global(.schedule-category),
+  :global(.category-select),
+  :global(.cat-select){
+    height:36px;
+    padding:6px 10px;
+  }
+
+  /* 3) 시간/카테고리/내용 input wrapper(있으면)도 같이 줄이기 */
+  :global(.time-input),
+  :global(.category-input),
+  :global(.content-input),
+  :global(.schedule-time),
+  :global(.schedule-category),
+  :global(.schedule-content){
+    min-height:36px;
+  }
+
+  /* 4) 라벨 아래(상담 영역 아래) 간격 줄이기 */
+  :global(.schedule-input-row),
+  :global(.schedule-form-row),
+  :global(.schedule-inputs),
+  :global(.schedule-grid){
+    row-gap:8px;
+    column-gap:10px;
+  }
+
+  /* 5) select 화살표/기본 UI 때문에 세로가 늘어나는 경우 방지 */
+  :global(select){
+    -webkit-appearance:none;
+    -moz-appearance:none;
+    appearance:none;
+    background-clip:padding-box;
+  }
+
+  /* ✅ category badges: “:global()”만 사용 */
+  /* ✅✅✅ 공통(크기만 축소) */
+  :global(.cat-work),
+  :global(.cat-attend),
+  :global(.cat-edu),
+  :global(.cat-event),
+  :global(.cat-etc){
+    display:inline-flex;
+    align-items:center;
+    padding:3px 8px;      /* ⬅️ 사이즈 줄임 */
+    border-radius:999px;
+    font-weight:900;      /* ⬅️ 살짝 다운 */
+    font-size:11px;       /* ⬅️ 글자 줄임 */
+    line-height:1;        /* ⬅️ 높이 고정 */
+    white-space:nowrap;
+  }
+
+  /* ✅✅✅ 색/보더는 그대로 유지 */
+  :global(.cat-work){
+    border:1px solid rgba(34, 197, 94, 0.22);
+    background:rgba(236, 253, 245, 0.75);
+    color:#065f46;
+  }
+
+  :global(.cat-attend){
+    border:1px solid rgba(245, 158, 11, 0.24);
+    background:rgba(255, 247, 237, 0.75);
+    color:#7c2d12;
+  }
+
+  :global(.cat-edu){
+    border:1px solid rgba(59, 130, 246, 0.22);
+    background:rgba(239, 246, 255, 0.78);
+    color:#1e40af;
+  }
+
+  :global(.cat-event){
+    border:1px solid rgba(168, 85, 247, 0.22);
+    background:rgba(243, 232, 255, 0.75);
+    color:#5b21b6;
+  }
+
+  :global(.cat-etc){
+    border:1px solid rgba(236, 72, 153, 0.18);
+    background:rgba(255, 241, 242, 0.75);
+    color:#9f1239;
+  }
+`;

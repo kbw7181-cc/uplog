@@ -54,7 +54,6 @@ export default function CustomerNewPage() {
       const { data, error } = await supabase.from('customers').insert(payload).select('id').single();
       if (error) throw error;
 
-      // 생성 후 상세로 이동 (없으면 목록으로)
       if (data?.id) router.replace(`/customers/${data.id}`);
       else router.replace('/customers');
     } catch (e) {
@@ -149,10 +148,28 @@ export default function CustomerNewPage() {
         </section>
 
         <style jsx>{`
+          /* ✅ 혹시 다른 페이지에서 쓰던 “하단 고정 덩어리”가 전역으로 살아있으면 여기선 강제 숨김 */
+          :global(.bottomBar),
+          :global(.bottom-bar),
+          :global(.modalBottomBar),
+          :global(.customerBottomBar),
+          :global(.customer-bottom-bar),
+          :global(.bottomDock),
+          :global(.bottom-dock) {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+            min-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: 0 !important;
+          }
+
           .page {
             max-width: 1100px;
             margin: 0 auto;
-            padding: 18px 16px 80px;
+            /* ✅ 80px 때문에 “맨밑 네모 덩어리”처럼 보일 수 있어서 제거 */
+            padding: 18px 16px 18px;
           }
           .top {
             display: flex;

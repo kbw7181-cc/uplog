@@ -109,10 +109,10 @@ export default function CustomerDetailPage() {
           </div>
 
           <div className="actions">
-            <button className="btn ghost" onClick={() => router.push('/customers')}>
+            <button className="btn ghost" type="button" onClick={() => router.push('/customers')}>
               목록
             </button>
-            <button className="btn primary" onClick={onSave} disabled={!canSave || saving}>
+            <button className="btn primary" type="button" onClick={onSave} disabled={!canSave || saving}>
               {saving ? '저장 중…' : '저장'}
             </button>
           </div>
@@ -188,23 +188,37 @@ export default function CustomerDetailPage() {
         )}
 
         <style jsx>{`
+          /* ✅✅✅ [응급 차단] 다른 컴포넌트가 하단 고정바를 깔아도 이 페이지에서는 무조건 숨김 */
+          :global(.bottomBar),
+          :global(.bottom-bar),
+          :global(.bottom_actions),
+          :global([data-bottom-actions]),
+          :global([data-bottom-bar]) {
+            display: none !important;
+          }
+
           .page {
             max-width: 1100px;
             margin: 0 auto;
-            padding: 18px 16px 80px;
+            /* ✅ 아래 네모 덩어리처럼 보이는 여백 줄임 */
+            padding: 18px 16px 24px;
           }
+
           .top {
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 12px;
             margin-bottom: 14px;
+            flex-wrap: wrap;
           }
+
           .brand {
             display: flex;
             align-items: center;
             gap: 10px;
           }
+
           .dot {
             width: 14px;
             height: 14px;
@@ -212,16 +226,20 @@ export default function CustomerDetailPage() {
             background: linear-gradient(180deg, #ff6bd6, #a855f7);
             box-shadow: 0 10px 24px rgba(168, 85, 247, 0.25);
           }
+
           .title {
             font-size: 22px;
             font-weight: 800;
             color: #2b1b3a;
           }
+
           .actions {
             display: flex;
             gap: 10px;
             align-items: center;
+            flex-wrap: wrap;
           }
+
           .btn {
             border: 0;
             cursor: pointer;
@@ -229,21 +247,26 @@ export default function CustomerDetailPage() {
             padding: 10px 14px;
             font-weight: 800;
             font-size: 14px;
+            white-space: nowrap;
           }
+
           .btn.ghost {
             background: rgba(255, 255, 255, 0.75);
             color: #5b2b77;
             box-shadow: 0 10px 22px rgba(16, 24, 40, 0.12);
           }
+
           .btn.primary {
             background: linear-gradient(180deg, #ff4fd1, #a855f7);
             color: #fff;
             box-shadow: 0 12px 26px rgba(168, 85, 247, 0.28);
           }
+
           .btn:disabled {
             opacity: 0.55;
             cursor: not-allowed;
           }
+
           .card {
             background: rgba(255, 255, 255, 0.78);
             border: 1.5px solid rgba(255, 90, 200, 0.22);
@@ -251,24 +274,29 @@ export default function CustomerDetailPage() {
             padding: 16px;
             box-shadow: 0 18px 40px rgba(16, 24, 40, 0.12);
           }
+
           .grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 12px;
           }
+
           .field {
             display: flex;
             flex-direction: column;
             gap: 8px;
           }
+
           .field.full {
             grid-column: 1 / -1;
           }
+
           .label {
             font-size: 14px;
             font-weight: 800;
             color: #4a235f;
           }
+
           .input,
           .select,
           .textarea {
@@ -281,10 +309,12 @@ export default function CustomerDetailPage() {
             outline: none;
             color: #1f1030;
           }
+
           .textarea {
             min-height: 110px;
             resize: vertical;
           }
+
           .input:focus,
           .select:focus,
           .textarea:focus {

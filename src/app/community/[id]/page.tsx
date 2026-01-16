@@ -62,6 +62,36 @@ function timeAgo(iso: string) {
   return `${d}일 전`;
 }
 
+function formatKST(iso: string) {
+  try {
+    const d = new Date(iso);
+    // ✅ 브라우저 locale + KST 고정
+    const parts = new Intl.DateTimeFormat('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(d);
+
+    const map: any = {};
+    parts.forEach((p) => {
+      if (p.type !== 'literal') map[p.type] = p.value;
+    });
+
+    const yyyy = map.year || '';
+    const mm = map.month || '';
+    const dd = map.day || '';
+    const hh = map.hour || '';
+    const mi = map.minute || '';
+    return `${yyyy}.${mm}.${dd} ${hh}:${mi}`;
+  } catch {
+    return iso;
+  }
+}
+
 function normalizeStoragePath(vRaw: string, bucket: string) {
   const v = (vRaw || '').trim();
   if (!v) return '';
@@ -145,6 +175,19 @@ export default function CommunityDetailPage() {
   const title = useMemo(() => safeText(post?.title, '(제목 없음)'), [post?.title]);
   const content = useMemo(() => safeText(post?.content, ''), [post?.content]);
 
+  const author = useMemo(() => {
+    if (!post?.user_id) return null;
+    return profiles[post.user_id] || null;
+  }, [post?.user_id, profiles]);
+
+  const authorName = useMemo(() => {
+    return safeText(author?.nickname || author?.name, '익명 영업인');
+  }, [author?.nickname, author?.name]);
+
+  const authorAvatar = useMemo(() => {
+    return getAvatarSrc(author?.avatar_url || null);
+  }, [author?.avatar_url]);
+
   async function loadProfilesFor(uids: string[]) {
     const ids = Array.from(new Set(uids.filter(Boolean)));
     if (!ids.length) return;
@@ -204,6 +247,9 @@ export default function CommunityDetailPage() {
       }
       setPost(p);
 
+      // ✅ 작성자 프로필 로드(이거 때문에 “작성자/시간”이 안 보인 느낌이 났음)
+      await loadProfilesFor([p.user_id]);
+
       // image
       if (p.image_url) {
         const resolved = await resolveCommunityImageSrc(p.image_url);
@@ -260,7 +306,7 @@ export default function CommunityDetailPage() {
           }
           setComments((prev) => {
             if (prev.some((x) => x.id === row.id)) return prev;
-            return [...prev, row].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+            return [...prev].concat([row]).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
           });
           await loadProfilesFor([row.user_id]);
         }
@@ -311,31 +357,30 @@ export default function CommunityDetailPage() {
 
   // ✅✅✅ 댓글 저장: id를 보내지 말고 DB default(uuid)로 생성
   async function onSubmitComment() {
-  const text = commentText.trim();
-  if (!text || !meId || commentSaving) return;
+    const text = commentText.trim();
+    if (!text || !meId || commentSaving) return;
 
-  setCommentSaving(true);
-  setErrMsg(null); // ✅ 여기
+    setCommentSaving(true);
+    setErrMsg(null);
 
-  try {
-    const { error } = await supabase.from('community_comments').insert({
-      post_id: postId,
-      user_id: meId,
-      content: text,
-    });
+    try {
+      const { error } = await supabase.from('community_comments').insert({
+        post_id: postId,
+        user_id: meId,
+        content: text,
+      });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    setErrMsg(null);     // ✅ 성공 시 이슈 카드 제거
-    setCommentText('');
-    await loadComments();
-  } catch (e: any) {
-    setErrMsg(e?.message || '댓글 저장 오류');
-  } finally {
-    setCommentSaving(false);
+      setErrMsg(null);
+      setCommentText('');
+      await loadComments();
+    } catch (e: any) {
+      setErrMsg(e?.message || '댓글 저장 오류');
+    } finally {
+      setCommentSaving(false);
+    }
   }
-}
-
 
   async function onDeleteComment(commentId: string) {
     if (!meId) return;
@@ -362,12 +407,19 @@ export default function CommunityDetailPage() {
           <div style={styles.topTitle}>커뮤니티</div>
         </div>
 
+        {/* ✅ 경고카드: “연한 핑크” 포인트로 유지(화이트로 뭉개지지 않게) */}
+        <div style={styles.warnCard}>
+          <div style={{ fontWeight: 1000 }}>🌸안내🌸</div>
+          <div style={{ marginTop: 6, fontWeight: 900 }}>
+            작은 응원 한마디가 큰 힘이 됩니다 ^^💗
+                따뜻한 댓글로 서로를 UP~!! 해주세요!💗
+          </div>
+        </div>
+
         {errMsg ? (
-          <div style={{ ...styles.sectionCard, borderColor: 'rgba(255,70,140,0.45)' }}>
-            <div style={{ fontSize: 18, color: '#7a1a3a', fontWeight: 1000 }}>이슈</div>
-            <div style={{ marginTop: 8, color: '#6b2340', fontSize: 15.5, fontWeight: 900, whiteSpace: 'pre-wrap' }}>
-              {errMsg}
-            </div>
+          <div style={{ ...styles.issueCard }}>
+            <div style={{ fontSize: 16.5, color: '#7a1a3a', fontWeight: 1000 }}>이슈</div>
+            <div style={{ marginTop: 8, color: '#6b2340', fontSize: 14.5, fontWeight: 900, whiteSpace: 'pre-wrap' }}>{errMsg}</div>
           </div>
         ) : null}
 
@@ -382,9 +434,33 @@ export default function CommunityDetailPage() {
         ) : (
           <>
             <div style={styles.sectionCard}>
-              <div style={styles.metaRow}>
-                <span style={styles.cat}>{catLabel}</span>
-                <span style={styles.time}>{timeAgo(post.created_at)}</span>
+              {/* ✅ 작성자/작성일/카테고리 “확실히” 보이게 */}
+              <div style={styles.postHeaderRow}>
+                <div style={styles.authorBox}>
+                  <div style={styles.authorAvatar}>
+                    {authorAvatar ? (
+                      <img src={authorAvatar} alt="av" style={styles.authorAvatarImg as any} />
+                    ) : (
+                      <div style={styles.authorAvatarFallback}>U</div>
+                    )}
+                  </div>
+
+                  <div style={styles.authorMeta}>
+                    <div style={styles.authorNameRow}>
+                      <span style={styles.authorName}>{authorName}</span>
+                      <span style={styles.authorDot}>•</span>
+                      <span style={styles.authorCat}>{catLabel}</span>
+                    </div>
+                    <div style={styles.authorTimeRow}>
+                      <span style={styles.authorTimeAbs}>{formatKST(post.created_at)}</span>
+                      <span style={styles.authorTimeAgo}>{timeAgo(post.created_at)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={styles.metaRightPills}>
+                  <span style={styles.metaPillSoft}>조회수 {viewN}</span>
+                </div>
               </div>
 
               <div style={styles.title}>{title}</div>
@@ -397,6 +473,7 @@ export default function CommunityDetailPage() {
 
               <div style={styles.content}>{content || '내용이 없어요.'}</div>
 
+              {/* ✅ 포인트는 살리고(핑크/퍼플), 전체가 하얗게 죽지 않게 */}
               <div style={styles.statsRow}>
                 <span style={styles.statPill}>조회수 {viewN}</span>
                 <span style={styles.statPill}>댓글 {comments.length}</span>
@@ -410,17 +487,24 @@ export default function CommunityDetailPage() {
             <div style={styles.sectionCard}>
               <div style={styles.sectionTitle}>댓글</div>
 
+              {/* ✅ 댓글창 “촌스러움 제거”: 입력 박스/버튼/포커스/모양 정리 */}
               <div className="uplog-cmtbox" style={styles.commentBox}>
                 <textarea
-  value={commentText}
-  onChange={(e) => {
-    setCommentText(e.target.value);
-    if (errMsg) setErrMsg(null); // ✅ 여기
-  }}
-  placeholder="댓글을 입력하세요"
-/>
+                  value={commentText}
+                  onChange={(e) => {
+                    setCommentText(e.target.value);
+                    if (errMsg) setErrMsg(null);
+                  }}
+                  placeholder="댓글을 입력하세요"
+                  style={styles.textarea as any}
+                />
 
-                <button type="button" onClick={onSubmitComment} disabled={commentSaving || !commentText.trim()} style={styles.commentBtn}>
+                <button
+                  type="button"
+                  onClick={onSubmitComment}
+                  disabled={commentSaving || !commentText.trim()}
+                  style={{ ...styles.commentBtn, ...(commentSaving || !commentText.trim() ? styles.commentBtnDisabled : {}) }}
+                >
                   {commentSaving ? '저장 중…' : '댓글 저장'}
                 </button>
               </div>
@@ -473,42 +557,251 @@ export default function CommunityDetailPage() {
 }
 
 const styles: Record<string, any> = {
-  page: { padding: '22px 14px 46px', maxWidth: 980, margin: '0 auto', boxSizing: 'border-box' },
+  page: {
+    padding: '22px 14px 46px',
+    maxWidth: 980,
+    margin: '0 auto',
+    boxSizing: 'border-box',
+  },
 
   topRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px' },
-  backBtn: { border: '1px solid rgba(255,120,200,0.22)', background: 'rgba(255,255,255,0.92)', borderRadius: 14, padding: '10px 12px', fontWeight: 1000, color: '#2f143a', cursor: 'pointer' },
+  backBtn: {
+    border: '1px solid rgba(255,120,200,0.22)',
+    background: 'rgba(255,255,255,0.92)',
+    borderRadius: 14,
+    padding: '10px 12px',
+    fontWeight: 1000,
+    color: '#2f143a',
+    cursor: 'pointer',
+  },
   topTitle: { fontSize: 18, fontWeight: 1000, color: '#3c184c' },
 
-  sectionCard: { marginTop: 18, borderRadius: 24, padding: 18, background: 'rgba(255,255,255,0.94)', border: '1px solid rgba(255,120,200,0.22)', boxShadow: '0 16px 45px rgba(40,10,60,0.10)', boxSizing: 'border-box', width: '100%', overflow: 'hidden' },
+  // ✅ 경고카드: 연핑크 포인트 (전체가 하얘지지 않게)
+  warnCard: {
+    marginTop: 12,
+    borderRadius: 18,
+    padding: 14,
+    border: '1px solid rgba(255,120,200,0.22)',
+    background: 'rgba(255,200,220,0.18)',
+    color: '#4a2a55',
+    boxSizing: 'border-box',
+  },
 
-  metaRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  cat: { fontSize: 13, fontWeight: 1000, color: '#3c184c' },
-  time: { fontSize: 12.5, fontWeight: 900, color: '#6b4a78' },
+  issueCard: {
+    marginTop: 14,
+    borderRadius: 20,
+    padding: 16,
+    background: 'rgba(255,230,240,0.42)',
+    border: '1px solid rgba(255,70,140,0.25)',
+    boxShadow: '0 16px 45px rgba(40,10,60,0.08)',
+    boxSizing: 'border-box',
+    width: '100%',
+    overflow: 'hidden',
+  },
 
-  title: { marginTop: 10, fontSize: 20, fontWeight: 1000, color: '#2f143a' },
+  sectionCard: {
+    marginTop: 18,
+    borderRadius: 24,
+    padding: 18,
+    background: 'rgba(255,255,255,0.94)',
+    border: '1px solid rgba(255,120,200,0.22)',
+    boxShadow: '0 16px 45px rgba(40,10,60,0.10)',
+    boxSizing: 'border-box',
+    width: '100%',
+    overflow: 'hidden',
+  },
 
-  imgFrame: { marginTop: 12, width: '100%', aspectRatio: '16 / 9', maxHeight: 320, borderRadius: 18, border: '1px solid rgba(255,120,200,0.16)', overflow: 'hidden', background: 'rgba(255,255,255,0.92)', display: 'block' },
+  // ✅ 작성자/시간/카테고리 영역
+  postHeaderRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    boxSizing: 'border-box',
+  },
+
+  authorBox: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 },
+
+  authorAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    border: '1px solid rgba(255,120,200,0.18)',
+    overflow: 'hidden',
+    background: 'linear-gradient(135deg, rgba(255,120,200,0.14), rgba(170,120,255,0.12))',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: '0 0 auto',
+  },
+  authorAvatarImg: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
+  authorAvatarFallback: { fontWeight: 1000, color: '#6b4a78' },
+
+  authorMeta: { minWidth: 0 },
+  authorNameRow: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' },
+  authorName: { fontSize: 14.2, fontWeight: 1000, color: '#2f143a' },
+  authorDot: { color: 'rgba(90,45,107,0.55)', fontWeight: 1000 },
+  authorCat: {
+    fontSize: 12.6,
+    fontWeight: 1000,
+    color: '#3c184c',
+    padding: '5px 10px',
+    borderRadius: 999,
+    border: '1px solid rgba(255,120,200,0.18)',
+    background: 'rgba(255,255,255,0.92)',
+    whiteSpace: 'nowrap',
+  },
+
+  authorTimeRow: { marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  authorTimeAbs: { fontSize: 12.5, fontWeight: 900, color: '#6b4a78' },
+  authorTimeAgo: {
+    fontSize: 12,
+    fontWeight: 1000,
+    color: '#7a1a3a',
+    background: 'rgba(255,200,220,0.35)',
+    border: '1px solid rgba(255,120,200,0.20)',
+    padding: '4px 8px',
+    borderRadius: 999,
+    whiteSpace: 'nowrap',
+  },
+
+  metaRightPills: { display: 'flex', gap: 8, alignItems: 'center', flex: '0 0 auto' },
+  metaPillSoft: {
+    fontSize: 12.5,
+    fontWeight: 1000,
+    padding: '7px 12px',
+    borderRadius: 999,
+    border: '1px solid rgba(255,120,200,0.16)',
+    background: 'rgba(255,255,255,0.92)',
+    color: '#4a2a55',
+    whiteSpace: 'nowrap',
+  },
+
+  title: { marginTop: 12, fontSize: 20, fontWeight: 1000, color: '#2f143a' },
+
+  imgFrame: {
+    marginTop: 12,
+    width: '100%',
+    aspectRatio: '16 / 9',
+    maxHeight: 320,
+    borderRadius: 18,
+    border: '1px solid rgba(255,120,200,0.16)',
+    overflow: 'hidden',
+    background: 'rgba(255,255,255,0.92)',
+    display: 'block',
+  },
   img: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
 
-  content: { marginTop: 12, fontSize: 15.5, fontWeight: 900, color: '#4a2a55', lineHeight: 1.65, whiteSpace: 'pre-wrap' },
+  content: {
+    marginTop: 12,
+    fontSize: 15.5,
+    fontWeight: 900,
+    color: '#4a2a55',
+    lineHeight: 1.65,
+    whiteSpace: 'pre-wrap',
+  },
 
   statsRow: { marginTop: 14, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
-  statPill: { fontSize: 12.5, fontWeight: 1000, padding: '7px 12px', borderRadius: 999, border: '1px solid rgba(255,120,200,0.16)', background: 'rgba(255,255,255,0.92)', color: '#4a2a55' },
+  statPill: {
+    fontSize: 12.5,
+    fontWeight: 1000,
+    padding: '7px 12px',
+    borderRadius: 999,
+    border: '1px solid rgba(255,120,200,0.16)',
+    background: 'rgba(255,255,255,0.92)',
+    color: '#4a2a55',
+  },
 
-  likeBtn: { border: '1px solid rgba(255,120,200,0.18)', background: 'rgba(255,255,255,0.92)', borderRadius: 999, padding: '7px 12px', fontSize: 12.5, fontWeight: 1000, color: '#4a2a55', cursor: 'pointer', minWidth: 110 },
-  likeBtnOn: { background: 'linear-gradient(135deg, rgba(255,120,200,0.22), rgba(170,120,255,0.18))', borderColor: 'rgba(255,120,200,0.28)' },
+  likeBtn: {
+    border: '1px solid rgba(255,120,200,0.18)',
+    background: 'rgba(255,255,255,0.92)',
+    borderRadius: 999,
+    padding: '7px 12px',
+    fontSize: 12.5,
+    fontWeight: 1000,
+    color: '#4a2a55',
+    cursor: 'pointer',
+    minWidth: 110,
+  },
+  likeBtnOn: {
+    background: 'linear-gradient(135deg, rgba(255,120,200,0.22), rgba(170,120,255,0.18))',
+    borderColor: 'rgba(255,120,200,0.28)',
+  },
 
   sectionTitle: { fontSize: 18, fontWeight: 1000, color: '#3c184c' },
 
-  commentBox: { marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 140px', gap: 12, alignItems: 'stretch' },
-  textarea: { width: '100%', minHeight: 84, resize: 'vertical', borderRadius: 16, border: '1px solid rgba(255,120,200,0.22)', background: 'rgba(255,255,255,0.96)', padding: 12, fontSize: 14.5, fontWeight: 900, color: '#2f143a', outline: 'none', boxSizing: 'border-box' },
-  commentBtn: { border: 'none', borderRadius: 16, padding: '12px 14px', fontSize: 14.5, fontWeight: 1000, cursor: 'pointer', color: '#2f143a', background: 'linear-gradient(135deg, rgba(255,120,200,0.88), rgba(170,120,255,0.88))', boxShadow: '0 14px 30px rgba(70,10,110,0.16)' },
+  // ✅ 댓글 입력: “촌스러움 제거” 핵심
+  commentBox: {
+    marginTop: 12,
+    display: 'grid',
+    gridTemplateColumns: '1fr 140px',
+    gap: 12,
+    alignItems: 'stretch',
+    padding: 12,
+    borderRadius: 18,
+    border: '1px solid rgba(255,120,200,0.18)',
+    background: 'linear-gradient(135deg, rgba(255,200,220,0.16), rgba(200,180,255,0.12))',
+    boxSizing: 'border-box',
+  },
+
+  textarea: {
+    width: '100%',
+    minHeight: 92,
+    resize: 'vertical',
+    borderRadius: 16,
+    border: '1px solid rgba(255,120,200,0.22)',
+    background: 'rgba(255,255,255,0.98)',
+    padding: 12,
+    fontSize: 14.5,
+    fontWeight: 900,
+    color: '#2f143a',
+    outline: 'none',
+    boxSizing: 'border-box',
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)',
+  },
+
+  commentBtn: {
+    border: 'none',
+    borderRadius: 16,
+    padding: '12px 14px',
+    fontSize: 14.5,
+    fontWeight: 1000,
+    cursor: 'pointer',
+    color: '#2f143a',
+    background: 'linear-gradient(135deg, rgba(255,120,200,0.90), rgba(170,120,255,0.90))',
+    boxShadow: '0 14px 30px rgba(70,10,110,0.16)',
+    minHeight: 48,
+  },
+  commentBtnDisabled: {
+    opacity: 0.55,
+    cursor: 'not-allowed',
+    boxShadow: 'none',
+  },
 
   commentList: { marginTop: 14, display: 'flex', flexDirection: 'column', gap: 12 },
 
-  commentItem: { display: 'grid', gridTemplateColumns: '44px 1fr', gap: 10, padding: 12, borderRadius: 18, border: '1px solid rgba(255,120,200,0.16)', background: 'rgba(255,255,255,0.95)', boxSizing: 'border-box' },
+  commentItem: {
+    display: 'grid',
+    gridTemplateColumns: '44px 1fr',
+    gap: 10,
+    padding: 12,
+    borderRadius: 18,
+    border: '1px solid rgba(255,120,200,0.16)',
+    background: 'rgba(255,255,255,0.95)',
+    boxSizing: 'border-box',
+  },
 
-  avatar: { width: 44, height: 44, borderRadius: 14, border: '1px solid rgba(255,120,200,0.18)', overflow: 'hidden', background: 'rgba(255,255,255,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    border: '1px solid rgba(255,120,200,0.18)',
+    overflow: 'hidden',
+    background: 'rgba(255,255,255,0.92)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatarImg: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
   avatarFallback: { fontWeight: 1000, color: '#6b4a78' },
 
@@ -517,9 +810,28 @@ const styles: Record<string, any> = {
   commentTopLeft: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 },
 
   commentName: { fontSize: 13.5, fontWeight: 1000, color: '#3c184c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  commentTime: { fontSize: 12, fontWeight: 900, color: '#6b4a78', whiteSpace: 'nowrap' },
+  commentTime: {
+    fontSize: 12,
+    fontWeight: 1000,
+    color: '#6b4a78',
+    whiteSpace: 'nowrap',
+    background: 'rgba(200,180,255,0.14)',
+    border: '1px solid rgba(170,120,255,0.16)',
+    padding: '4px 8px',
+    borderRadius: 999,
+  },
 
-  delBtn: { border: '1px solid rgba(255,120,200,0.20)', background: 'rgba(255,255,255,0.92)', borderRadius: 999, padding: '6px 10px', fontSize: 12.5, fontWeight: 1000, color: '#7a1a3a', cursor: 'pointer', minWidth: 60 },
+  delBtn: {
+    border: '1px solid rgba(255,120,200,0.20)',
+    background: 'rgba(255,255,255,0.92)',
+    borderRadius: 999,
+    padding: '6px 10px',
+    fontSize: 12.5,
+    fontWeight: 1000,
+    color: '#7a1a3a',
+    cursor: 'pointer',
+    minWidth: 60,
+  },
 
   commentText: { marginTop: 6, fontSize: 14, fontWeight: 900, color: '#4a2a55', lineHeight: 1.55, whiteSpace: 'pre-wrap' },
 
@@ -527,13 +839,18 @@ const styles: Record<string, any> = {
 };
 
 if (typeof document !== 'undefined') {
-  const id = 'uplog-community-detail-css-v5';
+  const id = 'uplog-community-detail-css-v7';
   if (!document.getElementById(id)) {
     const s = document.createElement('style');
     s.id = id;
     s.innerHTML = `
       @media (max-width: 820px){
         .uplog-cmtbox { grid-template-columns: 1fr !important; }
+      }
+
+      .uplog-cmtbox textarea:focus{
+        border-color: rgba(255,120,200,0.42) !important;
+        box-shadow: 0 0 0 4px rgba(255,120,200,0.12) !important;
       }
     `;
     document.head.appendChild(s);

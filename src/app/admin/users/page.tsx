@@ -14,6 +14,13 @@ type ProfileRow = {
   avatar_url?: string | null;
   role: string | null; // user/admin/suspended...
   created_at: string | null;
+
+  // ✅ 추가(있으면 표시, 없어도 OK)
+  phone?: string | null;
+  address_text?: string | null;
+  company?: string | null;
+  team?: string | null; // ✅✅✅ FIX: team_name ❌ → team ✅
+  career?: string | null;
 };
 
 type MonthlyBadgeReportRow = {
@@ -168,7 +175,10 @@ export default function AdminUsersPage() {
   const lastPanelUserIdRef = useRef<string | null>(null);
 
   const [grantScope, setGrantScope] = useState<ScopeKey>('community');
-  const [grantDuration, setGrantDuration] = useState<DurationKey>('7d');
+
+  // ✅ 기본 기간 '영구'
+  const [grantDuration, setGrantDuration] = useState<DurationKey>('forever');
+
   const [grantHard, setGrantHard] = useState(false);
   const [grantNote, setGrantNote] = useState('');
   const [grantBusy, setGrantBusy] = useState(false);
@@ -178,9 +188,10 @@ export default function AdminUsersPage() {
     setLoading(true);
     setErr(null);
 
+    // ✅✅✅ FIX: team_name ❌ 제거, team ✅ 사용
     const first = await supabase
       .from('profiles')
-      .select('user_id,email,name,nickname,avatar_url,role,created_at')
+      .select('user_id,email,name,nickname,avatar_url,role,created_at,phone,address_text,company,team,career')
       .order('created_at', { ascending: false });
 
     if (!first.error) {
@@ -193,15 +204,22 @@ export default function AdminUsersPage() {
           avatar_url: x.avatar_url ?? null,
           role: x.role ?? null,
           created_at: x.created_at ?? null,
+
+          phone: x.phone ?? null,
+          address_text: x.address_text ?? null,
+          company: x.company ?? null,
+          team: x.team ?? null,
+          career: x.career ?? null,
         }))
       );
       setLoading(false);
       return;
     }
 
+    // ✅ fallback
     const second = await supabase
       .from('profiles')
-      .select('user_id,email,name,avatar_url,role,created_at')
+      .select('user_id,email,name,avatar_url,role,created_at,phone,address_text,company,team,career')
       .order('created_at', { ascending: false });
 
     if (second.error) {
@@ -216,6 +234,12 @@ export default function AdminUsersPage() {
           avatar_url: x.avatar_url ?? null,
           role: x.role ?? null,
           created_at: x.created_at ?? null,
+
+          phone: x.phone ?? null,
+          address_text: x.address_text ?? null,
+          company: x.company ?? null,
+          team: x.team ?? null,
+          career: x.career ?? null,
         }))
       );
     }
@@ -313,7 +337,17 @@ export default function AdminUsersPage() {
     const s = q.trim().toLowerCase();
     if (!s) return rows;
     return rows.filter((r) => {
-      const hay = [safeStr(r.user_id), safeStr(r.email), safeStr(r.name), safeStr(r.nickname ?? null), safeStr(r.role)]
+      const hay = [
+        safeStr(r.user_id),
+        safeStr(r.email),
+        safeStr(r.name),
+        safeStr(r.nickname ?? null),
+        safeStr(r.role),
+        safeStr(r.phone ?? null),
+        safeStr(r.company ?? null),
+        safeStr(r.team ?? null),
+        safeStr(r.address_text ?? null),
+      ]
         .join(' ')
         .toLowerCase();
       return hay.includes(s);
@@ -341,7 +375,7 @@ export default function AdminUsersPage() {
     setPanelOpen(true);
 
     setGrantScope('community');
-    setGrantDuration('7d');
+    setGrantDuration('forever');
     setGrantHard(false);
     setGrantNote('');
     setGrantMsg(null);
@@ -367,7 +401,15 @@ export default function AdminUsersPage() {
     const is_hard = grantHard || scope === 'all';
     const action = is_hard ? 'ban' : 'disable';
     const starts_at = new Date().toISOString();
-    const days = DURATION_META.find((d) => d.id === grantDuration)?.days ?? 7;
+
+    const found = DURATION_META.find((d) => d.id === grantDuration);
+    if (!found) {
+      setGrantMsg('⚠ 제재 기간을 선택해주세요.');
+      setGrantBusy(false);
+      return;
+    }
+
+    const days = found.days;
     const ends_at = days === null ? null : addDaysISO(days);
     const note = safeStr(grantNote) || null;
 
@@ -426,7 +468,7 @@ export default function AdminUsersPage() {
         <div>
           <h1 className="h1">회원관리</h1>
           <div className="sub">
-            총 <b>{filtered.length}</b>명 · 역할 변경/정지 관리
+            총 <b>{filtered.length}</b>명 · 관리자에서만 회원정보 확인/제재 가능
           </div>
         </div>
 
@@ -445,7 +487,7 @@ export default function AdminUsersPage() {
           className="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="이메일 / 닉네임 / UID / 역할 검색"
+          placeholder="이메일 / 닉네임 / UID / 역할 / 연락처 / 회사 검색"
         />
       </div>
 
@@ -507,20 +549,10 @@ export default function AdminUsersPage() {
                 </div>
 
                 <div className="actions">
-                  <button
-                    type="button"
-                    className="actBtn user"
-                    disabled={savingId === p.user_id}
-                    onClick={() => setRole(p.user_id, 'user')}
-                  >
+                  <button type="button" className="actBtn user" disabled={savingId === p.user_id} onClick={() => setRole(p.user_id, 'user')}>
                     일반
                   </button>
-                  <button
-                    type="button"
-                    className="actBtn admin"
-                    disabled={savingId === p.user_id}
-                    onClick={() => setRole(p.user_id, 'admin')}
-                  >
+                  <button type="button" className="actBtn admin" disabled={savingId === p.user_id} onClick={() => setRole(p.user_id, 'admin')}>
                     관리자
                   </button>
                   <button
@@ -564,6 +596,12 @@ export default function AdminUsersPage() {
 
               const isSuspended = (selected.role ?? '').toLowerCase() === 'suspended';
 
+              const phone = safeStr(selected.phone ?? null) || '-';
+              const addr = safeStr(selected.address_text ?? null) || '-';
+              const company = safeStr(selected.company ?? null) || '-';
+              const team = safeStr(selected.team ?? null) || '-'; // ✅✅✅ FIX
+              const career = safeStr(selected.career ?? null) || '-';
+
               return (
                 <>
                   <div className="heroCard">
@@ -592,30 +630,44 @@ export default function AdminUsersPage() {
                         </div>
                       </div>
 
+                      <div className="privateBox">
+                        <div className="privateTitle">회원정보 (관리자 전용)</div>
+                        <div className="privateGrid">
+                          <div className="kv">
+                            <div className="k">연락처</div>
+                            <div className="v">{phone}</div>
+                          </div>
+                          <div className="kv">
+                            <div className="k">회사</div>
+                            <div className="v">{company}</div>
+                          </div>
+                          <div className="kv">
+                            <div className="k">팀</div>
+                            <div className="v">{team}</div>
+                          </div>
+                          <div className="kv">
+                            <div className="k">경력</div>
+                            <div className="v">{career}</div>
+                          </div>
+                          <div className="kv span2">
+                            <div className="k">주소</div>
+                            <div className="v">{addr}</div>
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="suspendBox">
                         <div className="suspendLeft">
                           <div className="suspendTitle">{isSuspended ? '정지 상태' : '정상 상태'}</div>
-                          <div className="suspendDesc">
-                            {isSuspended ? 'role = suspended (로그인/기능 제한 적용 대상)' : 'role 정상 (user/admin)'}
-                          </div>
+                          <div className="suspendDesc">{isSuspended ? 'role = suspended' : 'role 정상 (user/admin)'}</div>
                         </div>
                         <div className="suspendBtns">
                           {isSuspended ? (
-                            <button
-                              type="button"
-                              className="sBtn lift"
-                              disabled={savingId === selected.user_id}
-                              onClick={() => setRole(selected.user_id, 'user')}
-                            >
+                            <button type="button" className="sBtn lift" disabled={savingId === selected.user_id} onClick={() => setRole(selected.user_id, 'user')}>
                               정지 해제
                             </button>
                           ) : (
-                            <button
-                              type="button"
-                              className="sBtn ban"
-                              disabled={savingId === selected.user_id}
-                              onClick={() => setRole(selected.user_id, 'suspended')}
-                            >
+                            <button type="button" className="sBtn ban" disabled={savingId === selected.user_id} onClick={() => setRole(selected.user_id, 'suspended')}>
                               정지하기
                             </button>
                           )}
@@ -661,7 +713,6 @@ export default function AdminUsersPage() {
                       </div>
                     )}
 
-                    {/* badgeSource는 유지(디버깅/확인용) */}
                     {badgeSource !== 'none' ? <div className="miniHint">source: {badgeSource}</div> : null}
                   </div>
 
@@ -693,9 +744,7 @@ export default function AdminUsersPage() {
                           <div className="sanList">
                             {activeSanctions.map((s) => (
                               <div key={s.id} className="sanItem">
-                                <div className={`sanPill ${s.is_hard ? 'hard' : 'soft'}`}>
-                                  {s.is_hard ? '하드 정지' : '소프트 제재'}
-                                </div>
+                                <div className={`sanPill ${s.is_hard ? 'hard' : 'soft'}`}>{s.is_hard ? '하드 정지' : '소프트 제재'}</div>
 
                                 <div className="sanMain">
                                   <div className="sanLine">
@@ -734,8 +783,7 @@ export default function AdminUsersPage() {
                                     <b>{safeStr(s.scope) || 'scope'}</b> · {safeStr(s.action) || 'action'}
                                   </div>
                                   <div className="sanTime">
-                                    {fmtDateTime(s.starts_at)} ~ {s.ends_at ? fmtDateTime(s.ends_at) : '영구'}{' '}
-                                    <span className="expired">· 만료</span>
+                                    {fmtDateTime(s.starts_at)} ~ {s.ends_at ? fmtDateTime(s.ends_at) : '영구'} <span className="expired">· 만료</span>
                                   </div>
                                 </div>
                                 <div className="ghostChip">기록</div>
@@ -745,11 +793,7 @@ export default function AdminUsersPage() {
                         )}
 
                         <div className="refreshRow">
-                          <button
-                            type="button"
-                            className="ghostBtn"
-                            onClick={() => selected && fetchSanctionsAll(selected.user_id)}
-                          >
+                          <button type="button" className="ghostBtn" onClick={() => selected && fetchSanctionsAll(selected.user_id)}>
                             제재 새로고침
                           </button>
                         </div>
@@ -798,11 +842,7 @@ export default function AdminUsersPage() {
                     <div className="grantRow">
                       <div className="lbl">모드</div>
                       <div className="toggleRow">
-                        <button
-                          type="button"
-                          className={`toggle ${grantHard ? 'on' : ''}`}
-                          onClick={() => setGrantHard((v) => !v)}
-                        >
+                        <button type="button" className={`toggle ${grantHard ? 'on' : ''}`} onClick={() => setGrantHard((v) => !v)}>
                           {grantHard ? '하드 정지' : '소프트 제재'}
                         </button>
                         <div className="toggleHint">
@@ -813,21 +853,11 @@ export default function AdminUsersPage() {
 
                     <div className="grantRow">
                       <div className="lbl">메모</div>
-                      <textarea
-                        className="ta"
-                        value={grantNote}
-                        onChange={(e) => setGrantNote(e.target.value)}
-                        placeholder="사유/근거/관리자 메모"
-                      />
+                      <textarea className="ta" value={grantNote} onChange={(e) => setGrantNote(e.target.value)} placeholder="사유/근거/관리자 메모" />
                     </div>
 
                     <div className="grantBtns">
-                      <button
-                        type="button"
-                        className="grantBtn"
-                        disabled={grantBusy || sanctionsDisabled}
-                        onClick={grantSanction}
-                      >
+                      <button type="button" className="grantBtn" disabled={grantBusy || sanctionsDisabled} onClick={grantSanction}>
                         {sanctionsDisabled ? '제재 기능 비활성' : grantBusy ? '부여 중…' : '제재 부여'}
                       </button>
                     </div>
@@ -838,28 +868,13 @@ export default function AdminUsersPage() {
                   <div className="panelSection">
                     <div className="secTitle">role 빠른 조치</div>
                     <div className="panelActions">
-                      <button
-                        type="button"
-                        className="pAct user"
-                        disabled={savingId === selected.user_id}
-                        onClick={() => setRole(selected.user_id, 'user')}
-                      >
+                      <button type="button" className="pAct user" disabled={savingId === selected.user_id} onClick={() => setRole(selected.user_id, 'user')}>
                         일반
                       </button>
-                      <button
-                        type="button"
-                        className="pAct admin"
-                        disabled={savingId === selected.user_id}
-                        onClick={() => setRole(selected.user_id, 'admin')}
-                      >
+                      <button type="button" className="pAct admin" disabled={savingId === selected.user_id} onClick={() => setRole(selected.user_id, 'admin')}>
                         관리자
                       </button>
-                      <button
-                        type="button"
-                        className="pAct suspended"
-                        disabled={savingId === selected.user_id}
-                        onClick={() => setRole(selected.user_id, 'suspended')}
-                      >
+                      <button type="button" className="pAct suspended" disabled={savingId === selected.user_id} onClick={() => setRole(selected.user_id, 'suspended')}>
                         정지
                       </button>
                     </div>
@@ -884,7 +899,8 @@ export default function AdminUsersPage() {
 }
 
 const CSS = `
-.page{position:relative;min-height:100vh;width:100%;overflow:hidden;color:#0b0b0f;}
+.page{position:relative;min-height:100vh;width:100%;overflow:hidden;color:#0b0b0f;box-sizing:border-box;}
+.page *{box-sizing:border-box;}
 .bg{position:absolute;inset:0;background:
 radial-gradient(1200px 600px at 15% 20%, #ffffff 0%, rgba(255,255,255,0) 60%),
 radial-gradient(1200px 600px at 80% 25%, #f3e8ff 0%, rgba(255,255,255,0) 60%),
@@ -900,7 +916,7 @@ linear-gradient(180deg, #f8f4ff 0%, #f5f9ff 50%, #f8f4ff 100%);}
 .navBtn:disabled{opacity:0.55;cursor:not-allowed;}
 
 .searchWrap{position:relative;max-width:1120px;margin:0 auto;padding:0 18px 14px;}
-.search{width:100%;height:44px;border-radius:14px;border:1px solid rgba(18,6,26,0.16);background: rgba(255,255,255,0.90);padding:0 14px;font-size:17px;font-weight:900;color:#0b0b0f;outline:none;box-shadow: 0 12px 30px rgba(40,10,70,0.08);}
+.search{width:100%;height:44px;border-radius:14px;border:1px solid rgba(18,6,26,0.16);background: rgba(255,255,255,0.90);padding:0 14px;font-size:17px;font-weight:900;color:#0b0b0f;outline:none;box-shadow: 0 12px 30px rgba(40,10,70,0.08);display:block;}
 .search::placeholder{color: rgba(11,11,15,0.45);font-weight:900;}
 
 .error{position:relative;max-width:1120px;margin:0 auto;padding:10px 18px;color:#6b1024;font-weight:950;}
@@ -922,7 +938,6 @@ linear-gradient(180deg, #f8f4ff 0%, #f5f9ff 50%, #f8f4ff 100%);}
 .email{margin-top:4px;font-size:14px;font-weight:950;color:#15101f;opacity:0.92;word-break:break-all;}
 .metaRow{margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;font-weight:950;color: rgba(11,11,15,0.70);}
 .dot{opacity:0.5;}
-
 .viewBtn{border-radius:14px;padding:10px 12px;border:1px solid rgba(18,6,26,0.14);background: linear-gradient(135deg, rgba(255,79,216,0.18), rgba(185,130,255,0.18));font-weight:1000;color:#0b0b0f;box-shadow:0 12px 24px rgba(40,10,70,0.10);white-space:nowrap;}
 
 .pill{padding:6px 10px;border-radius:999px;font-size:12px;font-weight:1000;border:1px solid rgba(18,6,26,0.14);color:#0b0b0f;}
@@ -940,7 +955,7 @@ linear-gradient(180deg, #f8f4ff 0%, #f5f9ff 50%, #f8f4ff 100%);}
 
 .panelScrim{position:fixed;inset:0;background: rgba(10, 6, 18, 0.30);opacity:0;pointer-events:none;transition: opacity .18s ease;z-index:40;}
 .panelScrim.on{opacity:1;pointer-events:auto;}
-.panel{position:fixed;top:0;right:0;height:100vh;width:min(520px, 92vw);background: rgba(255,255,255,0.92);border-left: 1px solid rgba(18,6,26,0.12);box-shadow:-18px 0 40px rgba(40,10,70,0.14);transform: translateX(104%);transition: transform .22s ease;z-index:45;backdrop-filter: blur(12px);display:flex;flex-direction:column;}
+.panel{position:fixed;top:0;right:0;height:100vh;width:min(540px, 92vw);background: rgba(255,255,255,0.92);border-left: 1px solid rgba(18,6,26,0.12);box-shadow:-18px 0 40px rgba(40,10,70,0.14);transform: translateX(104%);transition: transform .22s ease;z-index:45;backdrop-filter: blur(12px);display:flex;flex-direction:column;}
 .panel.on{transform: translateX(0);}
 .panelHead{padding:16px 16px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .panelTitle{font-size:18px;font-weight:1000;color:#0b0b0f;letter-spacing:-0.2px;}
@@ -955,6 +970,14 @@ linear-gradient(180deg, #f8f4ff 0%, #f5f9ff 50%, #f8f4ff 100%);}
 .heroName{font-size:18px;font-weight:1000;color:#0b0b0f;}
 .heroEmail{margin-top:4px;font-size:13px;font-weight:950;color:#111019;word-break:break-all;opacity:0.92;}
 .heroMeta{margin-top:8px;display:grid;gap:6px;font-size:12px;font-weight:950;color: rgba(11,11,15,0.70);}
+
+.privateBox{margin-top:12px;border-radius:16px;border:1px solid rgba(18,6,26,0.10);background: linear-gradient(135deg, rgba(73,183,255,0.10), rgba(255,79,216,0.08), rgba(255,255,255,0.78));box-shadow:0 12px 26px rgba(40,10,70,0.08);padding:12px;overflow:hidden;}
+.privateTitle{font-size:13px;font-weight:1000;color:#0b0b0f;}
+.privateGrid{margin-top:10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.kv{border-radius:14px;border:1px solid rgba(18,6,26,0.10);background: rgba(255,255,255,0.78);padding:10px;min-width:0;}
+.kv.span2{grid-column:1 / span 2;}
+.k{font-size:11px;font-weight:1000;color: rgba(11,11,15,0.65);}
+.v{margin-top:6px;font-size:13px;font-weight:1000;color:#0b0b0f;word-break:break-word;line-height:1.35;}
 
 .suspendBox{margin-top:12px;border-radius:16px;border:1px solid rgba(18,6,26,0.10);background: linear-gradient(135deg, rgba(255,79,216,0.10), rgba(185,130,255,0.08), rgba(255,255,255,0.75));box-shadow:0 12px 26px rgba(40,10,70,0.08);padding:12px;display:flex;gap:10px;align-items:center;justify-content:space-between;}
 .suspendLeft{min-width:0;}
@@ -979,9 +1002,6 @@ linear-gradient(180deg, #f8f4ff 0%, #f5f9ff 50%, #f8f4ff 100%);}
 .badgeList{margin-top:10px;display:grid;gap:8px;}
 .badgeItem{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:14px;border:1px solid rgba(18,6,26,0.10);background: rgba(255,255,255,0.78);}
 .badgeDot{width:10px;height:10px;margin-top:5px;border-radius:999px;background: linear-gradient(135deg, rgba(255,79,216,0.9), rgba(185,130,255,0.9));}
-.badgeName{font-size:13px;font-weight:1000;color:#0b0b0f;}
-.badgeReason{margin-top:4px;font-size:12px;font-weight:950;color: rgba(11,11,15,0.80);line-height:1.35;}
-.badgeReason.dim{color: rgba(11,11,15,0.55);}
 
 .sanList{margin-top:10px;display:grid;gap:10px;}
 .sanList.faded{opacity:0.82;}
@@ -1008,7 +1028,24 @@ linear-gradient(180deg, #f8f4ff 0%, #f5f9ff 50%, #f8f4ff 100%);}
 .toggle{height:36px;border-radius:14px;border:1px solid rgba(18,6,26,0.14);background: rgba(255,255,255,0.92);font-weight:1000;color:#0b0b0f;box-shadow:0 10px 18px rgba(40,10,70,0.06);}
 .toggle.on{background: linear-gradient(135deg, rgba(255,94,122,0.18), rgba(255,154,174,0.14));border-color: rgba(255,94,122,0.26);color:#0b0b0f;}
 .toggleHint{font-size:12px;font-weight:950;color: rgba(11,11,15,0.65);}
-.ta{width:100%;min-height:76px;border-radius:14px;border:1px solid rgba(18,6,26,0.14);background: rgba(255,255,255,0.92);padding:10px 12px;font-size:13px;font-weight:950;color:#0b0b0f;outline:none;box-shadow:0 12px 24px rgba(40,10,70,0.08);resize: vertical;}
+
+.ta{
+  width:100%;
+  max-width:100%;
+  display:block;
+  min-height:76px;
+  border-radius:14px;
+  border:1px solid rgba(18,6,26,0.14);
+  background: rgba(255,255,255,0.92);
+  padding:10px 12px;
+  font-size:13px;
+  font-weight:950;
+  color:#0b0b0f;
+  outline:none;
+  box-shadow:0 12px 24px rgba(40,10,70,0.08);
+  resize: vertical;
+}
+
 .grantBtns{margin-top:10px;display:flex;gap:10px;}
 .grantBtn{flex:1;height:44px;border-radius:16px;border:1px solid rgba(18,6,26,0.14);background: linear-gradient(135deg, rgba(255,79,216,0.20), rgba(185,130,255,0.18));font-weight:1000;color:#0b0b0f;box-shadow:0 14px 30px rgba(40,10,70,0.10);}
 .grantBtn:disabled{opacity:0.6;cursor:not-allowed;}

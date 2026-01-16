@@ -60,14 +60,33 @@ function safeSetReadAt(roomId: string, ts: number) {
   } catch {}
 }
 
+/** ✅ 이미지 메시지 판별: (1) 기존 IMG: prefix (2) http(s) 이미지 URL도 인식 */
+function looksLikeImageUrl(url: string) {
+  const t = (url || '').trim();
+  if (!/^https?:\/\//i.test(t)) return false;
+
+  // 확장자 기반(가벼운 판별)
+  if (/\.(png|jpg|jpeg|gif|webp|bmp|heic)(\?.*)?$/i.test(t)) return true;
+
+  // Supabase public storage 경로 패턴(버킷명이 달라도 어느정도 커버)
+  if (t.includes('/storage/v1/object/public/')) return true;
+
+  return false;
+}
+
 function isImageMsg(content?: string | null) {
   const t = (content || '').trim();
-  return t.startsWith('IMG:');
+  if (!t) return false;
+  if (t.startsWith('IMG:')) return true;
+  return looksLikeImageUrl(t);
 }
+
 function imageUrlFromMsg(content?: string | null) {
   const t = (content || '').trim();
-  if (!t.startsWith('IMG:')) return '';
-  return t.slice(4).trim();
+  if (!t) return '';
+  if (t.startsWith('IMG:')) return t.slice(4).trim();
+  if (looksLikeImageUrl(t)) return t;
+  return '';
 }
 
 type ChatItem = {
@@ -633,6 +652,10 @@ export default function ChatsPage() {
                       <span className="pill purple">안읽음</span>
                       <span className="txt">새 메시지는 NEW로 표시돼요.</span>
                     </div>
+                    <div className="line">
+                      <span className="pill blue">사진</span>
+                      <span className="txt">사진 메시지는 “📷 사진”으로 표시돼요.</span>
+                    </div>
                   </div>
                 </>
               ) : (
@@ -744,10 +767,10 @@ export default function ChatsPage() {
                           {/* ✅ 버튼 2개 */}
                           <div className="roomActions">
                             <button type="button" className="cheerBtn" onClick={() => handleCheer(it.otherId)}>
-                              ❤️ 응원
+                              ❤️ 
                             </button>
                             <button type="button" className="chatGoBtn" onClick={() => router.push(`/chats/${it.roomId}`)}>
-                              들어가기
+                              채팅
                             </button>
                           </div>
                         </div>

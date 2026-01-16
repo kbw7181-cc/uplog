@@ -66,28 +66,19 @@ function normalizeStoragePath(vRaw: string, bucket: string) {
   return p;
 }
 
-// ✅✅✅ 이미지 src: URL/경로 모두 대응 + 버킷 후보들 publicUrl/signedUrl 시도
 async function resolveCommunityImageSrc(imageUrlOrPath?: string | null): Promise<string> {
   const v = (imageUrlOrPath || '').trim();
   if (!v) return '';
-
-  // 절대 URL
   if (v.startsWith('http://') || v.startsWith('https://')) return v;
-
-  // public 상대경로(/something.png)
   if (v.startsWith('/')) return v;
 
-  // ✅ 대표님 글쓰기에서 쓰는 버킷명 포함(대소문자/하이픈 그대로)
   const bucketCandidates = ['COMMUNITY-IMAGES', 'community', 'community_uploads', 'uploads'] as const;
 
   for (const bucket of bucketCandidates) {
     const path = normalizeStoragePath(v, bucket);
-
-    // public url
     const pub = supabase.storage.from(bucket).getPublicUrl(path)?.data?.publicUrl || '';
     if (pub) return pub;
 
-    // signed url (private일 수 있으니)
     try {
       const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 10);
       if (!error && data?.signedUrl) return data.signedUrl;
@@ -95,7 +86,6 @@ async function resolveCommunityImageSrc(imageUrlOrPath?: string | null): Promise
       // ignore
     }
   }
-
   return '';
 }
 
@@ -120,14 +110,8 @@ async function toggleLike(postId: string, uid: string) {
   }
 }
 
-/** ✅ 카테고리별 가이드 슬라이드(자동 슬라이드) */
 function buildGuideSlides() {
-  const base = [
-    '1) 상황(고객 유형/대화 흐름)',
-    '2) 내 멘트·문자(복붙 가능)',
-    '3) 결과(반응/전환/다음 약속)',
-    '4) 팁(주의점/응용 포인트)',
-  ];
+  const base = ['1) 상황(고객 유형/대화 흐름)', '2) 내 멘트·문자(복붙 가능)', '3) 결과(반응/전환/다음 약속)', '4) 팁(주의점/응용 포인트)'];
 
   const map: Record<CommunityCategory, { title: string; lines: string[]; desc: string }> = {
     '실전 세일즈': {
@@ -186,7 +170,6 @@ export default function CommunityPage() {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState<'전체' | CommunityCategory>('전체');
 
-  // ✅✅✅ 커뮤니티 마스코트(고정) + 캐시 방지
   const UPZZU_COMMUNITY_SRC = '/upzzu3.png';
   const mascotSrc = `${UPZZU_COMMUNITY_SRC}?v=${Date.now()}`;
 
@@ -253,13 +236,11 @@ export default function CommunityPage() {
 
       const postIds = rows.map((p) => p.id);
 
-      // ✅ 댓글 수
       const initCmt: Record<string, number> = {};
       postIds.forEach((id) => (initCmt[id] = 0));
       setCommentCount(initCmt);
 
       if (postIds.length) {
-        // 댓글 테이블: community_comments (post_id)
         const c1 = await supabase.from('community_comments').select('post_id').in('post_id', postIds);
         if (!c1.error) {
           const nextCmt: Record<string, number> = {};
@@ -270,7 +251,6 @@ export default function CommunityPage() {
           setCommentCount(nextCmt);
         }
 
-        // 좋아요(내가 누른 것)
         const myLikeRes = await supabase.from('post_likes').select('post_id').eq('user_id', uid).in('post_id', postIds);
         if (!myLikeRes.error) {
           const mine = new Set((myLikeRes.data || []).map((x: any) => x.post_id));
@@ -283,7 +263,6 @@ export default function CommunityPage() {
           setLikedMe(nextMe);
         }
 
-        // 좋아요(전체 카운트)
         const allLikeRes = await supabase.from('post_likes').select('post_id').in('post_id', postIds);
         if (!allLikeRes.error) {
           const nextCnt: Record<string, number> = {};
@@ -299,8 +278,7 @@ export default function CommunityPage() {
         }
       }
 
-      // ✅ 이미지 썸네일: 상단 50개 선로딩 (작성자 이미지 보이게)
-      const top = rows.slice(0, 50);
+      const top = rows.slice(0, 60);
       const nextMap: Record<string, string> = {};
       await Promise.all(
         top.map(async (p) => {
@@ -324,7 +302,8 @@ export default function CommunityPage() {
 
   const filtered = useMemo(() => {
     const keyword = q.trim().toLowerCase();
-    return posts.filter((p) => {
+    const base = [...posts].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return base.filter((p) => {
       const okCat = cat === '전체' ? true : (p.category || '') === cat;
       if (!okCat) return false;
 
@@ -334,8 +313,8 @@ export default function CommunityPage() {
     });
   }, [posts, q, cat]);
 
-  const highlightA = filtered.slice(0, 2);
-  const highlightB = filtered.slice(2, 4);
+  const previewA = filtered.slice(0, 2);
+  const previewB = filtered.slice(2, 4);
 
   async function ensureThumb(postId: string, raw: string | null) {
     if (thumbMap[postId]) return;
@@ -392,15 +371,13 @@ export default function CommunityPage() {
   return (
     <ClientShell>
       <div style={styles.page}>
-        {/* ✅✅✅ 커뮤니티 테두리 큰 카드 제거 (다른 페이지처럼 “내용 카드들”만) */}
         <div style={styles.topTitle}>
           <div style={styles.heroTitle}>커뮤니티</div>
           <div style={styles.heroSub}>세일즈들끼리 경험을 공유하고, 내 자산으로 저장하세요.</div>
         </div>
 
-        {/* ✅✅✅ 말풍선 카드 안으로 마스코트 “같이” 넣기 (밖으로 빼지 않음) */}
         <div style={styles.guideCard}>
-          <div style={styles.guideBubble}>
+          <div style={styles.guideBubble} className="uplog-community-bubble-padfix">
             <div style={styles.tipBadge}>업쮸 가이드</div>
 
             <div style={styles.guideCatLine}>
@@ -430,21 +407,11 @@ export default function CommunityPage() {
               ))}
             </div>
 
-            {/* ✅ 마스코트: 말풍선 카드 “안” 오른쪽 */}
-            <img
-              src={mascotSrc}
-              alt="upzzu"
-              style={styles.mascotInBubble as any}
-              onError={(e) => {
-                // 숨기지 말고 반투명 처리(원인 확인용)
-                console.error('UPZZU LOAD FAIL:', UPZZU_COMMUNITY_SRC);
-                (e.currentTarget as HTMLImageElement).style.opacity = '0.2';
-              }}
-            />
+            <img src={mascotSrc} alt="upzzu" style={styles.mascotInBubble as any} />
           </div>
         </div>
 
-        {/* ✅✅✅ 경고카드 유지 + 글작성하기는 “경고 아래” */}
+        {/* ✅ 경고: 연핑크 포인트 */}
         <div style={styles.warnCard}>
           <div style={{ fontWeight: 1000 }}>⚠️ 경고</div>
           <div style={{ marginTop: 6, fontWeight: 900 }}>19금, 욕설, 비방/모욕, 차별, 과한 광고/도배는 제재 대상입니다.</div>
@@ -463,11 +430,9 @@ export default function CommunityPage() {
           </div>
         ) : null}
 
-        {/* ✅✅✅ 검색/카테고리: “select 옵션 안에 설명” 넣고, 아래에 따로 나열하는 칩은 삭제 */}
         <div style={styles.sectionCard}>
           <div className="uplog-community-filter" style={styles.filterRow}>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="검색: 제목/내용/태그/업종" style={styles.search as any} />
-
             <select value={cat} onChange={(e) => setCat(e.target.value as any)} style={styles.select as any}>
               <option value="전체">전체</option>
               {CATEGORY_LIST.map((c) => (
@@ -479,18 +444,20 @@ export default function CommunityPage() {
           </div>
         </div>
 
+        {/* ✅ 미리보기: 작게 유지 + 포인트 컬러 유지 */}
         <div style={styles.sectionCard}>
-          <div style={styles.sectionTitle}>커뮤니티 하이라이트</div>
+          <div style={styles.sectionTitle}>미리보기</div>
 
-          <div className="uplog-community-hl" style={styles.hlGrid}>
-            <div style={styles.hlCol}>
-              <div style={styles.hlHead}>조회수 많은 글</div>
-              {highlightA.length ? (
-                <div style={styles.hlList}>
-                  {highlightA.map((p) => (
+          <div className="uplog-community-hl" style={styles.previewGrid}>
+            <div style={styles.previewCol}>
+              <div style={styles.previewHead}>조회수 많은 글 (최근순 미리보기)</div>
+              {previewA.length ? (
+                <div style={styles.previewList}>
+                  {previewA.map((p) => (
                     <PostCard
                       key={p.id}
                       p={p}
+                      compact
                       thumbSrc={thumbMap[p.id] || ''}
                       ensureThumb={() => ensureThumb(p.id, p.image_url)}
                       likeN={likeCount[p.id] || 0}
@@ -508,14 +475,15 @@ export default function CommunityPage() {
               )}
             </div>
 
-            <div style={styles.hlCol}>
-              <div style={styles.hlHead}>좋아요 많은 글</div>
-              {highlightB.length ? (
-                <div style={styles.hlList}>
-                  {highlightB.map((p) => (
+            <div style={styles.previewCol}>
+              <div style={styles.previewHead}>좋아요 많은 글 (최근순 미리보기)</div>
+              {previewB.length ? (
+                <div style={styles.previewList}>
+                  {previewB.map((p) => (
                     <PostCard
                       key={p.id}
                       p={p}
+                      compact
                       thumbSrc={thumbMap[p.id] || ''}
                       ensureThumb={() => ensureThumb(p.id, p.image_url)}
                       likeN={likeCount[p.id] || 0}
@@ -536,7 +504,7 @@ export default function CommunityPage() {
         </div>
 
         <div style={styles.sectionCard}>
-          <div style={styles.sectionTitle}>전체 글</div>
+          <div style={styles.sectionTitle}>전체 글 (최근 게시글 순)</div>
 
           {loading ? (
             <div style={{ marginTop: 14, fontWeight: 1000, color: '#4a2a55' }}>불러오는 중…</div>
@@ -571,7 +539,7 @@ export default function CommunityPage() {
 
 function EmptySmall() {
   return (
-    <div style={{ marginTop: 12, padding: 16, borderRadius: 18, border: '1px dashed rgba(255,120,200,0.25)', color: '#5a2d6b', fontWeight: 900 }}>
+    <div style={styles.emptySmall}>
       아직 없어요.
     </div>
   );
@@ -588,6 +556,7 @@ function PostCard({
   ensureThumb,
   viewN,
   commentN,
+  compact,
 }: {
   p: PostRow;
   onOpen: () => void;
@@ -599,16 +568,63 @@ function PostCard({
   ensureThumb: () => void;
   viewN: number;
   commentN: number;
+  compact?: boolean;
 }) {
   const catLabel = p.category || '실전 세일즈';
   const title = safeText(p.title, '(제목 없음)');
   const snippetBase = safeText(p.content, '');
-  const snippet = snippetBase.length > 56 ? `${snippetBase.slice(0, 56)}…` : snippetBase;
+  const snippet = compact
+    ? snippetBase.length > 32
+      ? `${snippetBase.slice(0, 32)}…`
+      : snippetBase
+    : snippetBase.length > 56
+      ? `${snippetBase.slice(0, 56)}…`
+      : snippetBase;
 
   useEffect(() => {
     if (!thumbSrc && p.image_url) ensureThumb();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (compact) {
+    return (
+      <div style={styles.postCardMini} onClick={onOpen} role="button" aria-label="open post">
+        <div style={styles.thumbMini}>
+          {thumbSrc ? <img src={thumbSrc} alt="thumb" style={styles.thumbImg as any} /> : null}
+          {!thumbSrc ? <div style={styles.thumbEmptyMini}>없음</div> : null}
+        </div>
+
+        <div style={styles.postBodyMini}>
+          <div style={styles.metaRowMini}>
+            <span style={styles.catMini}>{catLabel}</span>
+            <span style={styles.timeMini}>{timeAgo(p.created_at)}</span>
+          </div>
+
+          <div style={styles.postTitleMini}>{title}</div>
+          {snippet ? <div style={styles.postSnippetMini}>{snippet}</div> : null}
+
+          <div style={styles.badgeRowMini}>
+            <span style={styles.statPillMini}>조회 {viewN}</span>
+            <span style={styles.statPillMini}>댓글 {commentN}</span>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onLike(e);
+              }}
+              disabled={liking}
+              style={{ ...styles.likeBtnMini, ...(liked ? styles.likeBtnOnMini : {}) }}
+              aria-label="like"
+            >
+              좋아요 <span style={{ fontWeight: 1000 }}>{likeN}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.postCard} onClick={onOpen} role="button" aria-label="open post">
@@ -628,7 +644,6 @@ function PostCard({
         <div style={styles.postTitle}>{title}</div>
         <div style={styles.postSnippet}>{snippet}</div>
 
-        {/* ✅✅✅ 이모지 제거: 조회수/댓글/좋아요 텍스트형 */}
         <div style={styles.badgeRow}>
           <span style={styles.statPill}>조회수 {viewN}</span>
           <span style={styles.statPill}>댓글 {commentN}</span>
@@ -658,29 +673,32 @@ const styles: Record<string, any> = {
     maxWidth: 980,
     margin: '0 auto',
     boxSizing: 'border-box',
+    background:
+      'radial-gradient(800px 420px at 22% 10%, rgba(255,170,210,0.20) 0%, rgba(255,170,210,0) 60%), radial-gradient(700px 420px at 92% 22%, rgba(170,140,255,0.18) 0%, rgba(170,140,255,0) 62%), linear-gradient(180deg, rgba(255,245,250,0.92) 0%, rgba(248,244,255,0.95) 70%, rgba(255,255,255,1) 100%)',
+    minHeight: 'calc(100vh - 20px)',
+    borderRadius: 18,
   },
 
   topTitle: { padding: '0 4px', boxSizing: 'border-box' },
-  heroTitle: { fontSize: 28, fontWeight: 1000, color: '#3c184c' },
-  heroSub: { marginTop: 8, fontSize: 16, color: '#5a2d6b', fontWeight: 850 },
+  heroTitle: { fontSize: 28, fontWeight: 1000, color: '#2f143a' },
+  heroSub: { marginTop: 8, fontSize: 16, color: '#4a2a55', fontWeight: 850 },
 
-  // ✅✅✅ 말풍선 “카드” (커뮤니티 큰 테두리 카드 느낌 제거, 다른 페이지 톤)
   guideCard: {
     marginTop: 16,
     borderRadius: 22,
     padding: 12,
     border: '1px solid rgba(255,120,200,0.18)',
-    background: 'linear-gradient(135deg, rgba(255,120,200,0.10), rgba(170,120,255,0.10))',
+    background: 'rgba(255,255,255,0.78)',
     boxShadow: '0 12px 26px rgba(30,10,55,0.08)',
     boxSizing: 'border-box',
     overflow: 'hidden',
+    backdropFilter: 'blur(8px)',
   },
 
-  // ✅✅✅ 말풍선 카드 내부에 마스코트 포함(오른쪽)
   guideBubble: {
     position: 'relative',
     borderRadius: 18,
-    padding: '16px 150px 16px 16px', // ✅ 오른쪽 공간 확보(마스코트 때문에 밖으로 안 나가게)
+    padding: '16px 150px 16px 16px',
     border: '1px solid rgba(255,120,200,0.16)',
     background: 'rgba(255,255,255,0.92)',
     minHeight: 168,
@@ -707,8 +725,9 @@ const styles: Record<string, any> = {
     fontWeight: 1000,
     padding: '6px 10px',
     borderRadius: 999,
-    background: 'linear-gradient(135deg, rgba(255,120,200,0.22), rgba(170,120,255,0.18))',
+    background: 'linear-gradient(135deg, rgba(255,120,200,0.20), rgba(170,120,255,0.16))',
     color: '#3c184c',
+    border: '1px solid rgba(255,120,200,0.18)',
   },
 
   guideCatLine: { marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
@@ -731,18 +750,17 @@ const styles: Record<string, any> = {
   dot: { width: 7, height: 7, borderRadius: 999, background: 'rgba(120,80,160,0.20)', cursor: 'pointer' },
   dotOn: { background: 'rgba(255,120,200,0.72)' },
 
-  // ✅✅✅ 경고카드
+  // ✅ 경고카드: 연핑크 유지
   warnCard: {
     marginTop: 12,
     borderRadius: 18,
     padding: 14,
-    border: '1px solid rgba(255,120,200,0.22)',
-    background: 'rgba(255,200,220,0.14)',
+    border: '1px solid rgba(255,120,200,0.28)',
+    background: 'linear-gradient(180deg, rgba(255,215,230,0.45), rgba(255,240,246,0.75))',
     color: '#4a2a55',
     boxSizing: 'border-box',
   },
 
-  // ✅✅✅ 글작성하기는 경고 아래
   writeRow: { marginTop: 12, display: 'flex', justifyContent: 'flex-end' },
   writeBtn: {
     border: 'none',
@@ -752,7 +770,7 @@ const styles: Record<string, any> = {
     fontWeight: 1000,
     cursor: 'pointer',
     color: '#2f143a',
-    background: 'linear-gradient(135deg, rgba(255,120,200,0.88), rgba(170,120,255,0.88))',
+    background: 'linear-gradient(135deg, rgba(255,120,200,0.92), rgba(170,120,255,0.92))',
     boxShadow: '0 14px 30px rgba(70,10,110,0.18)',
     minWidth: 160,
   },
@@ -761,12 +779,13 @@ const styles: Record<string, any> = {
     marginTop: 18,
     borderRadius: 24,
     padding: 18,
-    background: 'rgba(255,255,255,0.94)',
-    border: '1px solid rgba(255,120,200,0.22)',
+    background: 'rgba(255,255,255,0.88)',
+    border: '1px solid rgba(255,120,200,0.18)',
     boxShadow: '0 16px 45px rgba(40,10,60,0.10)',
     boxSizing: 'border-box',
     width: '100%',
     overflow: 'hidden',
+    backdropFilter: 'blur(10px)',
   },
   sectionTitle: { fontSize: 18, fontWeight: 1000, color: '#3c184c' },
 
@@ -798,17 +817,17 @@ const styles: Record<string, any> = {
     boxSizing: 'border-box',
   },
 
-  hlGrid: { marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, boxSizing: 'border-box' },
-  hlCol: {
-    padding: 14,
-    borderRadius: 20,
-    border: '1px solid rgba(255,120,200,0.18)',
-    background: 'rgba(255,255,255,0.95)',
+  previewGrid: { marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, boxSizing: 'border-box' },
+  previewCol: {
+    padding: 12,
+    borderRadius: 18,
+    border: '1px solid rgba(255,120,200,0.16)',
+    background: 'rgba(255,255,255,0.92)',
     boxSizing: 'border-box',
     overflow: 'hidden',
   },
-  hlHead: { fontSize: 15.5, fontWeight: 1000, color: '#3c184c' },
-  hlList: { marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 },
+  previewHead: { fontSize: 13.5, fontWeight: 1000, color: '#3c184c' },
+  previewList: { marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 },
 
   listGrid: {
     marginTop: 16,
@@ -822,13 +841,29 @@ const styles: Record<string, any> = {
     width: '100%',
     border: '1px solid rgba(255,120,200,0.18)',
     borderRadius: 20,
-    background: 'rgba(255,255,255,0.96)',
+    background: 'rgba(255,255,255,0.94)',
     boxShadow: '0 12px 26px rgba(30,10,55,0.08)',
     cursor: 'pointer',
     padding: 14,
     display: 'grid',
     gridTemplateColumns: '124px 1fr',
     gap: 14,
+    textAlign: 'left',
+    boxSizing: 'border-box',
+    overflow: 'hidden',
+  },
+
+  postCardMini: {
+    width: '100%',
+    border: '1px solid rgba(255,120,200,0.18)',
+    borderRadius: 16,
+    background: 'rgba(255,255,255,0.94)',
+    boxShadow: '0 10px 18px rgba(30,10,55,0.06)',
+    cursor: 'pointer',
+    padding: 10,
+    display: 'grid',
+    gridTemplateColumns: '72px 1fr',
+    gap: 10,
     textAlign: 'left',
     boxSizing: 'border-box',
     overflow: 'hidden',
@@ -844,6 +879,16 @@ const styles: Record<string, any> = {
     overflow: 'hidden',
     boxSizing: 'border-box',
   },
+  thumbMini: {
+    width: 72,
+    height: 56,
+    borderRadius: 14,
+    border: '1px dashed rgba(255,120,200,0.22)',
+    background: 'rgba(255,255,255,0.95)',
+    position: 'relative',
+    overflow: 'hidden',
+    boxSizing: 'border-box',
+  },
   thumbImg: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
   thumbEmpty: {
     position: 'absolute',
@@ -852,6 +897,16 @@ const styles: Record<string, any> = {
     alignItems: 'center',
     justifyContent: 'center',
     fontSize: 12.5,
+    fontWeight: 1000,
+    color: '#6b4a78',
+  },
+  thumbEmptyMini: {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 12,
     fontWeight: 1000,
     color: '#6b4a78',
   },
@@ -889,8 +944,52 @@ const styles: Record<string, any> = {
     minWidth: 96,
   },
   likeBtnOn: {
-    background: 'linear-gradient(135deg, rgba(255,120,200,0.22), rgba(170,120,255,0.18))',
+    background: 'linear-gradient(135deg, rgba(255,120,200,0.20), rgba(170,120,255,0.16))',
     borderColor: 'rgba(255,120,200,0.28)',
+  },
+
+  postBodyMini: { minWidth: 0, overflow: 'hidden' },
+  metaRowMini: { display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 },
+  catMini: { fontSize: 12, fontWeight: 1000, color: '#3c184c', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' as const },
+  timeMini: { fontSize: 11.5, fontWeight: 900, color: '#6b4a78', whiteSpace: 'nowrap' as const },
+
+  postTitleMini: { marginTop: 5, fontSize: 13.5, fontWeight: 1000, color: '#2f143a', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' as const },
+  postSnippetMini: { marginTop: 5, fontSize: 12.2, fontWeight: 900, color: '#4a2a55', lineHeight: 1.35, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' as const },
+
+  badgeRowMini: { marginTop: 8, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' },
+  statPillMini: {
+    fontSize: 11.5,
+    fontWeight: 1000,
+    padding: '5px 9px',
+    borderRadius: 999,
+    border: '1px solid rgba(255,120,200,0.16)',
+    background: 'rgba(255,255,255,0.92)',
+    color: '#4a2a55',
+  },
+  likeBtnMini: {
+    border: '1px solid rgba(255,120,200,0.16)',
+    background: 'rgba(255,255,255,0.92)',
+    borderRadius: 999,
+    padding: '5px 9px',
+    fontSize: 11.5,
+    fontWeight: 1000,
+    color: '#4a2a55',
+    cursor: 'pointer',
+    minWidth: 88,
+  },
+  likeBtnOnMini: {
+    background: 'linear-gradient(135deg, rgba(255,120,200,0.18), rgba(170,120,255,0.14))',
+    borderColor: 'rgba(255,120,200,0.26)',
+  },
+
+  emptySmall: {
+    marginTop: 10,
+    padding: 14,
+    borderRadius: 16,
+    border: '1px dashed rgba(255,120,200,0.22)',
+    color: '#5a2d6b',
+    fontWeight: 900,
+    background: 'rgba(255,255,255,0.86)',
   },
 
   emptyBox: {
@@ -900,11 +999,12 @@ const styles: Record<string, any> = {
     border: '1px dashed rgba(255,120,200,0.25)',
     color: '#5a2d6b',
     fontWeight: 1000,
+    background: 'rgba(255,255,255,0.86)',
   },
 };
 
 if (typeof document !== 'undefined') {
-  const id = 'uplog-community-page-keyframes-v10';
+  const id = 'uplog-community-page-keyframes-v12-pink';
   if (!document.getElementById(id)) {
     const s = document.createElement('style');
     s.id = id;
@@ -915,7 +1015,6 @@ if (typeof document !== 'undefined') {
         100% { transform: translateY(0px); }
       }
 
-      /* ✅ 모바일에서도 카드가 오른쪽 튀지 않게 */
       @media (max-width: 920px){
         .uplog-community-hl { grid-template-columns: 1fr !important; }
       }
@@ -928,7 +1027,6 @@ if (typeof document !== 'undefined') {
         .uplog-community-list { grid-template-columns: 1fr !important; }
       }
 
-      /* ✅ 말풍선 안 마스코트 공간 자동 축소(아주 작은 화면) */
       @media (max-width: 520px){
         .uplog-community-bubble-padfix { padding-right: 120px !important; }
       }
