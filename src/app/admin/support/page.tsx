@@ -46,6 +46,11 @@ function statusLabel(s: SupportStatus) {
   return '완료';
 }
 
+// ✅✅✅ 핵심: null도 미열람으로 취급
+function isUnreadAdmin(v: boolean | null | undefined) {
+  return v !== true; // false + null + undefined = unread
+}
+
 export default function AdminSupportPage() {
   const router = useRouter();
 
@@ -68,13 +73,13 @@ export default function AdminSupportPage() {
     const open = rows.filter((x) => safeStatus(x.status) === 'open').length;
     const pending = rows.filter((x) => safeStatus(x.status) === 'pending').length;
     const closed = rows.filter((x) => safeStatus(x.status) === 'closed').length;
-    const unread = rows.filter((x) => x.is_read_admin === false).length;
+    const unread = rows.filter((x) => isUnreadAdmin(x.is_read_admin)).length; // ✅ null 포함
     return { open, pending, closed, unread, all: rows.length };
   }, [rows]);
 
   const filteredRows = useMemo(() => {
     if (tab === 'all') return rows;
-    if (tab === 'unread') return rows.filter((x) => x.is_read_admin === false);
+    if (tab === 'unread') return rows.filter((x) => isUnreadAdmin(x.is_read_admin)); // ✅ null 포함
     if (tab === 'open') return rows.filter((x) => safeStatus(x.status) === 'open');
     if (tab === 'pending') return rows.filter((x) => safeStatus(x.status) === 'pending');
     return rows.filter((x) => safeStatus(x.status) === 'closed');
@@ -126,6 +131,7 @@ export default function AdminSupportPage() {
 
   useEffect(() => {
     if (!selectedId) return;
+
     const row = rows.find((x) => x.id === selectedId);
     setNextStatus(safeStatus(row?.status));
     void fetchMsgs(selectedId);
@@ -295,7 +301,7 @@ export default function AdminSupportPage() {
               {filteredRows.map((r) => {
                 const active = r.id === selectedId;
                 const st = safeStatus(r.status);
-                const unread = r.is_read_admin === false;
+                const unread = isUnreadAdmin(r.is_read_admin); // ✅ null 포함
 
                 return (
                   <button
@@ -402,7 +408,6 @@ export default function AdminSupportPage() {
             #f7f4ff;
           color:#0f1020;
         }
-
         .topbar{
           max-width:1240px;
           margin:0 auto 10px;
@@ -427,7 +432,6 @@ export default function AdminSupportPage() {
           font-weight:900;
           color:rgba(20,20,30,.55);
         }
-
         .btn{
           padding:10px 12px;
           border-radius:12px;
@@ -455,7 +459,6 @@ export default function AdminSupportPage() {
         .btn.wide.pink{
           background:linear-gradient(135deg, rgba(255,79,216,.28), rgba(185,130,255,.14));
         }
-
         .chips{
           max-width:1240px;
           margin:0 auto 10px;
@@ -463,7 +466,6 @@ export default function AdminSupportPage() {
           gap:8px;
           flex-wrap:wrap;
         }
-
         .readmode{
           max-width:1240px;
           margin:0 auto 12px;
@@ -495,7 +497,6 @@ export default function AdminSupportPage() {
           background:rgba(255,240,251,1);
         }
         .readmode-right{font-size:12px;font-weight:950;color:rgba(20,20,30,.7);}
-
         .errbox{
           max-width:1240px;
           margin:0 auto 12px;
@@ -508,7 +509,6 @@ export default function AdminSupportPage() {
           font-size:14px;
           white-space:pre-wrap;
         }
-
         .grid{
           max-width:1240px;
           margin:0 auto;
@@ -517,7 +517,6 @@ export default function AdminSupportPage() {
           gap:12px;
           align-items:start;
         }
-
         .panel{
           background:rgba(255,255,255,.95);
           border:1px solid rgba(20,20,30,.12);
@@ -536,7 +535,6 @@ export default function AdminSupportPage() {
         }
         .panelTitle{font-size:18px;font-weight:1000;color:#111;}
         .panelHint{font-size:12px;font-weight:900;color:rgba(20,20,30,.55);}
-
         .listPanel{
           position:sticky;
           top:12px;
@@ -552,7 +550,6 @@ export default function AdminSupportPage() {
           overflow:auto;
           padding-right:2px;
         }
-
         .row{
           text-align:left;
           border:1px solid rgba(20,20,30,.14);
@@ -606,9 +603,7 @@ export default function AdminSupportPage() {
           background:rgba(185,130,255,.08);
           color:rgba(20,20,30,.8);
         }
-
         .detailPanel{min-height:420px;}
-
         .detailCard{
           border:1px solid rgba(20,20,30,.12);
           border-radius:16px;
@@ -651,14 +646,12 @@ export default function AdminSupportPage() {
           white-space:pre-wrap;
           line-height:1.6;
         }
-
         .sectionTitle{
           font-size:15px;
           font-weight:1000;
           margin:10px 0 8px;
           color:#111;
         }
-
         .chatBox{
           border:1px solid rgba(20,20,30,.12);
           border-radius:16px;
@@ -667,36 +660,18 @@ export default function AdminSupportPage() {
           overflow:auto;
           background:linear-gradient(180deg, rgba(255,255,255,1), rgba(250,249,255,1));
         }
-
-        /* ✅✅✅ 여기부터 "치우침" 해결 핵심 */
-        .msgRow{
-          display:flex;
-          margin-bottom:10px;
-        }
-        .msgRow.mine{
-          justify-content:flex-end;
-          padding-left:44px;   /* 끝으로 딱 붙지 않게 */
-        }
-        .msgRow.other{
-          justify-content:flex-start;
-          padding-right:44px;  /* 반대쪽도 여백 */
-        }
+        .msgRow{display:flex;margin-bottom:10px;}
+        .msgRow.mine{justify-content:flex-end;padding-left:44px;}
+        .msgRow.other{justify-content:flex-start;padding-right:44px;}
         .msg{
-          max-width:min(640px, 92%); /* 너무 좁거나 너무 길지 않게 */
+          max-width:min(640px, 92%);
           padding:10px 12px;
           border-radius:16px;
           border:1px solid rgba(20,20,30,.12);
           background:rgba(247,247,255,1);
         }
-        .msgRow.mine .msg{
-          background:rgba(255,240,251,1);
-        }
-
-        .msgWho{
-          font-size:11px;
-          font-weight:1000;
-          color:rgba(20,20,30,.85);
-        }
+        .msgRow.mine .msg{background:rgba(255,240,251,1);}
+        .msgWho{font-size:11px;font-weight:1000;color:rgba(20,20,30,.85);}
         .msgText{
           margin-top:6px;
           font-size:14px;
@@ -713,16 +688,7 @@ export default function AdminSupportPage() {
           text-align:right;
           white-space:nowrap;
         }
-        /* ✅✅✅ 여기까지 */
-
-        .statusRow{
-          display:flex;
-          gap:8px;
-          flex-wrap:wrap;
-          margin-top:6px;
-          margin-bottom:8px;
-        }
-
+        .statusRow{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;margin-bottom:8px;}
         .textarea{
           margin-top:10px;
           width:100%;
@@ -738,12 +704,7 @@ export default function AdminSupportPage() {
           background:#fff;
           line-height:1.55;
         }
-
-        .muted{
-          font-weight:900;
-          font-size:14px;
-          color:rgba(20,20,30,.75);
-        }
+        .muted{font-weight:900;font-size:14px;color:rgba(20,20,30,.75);}
         .empty{
           margin-top:6px;
           padding:14px;
@@ -755,7 +716,6 @@ export default function AdminSupportPage() {
           color:#111;
           text-align:center;
         }
-
         @media (max-width:980px){
           .grid{grid-template-columns:1fr;}
           .listPanel{position:relative;top:auto;max-height:none;}

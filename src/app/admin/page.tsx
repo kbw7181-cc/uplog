@@ -38,10 +38,13 @@ export default function AdminHomePage() {
   const [stat, setStat] = useState<Stat>({
     users_total: 0,
     users_new7: 0,
+
     supports_total: 0,
     supports_unread: 0,
     supports_open: 0,
+
     badges_month: 0,
+
     admins_total: 0,
     rebuttals_total: 0,
     community_posts_total: 0,
@@ -88,16 +91,27 @@ export default function AdminHomePage() {
         supabase.from('profiles').select('user_id', { count: 'exact', head: true }).eq('role', 'admin')
       );
 
+      // ✅ supports 전체
       const supports_total = await safeCount(() =>
         supabase.from('supports').select('id', { count: 'exact', head: true })
       );
 
+      // ✅✅✅ FIX: is_read_admin = false 만 잡으면 NULL(미설정)은 빠짐
+      // → false OR null 을 미열람으로 취급
       const supports_unread = await safeCount(() =>
-        supabase.from('supports').select('id', { count: 'exact', head: true }).eq('is_read_admin', false)
+        supabase
+          .from('supports')
+          .select('id', { count: 'exact', head: true })
+          .or('is_read_admin.eq.false,is_read_admin.is.null')
       );
 
+      // ✅✅✅ FIX: status 기본값이 closed/null이면 진행중이 0으로 보임
+      // → open/pending + status null은 open 취급
       const supports_open = await safeCount(() =>
-        supabase.from('supports').select('id', { count: 'exact', head: true }).in('status', ['open', 'pending'])
+        supabase
+          .from('supports')
+          .select('id', { count: 'exact', head: true })
+          .or('status.in.(open,pending),status.is.null')
       );
 
       const now = new Date();
@@ -128,10 +142,13 @@ export default function AdminHomePage() {
       setStat({
         users_total,
         users_new7,
+
         supports_total,
         supports_unread,
         supports_open,
+
         badges_month,
+
         admins_total,
         rebuttals_total,
         community_posts_total,
@@ -175,7 +192,7 @@ export default function AdminHomePage() {
           <MenuCard tone="blue" title="배지 관리" desc="월간 수상자 / 내역" onClick={() => router.push('/admin/badges')} />
         </div>
 
-        {/* 핵심 통계만 (대시보드 메뉴/버튼 자체 제거) */}
+        {/* 핵심 통계만 */}
         <div className="sgrid" style={grid()}>
           <StatCard
             tone="violet"
@@ -199,7 +216,7 @@ export default function AdminHomePage() {
             tone="pink"
             label="🚨 미열람 문의"
             value={stat.supports_unread}
-            subLabel="확인 필요"
+            subLabel="false 또는 null"
             glow={stat.supports_unread > 0}
             loading={loading}
             onClick={() => router.push('/admin/support?tab=unread')}
@@ -208,7 +225,7 @@ export default function AdminHomePage() {
             tone="mintSoft"
             label="🧩 진행중 문의"
             value={stat.supports_open}
-            subLabel="open / pending"
+            subLabel="open/pending + null"
             glow={stat.supports_open > 0}
             loading={loading}
             onClick={() => router.push('/admin/support')}

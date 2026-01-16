@@ -1,7 +1,7 @@
 // ✅✅✅ 전체복붙: src/app/register/page.tsx
 'use client';
 
-import { FormEvent, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
@@ -77,8 +77,27 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // ✅ 약관/개인정보 동의
+  const [agreeAll, setAgreeAll] = useState(false);
+  const [agreeTerms, setAgreeTerms] = useState(false); // 이용약관(필수)
+  const [agreePrivacy, setAgreePrivacy] = useState(false); // 개인정보처리방침(필수)
+  const [agreeMarketing, setAgreeMarketing] = useState(false); // 마케팅(선택)
+
   // ✅ 버튼 네온 hover state(게이트와 동일 컨셉)
   const [hoverBtn, setHoverBtn] = useState<'primary' | 'ghost' | 'mini' | 'miniGhost' | null>(null);
+
+  // ✅ 전체동의 상태 자동 동기(3개가 모두 true일 때만 전체동의 true)
+  useEffect(() => {
+    const nextAll = agreeTerms && agreePrivacy && agreeMarketing;
+    setAgreeAll((prev) => (prev === nextAll ? prev : nextAll));
+  }, [agreeTerms, agreePrivacy, agreeMarketing]);
+
+  function toggleAll(next: boolean) {
+    setAgreeAll(next);
+    setAgreeTerms(next);
+    setAgreePrivacy(next);
+    setAgreeMarketing(next);
+  }
 
   const canSubmit = useMemo(() => {
     const e = email.trim();
@@ -102,9 +121,27 @@ export default function RegisterPage() {
       birth.trim().length >= 8 &&
       addressText.trim().length >= 2 &&
       String(finalIndustry).trim().length >= 1 &&
+      agreeTerms &&
+      agreePrivacy &&
       !loading
     );
-  }, [name, nickname, phone, company, team, email, pw, pw2, birth, addressText, industry, industryCustom, loading]);
+  }, [
+    name,
+    nickname,
+    phone,
+    company,
+    team,
+    email,
+    pw,
+    pw2,
+    birth,
+    addressText,
+    industry,
+    industryCustom,
+    agreeTerms,
+    agreePrivacy,
+    loading,
+  ]);
 
   function onAddressBlur() {
     const t = addressText.trim();
@@ -144,7 +181,7 @@ export default function RegisterPage() {
 
       const userId = data.user?.id;
 
-      // ✅ 어떤 환경에서는 signUp 직후 user가 null일 수 있음 -> 그래도 “가입 요청”은 된 상태로 안내
+      // ✅ signUp 직후 user가 null일 수 있음
       if (!userId) {
         setMsg('회원가입 요청은 완료됐어요. 이메일 인증을 확인하고 로그인해 주세요.');
         setTimeout(() => router.replace('/login'), 900);
@@ -157,13 +194,13 @@ export default function RegisterPage() {
         try {
           avatarPath = await uploadAvatarIfAny(avatarFile, userId);
         } catch (avatarErr: any) {
-          // ✅ 업로드 실패는 치명적 실패가 아님(가입은 진행)
           setMsg(`(참고) 프로필 이미지 업로드 실패: ${avatarErr?.message || '업로드 오류'}`);
           avatarPath = null;
         }
       }
 
       // 3) profiles upsert(실패해도 가입 성공 흐름은 유지)
+      const now = new Date().toISOString();
       const payload: any = {
         user_id: userId,
         email: email.trim(),
@@ -179,22 +216,24 @@ export default function RegisterPage() {
         lon: addr.lon,
         avatar_url: avatarPath,
         role: 'user',
+
+        terms_agreed_at: agreeTerms ? now : null,
+        privacy_agreed_at: agreePrivacy ? now : null,
+        marketing_agreed_at: agreeMarketing ? now : null,
+        consent_version: '2026-01-16',
       };
 
       const { error: upsertErr } = await supabase.from('profiles').upsert(payload, { onConflict: 'user_id' });
 
-      // ✅ 여기서 return 금지: RLS 때문에 실패하면 “가입완료 안됨”처럼 보이기 때문
       const profileWarn = upsertErr ? ` (프로필 저장은 실패했어요: ${upsertErr.message})` : '';
 
-      // 4) 세션 유무에 따라 분기(이메일 인증 ON이면 session이 null인 경우가 흔함)
+      // 4) 세션 유무 분기
       if (data.session) {
-        // ✅ 즉시 로그인 가능한 설정이면 홈으로
         setMsg(`회원가입 완료!${profileWarn}`);
         router.replace('/home');
         return;
       }
 
-      // ✅ 이메일 인증 필요한 설정이면: 안내 + 로그인으로 이동
       setMsg(`회원가입 요청 완료! 이메일 인증 후 로그인해 주세요.${profileWarn}`);
       setTimeout(() => router.replace('/login'), 1100);
     } catch (err: any) {
@@ -261,7 +300,6 @@ export default function RegisterPage() {
     };
   }, [baseNeonBtn, hoverBtn]);
 
-  // 미니 버튼도 “불 들어오는” 느낌 통일
   const miniBase: CSSProperties = useMemo(
     () => ({
       height: 40,
@@ -289,9 +327,7 @@ export default function RegisterPage() {
     return {
       ...miniBase,
       borderColor: on ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.28)',
-      boxShadow: on
-        ? '0 0 0 2px rgba(255,255,255,0.75), 0 0 22px rgba(255,77,184,0.35), 0 0 44px rgba(168,85,247,0.28)'
-        : 'none',
+      boxShadow: on ? '0 0 0 2px rgba(255,255,255,0.75), 0 0 22px rgba(255,77,184,0.35), 0 0 44px rgba(168,85,247,0.28)' : 'none',
       transform: on ? 'translateY(-1px)' : 'translateY(0px)',
       filter: on ? 'brightness(1.06)' : 'brightness(1)',
       opacity: loading ? 0.7 : 1,
@@ -323,7 +359,7 @@ export default function RegisterPage() {
           </div>
           <div className="titles">
             <div className="brand">UPLOG</div>
-            <div className="sub">회원가입</div>
+            <div className="subTitle">회원가입</div>
           </div>
         </header>
 
@@ -332,36 +368,39 @@ export default function RegisterPage() {
             <div className="avatar">
               {avatarPreview ? <img src={avatarPreview} alt="" className="avatarImg" /> : <div className="avatarPh">🙂</div>}
             </div>
-            <div className="avatarBtns">
-              <button
-                type="button"
-                style={miniBtnStyle}
-                onMouseEnter={() => setHoverBtn('mini')}
-                onMouseLeave={() => setHoverBtn(null)}
-                onFocus={() => setHoverBtn('mini')}
-                onBlur={() => setHoverBtn(null)}
-                onClick={() => fileRef.current?.click()}
-                disabled={loading}
-              >
-                프로필 이미지 선택
-              </button>
 
-              <button
-                type="button"
-                style={miniGhostStyle}
-                onMouseEnter={() => setHoverBtn('miniGhost')}
-                onMouseLeave={() => setHoverBtn(null)}
-                onFocus={() => setHoverBtn('miniGhost')}
-                onBlur={() => setHoverBtn(null)}
-                onClick={() => {
-                  setAvatarFile(null);
-                  setAvatarPreview(null);
-                  if (fileRef.current) fileRef.current.value = '';
-                }}
-                disabled={loading}
-              >
-                제거
-              </button>
+            <div className="avatarBtns">
+              <div className="avatarBtnRow">
+                <button
+                  type="button"
+                  style={miniBtnStyle}
+                  onMouseEnter={() => setHoverBtn('mini')}
+                  onMouseLeave={() => setHoverBtn(null)}
+                  onFocus={() => setHoverBtn('mini')}
+                  onBlur={() => setHoverBtn(null)}
+                  onClick={() => fileRef.current?.click()}
+                  disabled={loading}
+                >
+                  프로필 이미지 선택
+                </button>
+
+                <button
+                  type="button"
+                  style={miniGhostStyle}
+                  onMouseEnter={() => setHoverBtn('miniGhost')}
+                  onMouseLeave={() => setHoverBtn(null)}
+                  onFocus={() => setHoverBtn('miniGhost')}
+                  onBlur={() => setHoverBtn(null)}
+                  onClick={() => {
+                    setAvatarFile(null);
+                    setAvatarPreview(null);
+                    if (fileRef.current) fileRef.current.value = '';
+                  }}
+                  disabled={loading}
+                >
+                  제거
+                </button>
+              </div>
 
               <input
                 ref={fileRef}
@@ -373,6 +412,7 @@ export default function RegisterPage() {
                   if (f) onPickAvatar(f);
                 }}
               />
+
               <div className="hint">선택사항</div>
             </div>
           </div>
@@ -469,29 +509,55 @@ export default function RegisterPage() {
           <div className="grid2">
             <label className="label">
               <span>비밀번호</span>
-              <input
-                className="input"
-                value={pw}
-                onChange={(e) => setPw(e.target.value)}
-                placeholder="8자 이상"
-                type="password"
-                autoComplete="new-password"
-              />
+              <input className="input" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="8자 이상" type="password" autoComplete="new-password" />
             </label>
             <label className="label">
               <span>비밀번호 확인</span>
-              <input
-                className="input"
-                value={pw2}
-                onChange={(e) => setPw2(e.target.value)}
-                placeholder="한 번 더"
-                type="password"
-                autoComplete="new-password"
-              />
+              <input className="input" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="한 번 더" type="password" autoComplete="new-password" />
             </label>
           </div>
 
           {msg ? <div className="msg">{msg}</div> : null}
+
+          <div className="agreeBox">
+            <label className="agreeRow">
+              <input type="checkbox" checked={agreeAll} onChange={(e) => toggleAll(e.target.checked)} disabled={loading} />
+              <span className="agreeText">
+                전체 동의 <span className="agreeSub">(선택 포함)</span>
+              </span>
+            </label>
+
+            <div className="agreeDivider" />
+
+            <label className="agreeRow">
+              <input type="checkbox" checked={agreeTerms} onChange={(e) => setAgreeTerms(e.target.checked)} disabled={loading} />
+              <span className="agreeText">
+                (필수) 이용약관 동의
+                <a className="agreeLink" href="/terms" target="_blank" rel="noreferrer">
+                  보기
+                </a>
+              </span>
+            </label>
+
+            <label className="agreeRow">
+              <input type="checkbox" checked={agreePrivacy} onChange={(e) => setAgreePrivacy(e.target.checked)} disabled={loading} />
+              <span className="agreeText">
+                (필수) 개인정보처리방침 동의
+                <a className="agreeLink" href="/privacy" target="_blank" rel="noreferrer">
+                  보기
+                </a>
+              </span>
+            </label>
+
+            <label className="agreeRow">
+              <input type="checkbox" checked={agreeMarketing} onChange={(e) => setAgreeMarketing(e.target.checked)} disabled={loading} />
+              <span className="agreeText">
+                (선택) 마케팅 정보 수신 동의 <span className="agreeSub">(이메일/푸시)</span>
+              </span>
+            </label>
+
+            {!agreeTerms || !agreePrivacy ? <div className="agreeHint">⚠️ 회원가입을 위해 필수 항목에 동의해 주세요.</div> : null}
+          </div>
 
           <button
             type="submit"
@@ -546,10 +612,12 @@ export default function RegisterPage() {
           z-index: 0;
         }
 
+        /* ✅ 카드 중앙/대칭 고정 */
         .card {
           width: min(980px, 96vw);
+          margin: 0 auto;
           border-radius: 28px;
-          padding: 24px 22px 22px;
+          padding: 22px 22px 20px; /* ✅ 좌우 동일 */
           background: rgba(0, 0, 0, 0.22);
           border: 1px solid rgba(255, 255, 255, 0.22);
           box-shadow: 0 18px 70px rgba(0, 0, 0, 0.35);
@@ -557,11 +625,13 @@ export default function RegisterPage() {
           z-index: 1;
         }
 
+        /* ✅ 헤더도 grid로 “미세 쏠림” 제거 */
         .head {
-          display: flex;
-          align-items: center;
+          display: grid;
+          grid-template-columns: 46px 1fr;
           gap: 12px;
-          padding: 6px 6px 14px;
+          align-items: center;
+          padding: 4px 4px 12px;
         }
 
         .logo {
@@ -573,6 +643,7 @@ export default function RegisterPage() {
           display: grid;
           place-items: center;
           overflow: hidden;
+          flex: 0 0 auto;
         }
 
         .logoImg {
@@ -587,6 +658,7 @@ export default function RegisterPage() {
           display: flex;
           flex-direction: column;
           line-height: 1.1;
+          min-width: 0;
         }
 
         .brand {
@@ -597,18 +669,20 @@ export default function RegisterPage() {
           text-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
         }
 
-        .sub {
+        /* ✅ 기존 .sub 클래스명 충돌 방지 위해 subTitle로 분리 */
+        .subTitle {
           margin-top: 4px;
           font-size: 16px;
           font-weight: 900;
           color: rgba(255, 255, 255, 0.88);
         }
 
+        /* ✅ form 내부 padding “애매한 6px” 제거 → 좌우 대칭 */
         .form {
           display: flex;
           flex-direction: column;
           gap: 12px;
-          padding: 6px;
+          padding: 8px 4px 4px; /* ✅ 좌우 균형 */
         }
 
         .avatarRow {
@@ -646,6 +720,14 @@ export default function RegisterPage() {
           display: flex;
           flex-direction: column;
           gap: 8px;
+          min-width: 0;
+        }
+
+        .avatarBtnRow {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          align-items: center;
         }
 
         .hint {
@@ -659,6 +741,7 @@ export default function RegisterPage() {
           grid-template-columns: 1fr 1fr;
           gap: 12px;
         }
+
         @media (max-width: 680px) {
           .grid2 {
             grid-template-columns: 1fr;
@@ -690,7 +773,6 @@ export default function RegisterPage() {
           appearance: none;
         }
 
-        /* ✅ 업종 드롭다운(네이티브) 가독성 강제 */
         .input.select {
           color: #ffffff !important;
           background: linear-gradient(
@@ -741,6 +823,88 @@ export default function RegisterPage() {
           font-size: 14px;
           font-weight: 950;
           white-space: pre-wrap;
+        }
+
+        .agreeBox {
+          margin-top: 6px;
+          padding: 12px 12px;
+          border-radius: 18px;
+          background: rgba(0, 0, 0, 0.22);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .agreeRow {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          cursor: pointer;
+          user-select: none;
+        }
+
+        .agreeRow input {
+          margin-top: 2px;
+          width: 18px;
+          height: 18px;
+          accent-color: rgba(255, 77, 184, 0.95);
+        }
+
+        .agreeText {
+          font-size: 13px;
+          font-weight: 950;
+          color: rgba(255, 255, 255, 0.92);
+          line-height: 1.35;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        .agreeSub {
+          font-size: 12px;
+          font-weight: 900;
+          color: rgba(255, 255, 255, 0.7);
+        }
+
+        .agreeLink {
+          margin-left: 6px;
+          padding: 6px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.22);
+          background: rgba(255, 255, 255, 0.1);
+          color: rgba(255, 255, 255, 0.92);
+          text-decoration: none;
+          font-weight: 1000;
+          font-size: 12px;
+        }
+
+        .agreeLink:hover {
+          filter: brightness(1.08);
+          border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .agreeDivider {
+          height: 1px;
+          background: rgba(255, 255, 255, 0.14);
+          margin: 2px 0;
+        }
+
+        .agreeHint {
+          margin-top: 2px;
+          font-size: 12px;
+          font-weight: 950;
+          color: rgba(255, 220, 160, 0.95);
+        }
+
+        @media (max-width: 520px) {
+          .card {
+            padding: 18px 16px 16px; /* ✅ 모바일에서도 중앙 고정 */
+          }
+          .form {
+            padding: 8px 2px 4px;
+          }
         }
       `}</style>
     </main>

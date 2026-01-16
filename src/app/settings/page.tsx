@@ -390,121 +390,138 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const init = async () => {
-      const { data, error } = await supabase.auth.getUser();
-      const user = data?.user;
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        const user = data?.user;
 
-      if (error || !user) {
-        router.replace('/login');
-        return;
-      }
+        if (error || !user) {
+          router.replace('/login');
+          return;
+        }
 
-      setMe({ user_id: user.id, email: user.email ?? null });
+        setMe({ user_id: user.id, email: user.email ?? null });
 
-      const { data: p } = await supabase
-        .from('profiles')
-        .select('user_id, nickname, name, phone, industry, company, department, team, career, avatar_url, address_text, lat, lon, main_goal')
-        .eq('user_id', user.id)
-        .maybeSingle();
+        // ✅ 프로필 row 없으면 생성되게 upsert
+        await supabase
+          .from('profiles')
+          .upsert(
+            {
+              user_id: user.id,
+              email: user.email ?? null,
+            } as any,
+            { onConflict: 'user_id' }
+          );
 
-      const pr = (p as any) as ProfileRow | null;
+        const { data: p, error: pErr } = await supabase
+          .from('profiles')
+          .select('user_id, nickname, name, phone, industry, company, department, team, career, avatar_url, address_text, lat, lon, main_goal')
+          .eq('user_id', user.id)
+          .maybeSingle();
 
-      const next: ProfileRow = {
-        user_id: user.id,
-        nickname: pr?.nickname ?? null,
-        name: pr?.name ?? null,
-        phone: pr?.phone ?? null,
-        industry: pr?.industry ?? null,
-        company: pr?.company ?? null,
-        department: pr?.department ?? null,
-        team: pr?.team ?? null,
-        career: pr?.career ?? null,
-        avatar_url: pr?.avatar_url ?? null,
-        address_text: pr?.address_text ?? null,
-        lat: pr?.lat ?? null,
-        lon: pr?.lon ?? null,
-        main_goal: (pr as any)?.main_goal ?? null,
-      };
+        if (pErr) {
+          console.error('profile load error', pErr);
+        }
 
-      setProfile(next);
+        const pr = (p as any) as ProfileRow | null;
 
-      setNickname(next.nickname ?? '');
-      setName(next.name ?? '');
-      setPhone(next.phone ?? '');
-      setIndustry(next.industry ?? '');
-      setCompany(next.company ?? '');
-      setDepartment(next.department ?? '');
-      setTeam(next.team ?? '');
-      setMainGoal(next.main_goal ?? '');
+        const next: ProfileRow = {
+          user_id: user.id,
+          nickname: pr?.nickname ?? null,
+          name: pr?.name ?? null,
+          phone: pr?.phone ?? null,
+          industry: pr?.industry ?? null,
+          company: pr?.company ?? null,
+          department: pr?.department ?? null,
+          team: pr?.team ?? null,
+          career: pr?.career ?? null,
+          avatar_url: pr?.avatar_url ?? null,
+          address_text: pr?.address_text ?? null,
+          lat: pr?.lat ?? null,
+          lon: pr?.lon ?? null,
+          main_goal: (pr as any)?.main_goal ?? null,
+        };
 
-      const cv = (next.career ?? '').trim();
-      const preset = ['0-1', '2', '3', '4-5', '6-9', '10+', '5+', '1+', '신입', '기타'];
-      if (!cv) {
-        setCareerSel('');
-        setCareerCustom('');
-      } else if (preset.includes(cv)) {
-        setCareerSel(cv);
-        setCareerCustom('');
-      } else {
-        setCareerSel('기타');
-        setCareerCustom(cv);
-      }
+        setProfile(next);
 
-      setAddressText(next.address_text ?? '');
+        setNickname(next.nickname ?? '');
+        setName(next.name ?? '');
+        setPhone(next.phone ?? '');
+        setIndustry(next.industry ?? '');
+        setCompany(next.company ?? '');
+        setDepartment(next.department ?? '');
+        setTeam(next.team ?? '');
+        setMainGoal(next.main_goal ?? '');
 
-      setAvatarPreview(getAvatarSrc(next.avatar_url));
+        const cv = (next.career ?? '').trim();
+        const preset = ['0-1', '2', '3', '4-5', '6-9', '10+', '5+', '1+', '신입', '기타'];
+        if (!cv) {
+          setCareerSel('');
+          setCareerCustom('');
+        } else if (preset.includes(cv)) {
+          setCareerSel(cv);
+          setCareerCustom('');
+        } else {
+          setCareerSel('기타');
+          setCareerCustom(cv);
+        }
 
-      const uid = user.id;
-      setCounts(await calcCounts(uid));
-      setActivity(await calcActivityBadges(uid));
+        setAddressText(next.address_text ?? '');
 
-      const now = Date.now();
-      const sevenDays = 7 * 24 * 60 * 60 * 1000;
+        setAvatarPreview(getAvatarSrc(next.avatar_url));
 
-      const collected: { name: string; code: string; ts: number }[] = [];
+        const uid = user.id;
+        setCounts(await calcCounts(uid));
+        setActivity(await calcActivityBadges(uid));
 
-      await safeCount(async () => {
-        const { data } = await supabase
-          .from('monthly_badges')
-          .select('badge_name, badge_code, month_start')
-          .eq('winner_user_id', uid)
-          .order('month_start', { ascending: false })
-          .limit(12);
+        const now = Date.now();
+        const sevenDays = 7 * 24 * 60 * 60 * 1000;
 
-        (data || []).forEach((r: any) => {
-          const t = r?.month_start ? new Date(r.month_start).getTime() : 0;
-          collected.push({ name: r.badge_name || '월간 배지', code: r.badge_code || '', ts: t });
+        const collected: { name: string; code: string; ts: number }[] = [];
+
+        await safeCount(async () => {
+          const { data } = await supabase
+            .from('monthly_badges')
+            .select('badge_name, badge_code, month_start')
+            .eq('winner_user_id', uid)
+            .order('month_start', { ascending: false })
+            .limit(12);
+
+          (data || []).forEach((r: any) => {
+            const t = r?.month_start ? new Date(r.month_start).getTime() : 0;
+            collected.push({ name: r.badge_name || '월간 배지', code: r.badge_code || '', ts: t });
+          });
+          return (data || []).length;
         });
-        return (data || []).length;
-      });
 
-      await safeCount(async () => {
-        const { data } = await supabase
-          .from('weekly_badges')
-          .select('badge_name, badge_code, week_start')
-          .eq('winner_user_id', uid)
-          .order('week_start', { ascending: false })
-          .limit(12);
+        await safeCount(async () => {
+          const { data } = await supabase
+            .from('weekly_badges')
+            .select('badge_name, badge_code, week_start')
+            .eq('winner_user_id', uid)
+            .order('week_start', { ascending: false })
+            .limit(12);
 
-        (data || []).forEach((r: any) => {
-          const t = r?.week_start ? new Date(r.week_start).getTime() : 0;
-          collected.push({ name: r.badge_name || '주간 배지', code: r.badge_code || '', ts: t });
+          (data || []).forEach((r: any) => {
+            const t = r?.week_start ? new Date(r.week_start).getTime() : 0;
+            collected.push({ name: r.badge_name || '주간 배지', code: r.badge_code || '', ts: t });
+          });
+          return (data || []).length;
         });
-        return (data || []).length;
-      });
 
-      const uniq = new Map<string, BadgeItem>();
-      collected.forEach((b) => {
-        const key = `${b.name}__${b.code}`;
-        if (uniq.has(key)) return;
-        const isNew = b.ts ? now - b.ts <= sevenDays : false;
-        uniq.set(key, { name: b.name, emoji: emojiFromBadgeCode(b.code), isNew });
-      });
+        const uniq = new Map<string, BadgeItem>();
+        collected.forEach((b) => {
+          const key = `${b.name}__${b.code}`;
+          if (uniq.has(key)) return;
+          const isNew = b.ts ? now - b.ts <= sevenDays : false;
+          uniq.set(key, { name: b.name, emoji: emojiFromBadgeCode(b.code), isNew });
+        });
 
-      const arr = Array.from(uniq.values());
-      arr.sort((a, b) => Number(b.isNew) - Number(a.isNew));
-      setBadges(arr.slice(0, 12));
-
-      setBooting(false);
+        const arr = Array.from(uniq.values());
+        arr.sort((a, b) => Number(b.isNew) - Number(a.isNew));
+        setBadges(arr.slice(0, 12));
+      } finally {
+        setBooting(false);
+      }
     };
 
     init();
@@ -537,7 +554,11 @@ export default function SettingsPage() {
         return;
       }
 
-      const { error: pErr } = await supabase.from('profiles').update({ avatar_url: path }).eq('user_id', me.user_id);
+      // ✅ row 없을 수도 있으니 upsert로 고정
+      const { error: pErr } = await supabase
+        .from('profiles')
+        .upsert({ user_id: me.user_id, avatar_url: path } as any, { onConflict: 'user_id' });
+
       if (pErr) {
         console.error(pErr);
         showToast('❌ 프로필 저장 실패');
@@ -558,6 +579,7 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       const payload: any = {
+        user_id: me.user_id, // ✅ upsert 필수
         nickname: nickname.trim() || null,
         name: name.trim() || null,
         phone: phone.trim() || null,
@@ -574,7 +596,7 @@ export default function SettingsPage() {
         main_goal: mainGoal.trim() || null,
       };
 
-      const { error } = await supabase.from('profiles').update(payload).eq('user_id', me.user_id);
+      const { error } = await supabase.from('profiles').upsert(payload, { onConflict: 'user_id' });
       if (error) {
         console.error(error);
         showToast('❌ 저장 중 오류가 발생했어요.');
@@ -613,7 +635,7 @@ export default function SettingsPage() {
         <div className="set-wrap">
           <header className="set-head">
             <div className="set-title">설정</div>
-            <div className="set-sub">{displayName} 님의 프로필, 최종목표, 활동량, 배지, 로그아웃/탈퇴를 관리해요.</div>
+            <div className="set-sub">{displayName} 님의 프로필, 메인목표, 활동량, 배지, 로그아웃/탈퇴를 관리해요.</div>
           </header>
 
           {toast && <div className="toast">{toast}</div>}
@@ -624,10 +646,7 @@ export default function SettingsPage() {
               <div className="cardTop">
                 <div>
                   <div className="cardTitle">프로필 설정</div>
-                  {/* ✅ 요청: "입력은 더 컴팩트..." 문구 삭제 */}
                 </div>
-
-                {/* ✅ 요청: 상단 저장하기 버튼 삭제(하단만 사용) */}
               </div>
 
               <div className="profileTop">
@@ -640,7 +659,7 @@ export default function SettingsPage() {
                       alt="avatar"
                       onError={(e: any) => {
                         const cur = e.currentTarget?.src || '';
-                        if (cur.includes('/upzzu1.png')) e.currentTarget.src = '/lolo.png';
+                        if (cur.includes('/upzzu1.png')) e.currentTarget.src = '/gogo.png';
                         else e.currentTarget.src = '/upzzu1.png';
                       }}
                     />
@@ -656,8 +675,6 @@ export default function SettingsPage() {
                       disabled={avatarUploading}
                     />
                   </label>
-
-                  {/* ✅ 요청: "이미지는 원형으로 자동 크롭돼요." 문구 삭제 */}
                 </div>
 
                 <div className="who">
@@ -680,10 +697,10 @@ export default function SettingsPage() {
 
               <div className="goalCard">
                 <div className="goalHead">
-                  <div className="goalTitle">최종 목표</div>
+                  <div className="goalTitle">메인 목표</div>
                   <div className="goalPill">메인 표시</div>
                 </div>
-                <div className="goalSub">메인 화면에 표시되는 “대표님의 최종 목표”예요.</div>
+                <div className="goalSub">메인 화면에 표시되는 목표 문구예요.</div>
                 <textarea
                   className="textarea"
                   value={mainGoal}
@@ -995,7 +1012,6 @@ const styles = `
 .kpiT{ font-size: 12px; font-weight: 950; color:#6a58b3; }
 .kpiV{ margin-top: 4px; font-size: 18px; font-weight: 950; color:#e11d48; }
 
-/* ✅ 최종목표 카드 */
 .goalCard{
   margin-top: 14px;
   border-radius: 20px;
@@ -1040,7 +1056,6 @@ const styles = `
 }
 .textarea::placeholder{ color: rgba(35,18,58,0.45); font-weight: 900; }
 
-/* ✅ 폼 컴팩트 */
 .formGridWrap{ margin-top: 14px; max-width: 680px; }
 @media (max-width: 980px){
   .formGridWrap{ max-width: 100%; }
@@ -1109,7 +1124,6 @@ const styles = `
   box-sizing:border-box;
 }
 
-/* ✅ 버튼 */
 .actionsBottom{
   margin-top: 14px;
   display:flex;
@@ -1160,7 +1174,6 @@ const styles = `
   background: rgba(124,58,237,0.12);
 }
 
-/* RIGHT */
 .miniBlock{
   margin-top: 12px;
   border-radius: 18px;
@@ -1208,7 +1221,6 @@ const styles = `
   word-break: break-word;
 }
 
-/* 수상 배지 */
 .badgeBox{ margin-top: 12px; }
 .badgeList{ margin-top: 10px; display:grid; grid-template-columns: 1fr; gap: 10px; }
 .badge{

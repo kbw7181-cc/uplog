@@ -1,10 +1,18 @@
+// ✅✅✅ 전체복붙: src/middleware.ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+
+function hasSupabaseSessionCookie(req: NextRequest) {
+  // Supabase auth helpers 사용 여부/버전에 따라 쿠키 키가 다양해질 수 있어서
+  // "sb-" prefix 기반으로 넓게 체크 (최소한의 안전장치)
+  const all = req.cookies.getAll();
+  return all.some((c) => c.name.startsWith('sb-') && (c.value || '').length > 10);
+}
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // ✅ 항상 허용(로그인/회원가입/첫화면/정적파일/Next 내부)
+  // ✅ 항상 허용(첫화면/로그인/회원가입/로그아웃/정적파일/Next 내부/API)
   const allow =
     pathname === '/' ||
     pathname.startsWith('/login') ||
@@ -24,10 +32,13 @@ export function middleware(req: NextRequest) {
 
   if (allow) return NextResponse.next();
 
-  // ✅ 나머지는 프로젝트 기존 가드 정책에 맞게(일단 로그인으로 보냄)
-  //    (대표님은 지금 인증가드가 흔들리니까, 기본값은 로그인)
+  // ✅ 보호 라우트: 세션 쿠키 있으면 통과, 없으면 로그인으로
+  const authed = hasSupabaseSessionCookie(req);
+  if (authed) return NextResponse.next();
+
   const url = req.nextUrl.clone();
   url.pathname = '/login';
+  url.searchParams.set('next', pathname);
   return NextResponse.redirect(url);
 }
 
