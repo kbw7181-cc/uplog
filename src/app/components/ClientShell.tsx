@@ -42,11 +42,13 @@ export default function ClientShell({ children }: { children: ReactNode }) {
   const checkingRef = useRef(false);
 
   // ✅ 게이트 예외 라우트(여긴 검사 안 하고 통과)
+  // ✅✅✅ 핵심: /settings 도 예외로 넣어서 "설정 누르면 회원가입으로 튕김" 방지
   const bypass = useMemo(() => {
     const p = pathname || '';
     if (p === '/') return true; // GatePage
     if (p.startsWith('/login')) return true;
     if (p.startsWith('/register')) return true; // 프로필 입력 페이지
+    if (p.startsWith('/settings')) return true; // ✅ 추가(모바일에서 가장 중요)
     if (p.startsWith('/logout')) return true;
     // 필요하면 더 추가 가능:
     // if (p.startsWith('/privacy')) return true;
@@ -54,6 +56,7 @@ export default function ClientShell({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   // ✅ 프로필 미완성이어도 "여기서는" 보내지 말아야 하는 페이지
+  // (bypass에 /settings 넣었으니, 사실상 이건 "추가 안전장치"로만 남김)
   const allowIncompleteHere = useMemo(() => {
     const p = pathname || '';
     return p.startsWith('/settings') || p.startsWith('/register');
@@ -69,8 +72,7 @@ export default function ClientShell({ children }: { children: ReactNode }) {
         return;
       }
 
-      // ✅ 이미 통과된 상태라면, route 이동 때마다 화면을 blank로 만들지 말기(모바일 플래시/튕김 방지)
-      // 단, 첫 진입에서는 gateReady가 false라 로딩 화면이 뜸
+      // ✅ route 이동 때 중복 체크 방지
       if (checkingRef.current) return;
       checkingRef.current = true;
 
@@ -94,9 +96,7 @@ export default function ClientShell({ children }: { children: ReactNode }) {
 
         if (!alive) return;
 
-        // ✅ 핵심: profiles 조회 에러(pErr)는 모바일/네트워크/RLS 순간 이슈일 수 있으니
-        // ✅ 여기서 /register로 보내지 말고 "통과"시킨다.
-        // (설정 페이지에서 직접 수정 가능해야 함)
+        // ✅ profiles 조회 에러는 순간 이슈일 수 있으니 여기서는 통과
         if (pErr) {
           setGateReady(true);
           return;
@@ -104,16 +104,15 @@ export default function ClientShell({ children }: { children: ReactNode }) {
 
         const complete = isProfileComplete((p as any) || null);
 
-        // ✅ 프로필 미완성이라도 /settings(설정)에서는 리다이렉트 금지
+        // ✅ 프로필 미완성 → /register 유도
+        // 단, allowIncompleteHere는 리다이렉트 금지
         if (!complete && !allowIncompleteHere) {
           router.replace('/register');
           return;
         }
 
-        // ✅ 통과
         setGateReady(true);
       } catch {
-        // 예외도 로그인 확인 실패로 간주
         router.replace('/login');
       } finally {
         checkingRef.current = false;

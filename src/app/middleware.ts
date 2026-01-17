@@ -1,10 +1,7 @@
-// ✅✅✅ 전체복붙: src/middleware.ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 function hasSupabaseSessionCookie(req: NextRequest) {
-  // Supabase auth helpers 사용 여부/버전에 따라 쿠키 키가 다양해질 수 있어서
-  // "sb-" prefix 기반으로 넓게 체크 (최소한의 안전장치)
   const all = req.cookies.getAll();
   return all.some((c) => c.name.startsWith('sb-') && (c.value || '').length > 10);
 }
@@ -12,11 +9,12 @@ function hasSupabaseSessionCookie(req: NextRequest) {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // ✅ 항상 허용(첫화면/로그인/회원가입/로그아웃/정적파일/Next 내부/API)
+  // ✅✅✅ 핵심: settings는 "프로필 수정" 페이지라서 무조건 통과해야 함 (모바일 쿠키 판별 흔들림 방지)
   const allow =
     pathname === '/' ||
     pathname.startsWith('/login') ||
     pathname.startsWith('/register') ||
+    pathname.startsWith('/settings') || // ✅ 추가
     pathname.startsWith('/logout') ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
