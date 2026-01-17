@@ -317,6 +317,9 @@ export default function SettingsPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
 
+  // ✅ 인증 안정화 (모바일에서 getUser 단발 체크로 튕기는 문제 해결)
+  const [authChecked, setAuthChecked] = useState(false);
+
   // 입력 상태
   const [nickname, setNickname] = useState('');
   const [name, setName] = useState('');
@@ -389,25 +392,50 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
+    let alive = true;
+
+    // ✅ 세션이 “잠깐 null”로 나오는 모바일 케이스를 흡수하기 위해
+    // - getSession() 재시도(짧게) + auth state 변화 구독
+    const waitForUser = async (): Promise<{ id: string; email: string | null } | null> => {
+      // 1) 일단 세션 먼저
+      for (let i = 0; i < 6; i++) {
+        const { data } = await supabase.auth.getSession();
+        const u = data?.session?.user;
+        if (u?.id) return { id: u.id, email: u.email ?? null };
+        await new Promise((r) => setTimeout(r, 200));
+      }
+
+      // 2) 그래도 없으면 getUser 한번
+      const { data } = await supabase.auth.getUser();
+      const u2 = data?.user;
+      if (u2?.id) return { id: u2.id, email: u2.email ?? null };
+
+      return null;
+    };
+
     const init = async () => {
       try {
-        const { data, error } = await supabase.auth.getUser();
-        const user = data?.user;
+        const u = await waitForUser();
 
-        if (error || !user) {
+        if (!alive) return;
+
+        setAuthChecked(true);
+
+        if (!u?.id) {
+          // ✅ 여기서만 리다이렉트 (booting 끝나기 전에 튕기지 않게)
           router.replace('/login');
           return;
         }
 
-        setMe({ user_id: user.id, email: user.email ?? null });
+        setMe({ user_id: u.id, email: u.email ?? null });
 
         // ✅ 프로필 row 없으면 생성되게 upsert
         await supabase
           .from('profiles')
           .upsert(
             {
-              user_id: user.id,
-              email: user.email ?? null,
+              user_id: u.id,
+              email: u.email ?? null,
             } as any,
             { onConflict: 'user_id' }
           );
@@ -415,7 +443,7 @@ export default function SettingsPage() {
         const { data: p, error: pErr } = await supabase
           .from('profiles')
           .select('user_id, nickname, name, phone, industry, company, department, team, career, avatar_url, address_text, lat, lon, main_goal')
-          .eq('user_id', user.id)
+          .eq('user_id', u.id)
           .maybeSingle();
 
         if (pErr) {
@@ -425,7 +453,7 @@ export default function SettingsPage() {
         const pr = (p as any) as ProfileRow | null;
 
         const next: ProfileRow = {
-          user_id: user.id,
+          user_id: u.id,
           nickname: pr?.nickname ?? null,
           name: pr?.name ?? null,
           phone: pr?.phone ?? null,
@@ -469,7 +497,7 @@ export default function SettingsPage() {
 
         setAvatarPreview(getAvatarSrc(next.avatar_url));
 
-        const uid = user.id;
+        const uid = u.id;
         setCounts(await calcCounts(uid));
         setActivity(await calcActivityBadges(uid));
 
@@ -520,11 +548,30 @@ export default function SettingsPage() {
         arr.sort((a, b) => Number(b.isNew) - Number(a.isNew));
         setBadges(arr.slice(0, 12));
       } finally {
-        setBooting(false);
+        if (alive) setBooting(false);
       }
     };
 
     init();
+
+    // ✅ auth 변화에도 안정적으로 맞춰주기(특히 모바일 resume)
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const uid = session?.user?.id;
+      if (!uid) return;
+      // 세션이 다시 살아난 케이스에서 booting/redirect 꼬임 방지
+      if (!me?.user_id) {
+        // 가볍게 재로딩
+        setBooting(true);
+        setAuthChecked(true);
+      }
+    });
+
+    return () => {
+      alive = false;
+      try {
+        sub?.subscription?.unsubscribe();
+      } catch {}
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
@@ -618,7 +665,8 @@ export default function SettingsPage() {
     showToast('⚠️ 탈퇴 요청이 접수되도록 연결이 필요해요.');
   };
 
-  if (booting) {
+  // ✅ authChecked가 false인 동안은 절대 튕기지 않게(모바일에서 중요)
+  if (booting || !authChecked) {
     return (
       <div className="set-root">
         <div className="set-loading">설정을 불러오는 중…</div>

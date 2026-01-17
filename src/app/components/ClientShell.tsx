@@ -1,7 +1,6 @@
-// ✅✅✅ 전체복붙: src/app/components/ClientShell.tsx
 'use client';
 
-import { ReactNode, useEffect, useMemo, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import AppHeader from './AppHeader';
 import { supabase } from '@/lib/supabaseClient';
@@ -25,22 +24,39 @@ function isProfileComplete(p: ProfileGateRow | null) {
   return nameOk && emailOk && phoneOk;
 }
 
+// ✅ 모바일에서 세션이 늦게 잡히는 경우 방어: 짧게 몇 번 재시도
+async function waitSession(maxTry = 4, gapMs = 220) {
+  for (let i = 0; i < maxTry; i++) {
+    const { data } = await supabase.auth.getSession();
+    if (data?.session?.user?.id) return data.session;
+    await new Promise((r) => setTimeout(r, gapMs));
+  }
+  return null;
+}
+
 export default function ClientShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
   const [gateReady, setGateReady] = useState(false);
+  const checkingRef = useRef(false);
 
   // ✅ 게이트 예외 라우트(여긴 검사 안 하고 통과)
   const bypass = useMemo(() => {
     const p = pathname || '';
     if (p === '/') return true; // GatePage
     if (p.startsWith('/login')) return true;
-    if (p.startsWith('/register')) return true; // ✅ 프로필 입력 페이지
+    if (p.startsWith('/register')) return true; // 프로필 입력 페이지
     if (p.startsWith('/logout')) return true;
     // 필요하면 더 추가 가능:
-    // if (p.startsWith('/support')) return true;
+    // if (p.startsWith('/privacy')) return true;
     return false;
+  }, [pathname]);
+
+  // ✅ 프로필 미완성이어도 "여기서는" 보내지 말아야 하는 페이지
+  const allowIncompleteHere = useMemo(() => {
+    const p = pathname || '';
+    return p.startsWith('/settings') || p.startsWith('/register');
   }, [pathname]);
 
   useEffect(() => {
@@ -53,19 +69,21 @@ export default function ClientShell({ children }: { children: ReactNode }) {
         return;
       }
 
-      setGateReady(false);
+      // ✅ 이미 통과된 상태라면, route 이동 때마다 화면을 blank로 만들지 말기(모바일 플래시/튕김 방지)
+      // 단, 첫 진입에서는 gateReady가 false라 로딩 화면이 뜸
+      if (checkingRef.current) return;
+      checkingRef.current = true;
 
       try {
-        // 1) 로그인 체크
-        const { data: u, error: uErr } = await supabase.auth.getUser();
+        // 1) 로그인 체크 (모바일 지연 방어)
+        const session = await waitSession(5, 240);
         if (!alive) return;
 
-        if (uErr || !u?.user?.id) {
+        const uid = session?.user?.id;
+        if (!uid) {
           router.replace('/login');
           return;
         }
-
-        const uid = u.user.id;
 
         // 2) profiles 필수정보 체크(name/phone/email)
         const { data: p, error: pErr } = await supabase
@@ -76,8 +94,18 @@ export default function ClientShell({ children }: { children: ReactNode }) {
 
         if (!alive) return;
 
-        // ✅ RLS 등으로 못 읽으면 “미완성” 취급 → register로 보내서 입력 유도
-        if (pErr || !isProfileComplete((p as any) || null)) {
+        // ✅ 핵심: profiles 조회 에러(pErr)는 모바일/네트워크/RLS 순간 이슈일 수 있으니
+        // ✅ 여기서 /register로 보내지 말고 "통과"시킨다.
+        // (설정 페이지에서 직접 수정 가능해야 함)
+        if (pErr) {
+          setGateReady(true);
+          return;
+        }
+
+        const complete = isProfileComplete((p as any) || null);
+
+        // ✅ 프로필 미완성이라도 /settings(설정)에서는 리다이렉트 금지
+        if (!complete && !allowIncompleteHere) {
           router.replace('/register');
           return;
         }
@@ -85,15 +113,17 @@ export default function ClientShell({ children }: { children: ReactNode }) {
         // ✅ 통과
         setGateReady(true);
       } catch {
-        // 예외도 로그인/프로필 확인 실패로 간주
+        // 예외도 로그인 확인 실패로 간주
         router.replace('/login');
+      } finally {
+        checkingRef.current = false;
       }
     })();
 
     return () => {
       alive = false;
     };
-  }, [router, bypass]);
+  }, [router, bypass, allowIncompleteHere]);
 
   // ✅ 게이트 확인 전에는 화면 플래시 방지(헤더 포함 숨김)
   if (!gateReady) {
@@ -140,10 +170,7 @@ export default function ClientShell({ children }: { children: ReactNode }) {
         }
 
         .cs {
-          /* ✅ 모바일 주소창 변화에도 안정 */
           min-height: 100dvh;
-
-          /* ✅ 전체 배경 통일 */
           background: radial-gradient(circle at 12% 12%, rgba(236, 72, 153, 0.16), transparent 58%),
             radial-gradient(circle at 88% 18%, rgba(168, 85, 247, 0.16), transparent 58%),
             radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.75), transparent 55%),
@@ -152,7 +179,6 @@ export default function ClientShell({ children }: { children: ReactNode }) {
           padding-top: env(safe-area-inset-top);
           padding-bottom: env(safe-area-inset-bottom);
 
-          /* ✅ 오른쪽 치우침/가로 흔들림 방지 핵심 */
           width: 100%;
           max-width: 100%;
           overflow-x: clip;
@@ -161,14 +187,10 @@ export default function ClientShell({ children }: { children: ReactNode }) {
         .csMain {
           width: 100%;
           max-width: 100%;
-
-          /* ✅ “vw” 쓰는 요소가 섞여도 가운데가 안 밀리게 */
           padding-left: max(var(--app-pad-x), 14px);
           padding-right: max(var(--app-pad-x), 14px);
           padding-top: var(--app-pad-top);
           padding-bottom: var(--app-pad-bottom);
-
-          /* ✅ iOS/모바일에서 가끔 생기는 미세 스크롤 흔들림 방지 */
           overflow-x: clip;
         }
 
@@ -177,8 +199,6 @@ export default function ClientShell({ children }: { children: ReactNode }) {
           max-width: var(--app-maxw);
           margin-left: auto;
           margin-right: auto;
-
-          /* ✅ Inner가 스크롤바 폭(vw) 영향으로 밀리는 현상 방지 */
           transform: translateZ(0);
         }
       `}</style>
