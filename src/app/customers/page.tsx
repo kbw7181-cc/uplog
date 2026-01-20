@@ -791,7 +791,7 @@ export default function CustomersPage() {
   }
 
   function goCustomerFromSchedule(s: ScheduleRow) {
-    const isCustomer = String(s.category || '').includes('고객');
+    const isCustomer = String(s.category || '').includes('고객관리');
     if (!isCustomer) return;
 
     const name = parseCustomerNameFromScheduleTitle(s.title).toLowerCase();
@@ -840,7 +840,7 @@ export default function CustomersPage() {
     return () => {
       alive = false;
     };
-  }, [router]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [router, monthCursor]); // ✅ monthCursor 포함(초기/월변경 안전)
 
   useEffect(() => {
     if (!userId) return;
@@ -1048,24 +1048,35 @@ export default function CustomersPage() {
     coachRow: { display: 'flex', gap: 10, alignItems: 'stretch' },
 
     // ✅ 말풍선 고정 사이즈(텍스트 길어도 흔들리지 않게)
-   bubble: {
-  flex: 1,
-  padding: '12px 14px',
-  borderRadius: 18,
-  border: '1px solid rgba(255,90,200,0.24)',
-  background: 'rgba(255,255,255,0.78)',
-  color: '#2a0f3a',
-  fontWeight: 950,
-  boxShadow: '0 14px 30px rgba(255,120,190,0.12)',
-  lineHeight: 1.35,
-  position: 'relative',
+    bubble: {
+      flex: 1,
+      padding: '12px 14px',
+      borderRadius: 18,
+      border: '1px solid rgba(255,90,200,0.24)',
+      background: 'rgba(255,255,255,0.78)',
+      color: '#2a0f3a',
+      fontWeight: 950,
+      boxShadow: '0 14px 30px rgba(255,120,190,0.12)',
+      lineHeight: 1.35,
+      position: 'relative',
 
-  // ✅ FIX: 고정 height 제거
-  minHeight: 140,     // 기존 “느낌”은 유지
-  height: 'auto',
-  overflow: 'visible' // hidden 제거
-},
+      // ✅ FIX: 고정 height 제거
+      minHeight: 140,
+      height: 'auto',
+      overflow: 'visible',
+    },
 
+    bubbleSub: {
+      marginTop: 10,
+      padding: '8px 10px',
+      borderRadius: 14,
+      border: '1px dashed rgba(255,80,170,0.28)',
+      background: 'rgba(255,80,170,0.06)',
+      color: '#6b1140',
+      fontSize: 12,
+      fontWeight: 950,
+      lineHeight: 1.35,
+    },
 
     // ✅ 마스코트: 테두리/흰배경 제거
     mascotFrame: {
@@ -1154,7 +1165,7 @@ export default function CustomersPage() {
       whiteSpace: 'nowrap',
     },
 
-    // ✅✅✅ (추가) 고객 카드 상단 칩: bottomChip (대표님 코드에서 쓰던데 정의가 없었음)
+    // ✅✅✅ 고객 카드 상단 칩: bottomChip
     bottomChip: {
       display: 'inline-flex',
       alignItems: 'center',
@@ -1392,6 +1403,20 @@ export default function CustomersPage() {
       zIndex: 3,
     },
 
+    logItem: {
+      borderRadius: 16,
+      border: '1px solid rgba(60,30,90,0.10)',
+      background: 'rgba(255,255,255,0.86)',
+      padding: '10px 10px',
+      display: 'flex',
+      justifyContent: 'space-between',
+      gap: 10,
+      alignItems: 'flex-start',
+    },
+    logLeft: { minWidth: 0, flex: 1 },
+    logTitle: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' as const },
+    logMain: { marginTop: 6, fontWeight: 950, fontSize: 13, color: '#2a0f3a' },
+    logSub: { marginTop: 6, fontWeight: 900, fontSize: 12, opacity: 0.72, color: '#2a0f3a' },
   };
 
   const modalRef = useRef<HTMLDivElement | null>(null);
@@ -1438,23 +1463,22 @@ export default function CustomersPage() {
                 </div>
 
                 <div style={{ marginTop: 8, fontWeight: 950 }} className="bubbleClamp1">
-  <span style={{ opacity: 0.85 }}>{guide.title}</span>
-</div>
+                  <span style={{ opacity: 0.85 }}>{guide.title}</span>
+                </div>
 
-<div style={{ marginTop: 6 }} className="bubbleClamp3">
-  {guide.body}
-</div>
+                <div style={{ marginTop: 6 }} className="bubbleClamp3">
+                  {guide.body}
+                </div>
 
-{guide.tip ? (
-  <div style={S.bubbleSub} className="bubbleClamp2">
-    TIP: {guide.tip}
-  </div>
-) : (
-  <div style={S.bubbleSub} className="bubbleClamp2">
-    꾸준한관리: 이력을 쌓고, 체크한 항목은 “달력 스케줄”까지 자동 연결됩니다.
-  </div>
-)}
-
+                {guide.tip ? (
+                  <div style={S.bubbleSub} className="bubbleClamp2">
+                    TIP: {guide.tip}
+                  </div>
+                ) : (
+                  <div style={S.bubbleSub} className="bubbleClamp2">
+                    꾸준한관리: 이력을 쌓고, 체크한 항목은 “달력 스케줄”까지 자동 연결됩니다.
+                  </div>
+                )}
 
                 <div
                   style={{
@@ -1466,7 +1490,6 @@ export default function CustomersPage() {
                     flexWrap: 'wrap',
                   }}
                 >
-                  
                   <div style={S.dots}>
                     {Array.from({ length: guideLen }).map((_, i) => (
                       <div key={i} style={S.dot(i === guideIdx)} onClick={() => setGuideIdx(i)} aria-label={`슬라이드 ${i + 1}`} />
@@ -1547,7 +1570,10 @@ export default function CustomersPage() {
                 아직 고객이 없어요. “고객 추가”부터 시작해요 ✨
               </div>
             ) : (
-              <div className="customerGrid" style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              <div
+                className="customerGrid"
+                style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}
+              >
                 {filteredCustomers.map((c: any) => {
                   const memoRaw = String((c as any).memo ?? '');
                   const { memoOnly, meta } = splitMemoAndMeta(memoRaw);
@@ -1802,60 +1828,42 @@ export default function CustomersPage() {
           >
             <div ref={modalRef as any} style={S.modal}>
               <div style={S.modalPad}>
-                {/* ✅ 모달 헤더 + 상단 버튼 덩어리 (바닥 버튼 덩어리 삭제하고 여기만 사용) */}
-<div
-  style={{
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 10,
-    flexWrap: 'wrap',
-  }}
->
-  <div>
-    <div style={S.modalTitle}>{editId ? '고객 정보 수정' : '고객 추가'}</div>
-    <div style={S.sectionSub}>✅ 계약일(기본정보 아래) + 상품/특이사항 + 꾸준한관리(달력 스케줄 체크)까지 한 번에.</div>
-    <div style={{ ...S.small, marginTop: 6 }}>입력일시: {fmtKoreanDT(cInputISO)}</div>
-  </div>
+                {/* ✅ 모달 헤더 + 상단 버튼 덩어리 */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={S.modalTitle}>{editId ? '고객 정보 수정' : '고객 추가'}</div>
+                    <div style={S.sectionSub}>✅ 계약일(기본정보 아래) + 상품/특이사항 + 꾸준한관리(달력 스케줄 체크)까지 한 번에.</div>
+                    <div style={{ ...S.small, marginTop: 6 }}>입력일시: {fmtKoreanDT(cInputISO)}</div>
+                  </div>
 
-  {/* ✅✅✅ 상단 버튼 덩어리 */}
-  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-    {editId ? (
-      <button
-        type="button"
-        style={{ ...S.dangerBtn, padding: '10px 12px', fontSize: 13 }}
-        onClick={async () => {
-          await deleteCustomer(editId);
-          setOpen(false);
-        }}
-      >
-        삭제
-      </button>
-    ) : null}
+                  {/* ✅✅✅ 상단 버튼 덩어리 */}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {editId ? (
+                      <button
+                        type="button"
+                        style={{ ...S.dangerBtn, padding: '10px 12px', fontSize: 13 }}
+                        onClick={async () => {
+                          await deleteCustomer(editId);
+                          setOpen(false);
+                        }}
+                      >
+                        삭제
+                      </button>
+                    ) : null}
 
-    <button
-      type="button"
-      style={{ ...S.ghostBtn, padding: '10px 12px', fontSize: 13 }}
-      onClick={() => setOpen(false)}
-    >
-      취소
-    </button>
+                    <button type="button" style={{ ...S.ghostBtn, padding: '10px 12px', fontSize: 13 }} onClick={() => setOpen(false)}>
+                      취소
+                    </button>
 
-    <button
-      type="button"
-      style={{ ...S.saveBtn, padding: '10px 12px', fontSize: 13 }}
-      onClick={saveCustomer}
-    >
-      저장
-    </button>
+                    <button type="button" style={{ ...S.saveBtn, padding: '10px 12px', fontSize: 13 }} onClick={saveCustomer}>
+                      저장
+                    </button>
 
-    <button type="button" style={S.closeX} onClick={() => setOpen(false)} aria-label="닫기">
-      ✕
-    </button>
-  </div>
-</div>
-
-
+                    <button type="button" style={S.closeX} onClick={() => setOpen(false)} aria-label="닫기">
+                      ✕
+                    </button>
+                  </div>
+                </div>
 
                 {/* 단계/등급/성향 */}
                 <div style={{ ...S.card, marginTop: 12 }}>
@@ -1945,8 +1953,6 @@ export default function CustomersPage() {
                     <div style={S.grid3} className="grid3">
                       <div>
                         <div style={{ ...S.small, marginBottom: 6 }}>성별</div>
-                    
-
                         <select style={S.input as any} value={cGender} onChange={(e) => setCGender(e.target.value as any)}>
                           <option value="">미선택</option>
                           <option value="남">남</option>
@@ -2062,7 +2068,7 @@ export default function CustomersPage() {
                       <div style={{ ...S.small, marginBottom: 8 }}>특이사항(3개)</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
                         {extraFields.map((f, idx) => (
-                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 10 }}>
+                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 10 }} className="extraRow">
                             <input
                               style={S.input}
                               value={f.label}
@@ -2090,7 +2096,7 @@ export default function CustomersPage() {
                         <div style={{ ...S.small, marginBottom: 8 }}>상품(복수)</div>
                         <div style={{ display: 'grid', gap: 8 }}>
                           {products.map((p, idx) => (
-                            <div key={idx} style={{ display: 'flex', gap: 8 }}>
+                            <div key={idx} style={{ display: 'flex', gap: 8 }} className="lineRow">
                               <input
                                 style={S.input}
                                 value={p}
@@ -2103,7 +2109,10 @@ export default function CustomersPage() {
                               <button
                                 type="button"
                                 style={{ ...S.ghostBtn, padding: '10px 12px', fontSize: 12 }}
-                                onClick={() => setProducts((prev) => prev.filter((_, i) => i !== idx).length ? prev.filter((_, i) => i !== idx) : [''])}
+                                onClick={() => {
+                                  const next = products.filter((_, i) => i !== idx);
+                                  setProducts(next.length ? next : ['']);
+                                }}
                               >
                                 삭제
                               </button>
@@ -2119,7 +2128,7 @@ export default function CustomersPage() {
                         <div style={{ ...S.small, marginBottom: 8 }}>이슈/거부사유(복수)</div>
                         <div style={{ display: 'grid', gap: 8 }}>
                           {issues.map((p, idx) => (
-                            <div key={idx} style={{ display: 'flex', gap: 8 }}>
+                            <div key={idx} style={{ display: 'flex', gap: 8 }} className="lineRow">
                               <input
                                 style={S.input}
                                 value={p}
@@ -2132,7 +2141,10 @@ export default function CustomersPage() {
                               <button
                                 type="button"
                                 style={{ ...S.ghostBtn, padding: '10px 12px', fontSize: 12 }}
-                                onClick={() => setIssues((prev) => prev.filter((_, i) => i !== idx).length ? prev.filter((_, i) => i !== idx) : [''])}
+                                onClick={() => {
+                                  const next = issues.filter((_, i) => i !== idx);
+                                  setIssues(next.length ? next : ['']);
+                                }}
                               >
                                 삭제
                               </button>
@@ -2147,7 +2159,7 @@ export default function CustomersPage() {
                   </div>
                 </div>
 
-                                {/* 꾸준한관리 이력 */}
+                {/* 꾸준한관리 이력 */}
                 <div style={{ ...S.card, marginTop: 12 }}>
                   <div style={S.pad}>
                     <div style={S.sectionTitle}>꾸준한관리 · 이력</div>
@@ -2206,18 +2218,9 @@ export default function CustomersPage() {
                           .map((lg) => {
                             const b = logCatBadge(lg.category);
                             return (
-                              <div
-                                key={lg.id}
-                                style={{
-                                  ...S.item,
-                                  marginTop: 0,
-                                  alignItems: 'center',
-                                  padding: '10px 10px',
-                                  gap: 10,
-                                }}
-                              >
-                                <div style={{ minWidth: 0, flex: 1 }}>
-                                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <div key={lg.id} style={S.logItem} className="logItem">
+                                <div style={S.logLeft}>
+                                  <div style={S.logTitle}>
                                     <span
                                       style={{
                                         ...S.chip,
@@ -2230,98 +2233,130 @@ export default function CustomersPage() {
                                     >
                                       {b.emoji} {lg.category}
                                     </span>
-                                    <span style={{ ...S.chip, opacity: 0.9, boxShadow: 'none' }}>
-                                      {lg.date} {lg.time}
+
+                                    <span style={{ ...S.chip, opacity: 0.95 }}>📅 {lg.date}</span>
+                                    <span style={{ ...S.chip, opacity: 0.95 }}>🕒 {isHHMM(lg.time) ? lg.time : '--:--'}</span>
+
+                                    <span
+                                      style={{
+                                        ...S.chip,
+                                        opacity: 0.95,
+                                        background: lg.saveSchedule ? 'rgba(34,197,94,0.10)' : 'rgba(100,116,139,0.08)',
+                                        borderColor: lg.saveSchedule ? 'rgba(34,197,94,0.22)' : 'rgba(100,116,139,0.18)',
+                                      }}
+                                    >
+                                      {lg.saveSchedule ? '✅ 달력 저장' : '⬜ 달력 미저장'}
                                     </span>
-                                    {lg.saveSchedule ? <span style={{ ...S.chip, opacity: 0.95 }}>📅 저장</span> : <span style={{ ...S.chip, opacity: 0.6 }}>📅 미저장</span>}
                                   </div>
 
-                                  <div style={{ marginTop: 6, fontWeight: 950, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {lg.content}
-                                  </div>
-                                  {lg.memo ? (
-                                    <div style={{ marginTop: 4, fontSize: 12, fontWeight: 950, opacity: 0.78, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      메모: {lg.memo}
-                                    </div>
-                                  ) : null}
+                                  <div style={S.logMain}>• {lg.content}</div>
+                                  {lg.memo ? <div style={S.logSub}>메모: {lg.memo}</div> : null}
                                 </div>
 
-                                <button type="button" style={{ ...S.dangerBtn, padding: '8px 10px', fontSize: 12 }} onClick={() => removeManageLog(lg.id)}>
-                                  삭제
-                                </button>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+                                  <button
+                                    type="button"
+                                    style={{ ...S.ghostBtn, padding: '8px 10px', fontSize: 12 }}
+                                    onClick={() => {
+                                      setManageLogs((prev) => prev.map((x) => (x.id === lg.id ? { ...x, saveSchedule: !x.saveSchedule } : x)));
+                                    }}
+                                  >
+                                    {lg.saveSchedule ? '달력 해제' : '달력 체크'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={{ ...S.dangerBtn, padding: '8px 10px', fontSize: 12 }}
+                                    onClick={() => removeManageLog(lg.id)}
+                                  >
+                                    삭제
+                                  </button>
+                                </div>
                               </div>
                             );
                           })}
                       </div>
                     ) : (
-                      <div style={{ marginTop: 12, fontWeight: 900, opacity: 0.65 }}>아직 이력이 없어요. 위에서 추가해 주세요.</div>
+                      <div style={{ marginTop: 12, fontWeight: 950, opacity: 0.65, color: '#2a0f3a' }}>아직 이력이 없어요. 위에서 “+ 이력 추가”로 쌓아보세요.</div>
                     )}
                   </div>
                 </div>
 
+                {err ? <div style={S.warn}>{err}</div> : null}
               </div>
             </div>
           </div>
         ) : null}
-
-        <style jsx>{`
-          @keyframes floaty {
-            0% {
-              transform: translateY(0);
-            }
-            50% {
-              transform: translateY(-6px);
-            }
-            100% {
-              transform: translateY(0);
-            }
-          }
-
-          /* ✅ 말풍선 텍스트 넘침 방지 */
-          .bubbleClamp1 {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-}
-
-.bubbleClamp2 {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.bubbleClamp3 {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-}
-
-
-          /* ✅ 고객 카드 2열 → 모바일 1열 */
-          @media (max-width: 860px) {
-            .customerGrid {
-              grid-template-columns: 1fr !important;
-            }
-          }
-
-          /* ✅ 마지막 이력 라인 정렬/잘림 */
-          .lastLogRow {
-            min-width: 0;
-          }
-          .lastLogText {
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-          }
-        `}</style>
       </div>
+
+      <style jsx>{`
+        @keyframes floaty {
+          0% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-6px);
+          }
+          100% {
+            transform: translateY(0);
+          }
+        }
+
+        /* ✅ 말풍선 텍스트 줄수 제한(보기 좋게) */
+        .bubbleClamp1,
+        .bubbleClamp2,
+        .bubbleClamp3 {
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+        .bubbleClamp1 {
+          -webkit-line-clamp: 1;
+        }
+        .bubbleClamp2 {
+          -webkit-line-clamp: 2;
+        }
+        .bubbleClamp3 {
+          -webkit-line-clamp: 3;
+        }
+
+        /* ✅ 모바일 대응 */
+        @media (max-width: 920px) {
+          :global(.coachRow) {
+            flex-direction: column;
+          }
+          :global(.mascotFrame) {
+            width: 100% !important;
+            min-width: 0 !important;
+            justify-content: flex-end !important;
+            padding-top: 6px;
+          }
+        }
+
+        @media (max-width: 720px) {
+          :global(.customerGrid) {
+            grid-template-columns: 1fr !important;
+          }
+          :global(.grid3) {
+            grid-template-columns: 1fr !important;
+          }
+          :global(.grid2) {
+            grid-template-columns: 1fr !important;
+          }
+          :global(.extraRow) {
+            grid-template-columns: 1fr !important;
+          }
+          :global(.lineRow) {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          :global(.lineRow button) {
+            width: 100%;
+          }
+          :global(.logItem) {
+            flex-direction: column;
+          }
+        }
+      `}</style>
     </ClientShell>
   );
 }

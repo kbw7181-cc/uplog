@@ -2,30 +2,152 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+
+type Tone = 'soft' | 'strong' | 'final' | 'ai';
+type Slide = { tone: Tone; lines: (string | JSX.Element)[] };
+
+function P({ children }: { children: React.ReactNode }) {
+  return <span className="point">{children}</span>;
+}
+
+const SLIDES: Slide[] = [
+  { tone: 'soft', lines: ['오늘 뭐 했는지,', '기억하세요?'] },
+  { tone: 'soft', lines: ['한 달 전에 뭐 했는지,', '기억하시나요?'] },
+
+  {
+    tone: 'strong',
+    lines: [
+      '바빴는데도 남는 게 없을 때.',
+      <>
+        UPLOG는 하루를 <P>기록</P>으로 바꿉니다.
+      </>,
+    ],
+  },
+  {
+    tone: 'strong',
+    lines: [
+      <>
+        일정 · 메모 · 고객관리 · <P>성과</P>를
+      </>,
+      '한 화면에 정리하고,',
+    ],
+  },
+
+  {
+    tone: 'ai',
+    lines: [
+      <>
+        고객이 했던 <P>질문</P>, 망설였던 이유,
+      </>,
+      '내가 어떻게 설명했고 어떤 반응이 나왔는지.',
+    ],
+  },
+  {
+    tone: 'ai',
+    lines: [
+      '그 순간의 대응이 그냥 사라지지 않고',
+      <>
+        <P>AI</P>가 정리해서 <P>자산</P>으로 쌓아줘요.
+      </>,
+    ],
+  },
+  { tone: 'ai', lines: ['그래서 같은 질문에', '매번 새로 고민하지 않아도 되고,'] },
+  {
+    tone: 'ai',
+    lines: [
+      <>
+        예전에 막혔던 <P>반론</P>이
+      </>,
+      <>
+        다음엔 내 <P>무기</P>가 됩니다.
+      </>,
+    ],
+  },
+
+  {
+    tone: 'strong',
+    lines: [
+      <>
+        결국 <P>기억</P>이 아니라 <P>기록</P>으로 하루를 관리하게 되고,
+      </>,
+      <>
+        경험이 아니라 <P>데이터</P>로 성장하게 돼요.
+      </>,
+    ],
+  },
+  {
+    tone: 'final',
+    lines: [
+      <>
+        UPLOG는 당신을 <P>UP</P>시켜줄 거예요.
+      </>,
+      '자, 이제 시작해볼까요?',
+    ],
+  },
+];
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function useSoftSlides(total: number, opts?: { holdMs?: number; fadeMs?: number }) {
+  const holdMs = opts?.holdMs ?? 4600;
+  const fadeMs = opts?.fadeMs ?? 1400;
+
+  const [idx, setIdx] = useState(0);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    setIdx(0);
+    setDone(false);
+  }, [total]);
+
+  useEffect(() => {
+    if (!Number.isFinite(total) || total <= 0) {
+      setDone(true);
+      return;
+    }
+
+    if (idx > total - 1) {
+      setIdx(total - 1);
+      return;
+    }
+
+    if (idx >= total - 1) {
+      const t = window.setTimeout(() => setDone(true), holdMs + fadeMs);
+      return () => window.clearTimeout(t);
+    }
+
+    const t = window.setTimeout(() => {
+      setIdx((v) => clamp(v + 1, 0, total - 1));
+    }, holdMs);
+
+    return () => window.clearTimeout(t);
+  }, [idx, total, holdMs, fadeMs]);
+
+  return { idx, done, fadeMs };
+}
 
 export default function Page() {
   const [hover, setHover] = useState<'login' | 'join' | null>(null);
 
+  const { idx, done, fadeMs } = useSoftSlides(SLIDES.length, { holdMs: 4600, fadeMs: 1400 });
+
+  const safeIdx = clamp(idx, 0, Math.max(0, SLIDES.length - 1));
+  const slide = SLIDES[safeIdx] ?? SLIDES[SLIDES.length - 1];
+
   const dockStyle: React.CSSProperties = useMemo(
     () => ({
-      position: 'fixed',
-      left: '50%',
-      bottom: '64px',
-      transform: 'translateX(-50%)',
-      zIndex: 9999,
-
-      width: 'min(760px, calc(100vw - 28px))',
+      width: 'min(620px, calc(100vw - 34px))',
       padding: 12,
       borderRadius: 999,
-
       display: 'grid',
       gridTemplateColumns: '1fr 1fr',
       gap: 14,
-
       background: 'rgba(255,255,255,0.14)',
       border: '1px solid rgba(255,255,255,0.28)',
-      boxShadow: '0 0 0 1px rgba(255,255,255,0.25), 0 22px 60px rgba(0,0,0,0.35)',
+      boxShadow: '0 0 0 1px rgba(255,255,255,0.22), 0 22px 58px rgba(0,0,0,0.33)',
       backdropFilter: 'blur(10px)',
     }),
     []
@@ -36,23 +158,19 @@ export default function Page() {
       width: '100%',
       height: 58,
       borderRadius: 999,
-
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-
       textDecoration: 'none',
       color: '#fff',
       fontFamily: "Pretendard, SUIT, system-ui, -apple-system, 'Segoe UI', sans-serif",
       fontSize: 20,
       fontWeight: 950,
       letterSpacing: '-0.2px',
-
       border: '1px solid rgba(255,255,255,0.55)',
       textShadow: '0 2px 14px rgba(0,0,0,0.45)',
       userSelect: 'none',
       WebkitTapHighlightColor: 'transparent',
-
       transition: 'transform .18s ease, filter .18s ease, box-shadow .22s ease, border-color .18s ease',
     }),
     []
@@ -65,11 +183,11 @@ export default function Page() {
       background:
         'linear-gradient(90deg, rgba(255,77,184,0.96) 0%, rgba(200,107,255,0.92) 55%, rgba(124,58,237,0.92) 100%)',
       boxShadow: on
-        ? '0 0 0 2px rgba(255,255,255,1), 0 0 40px rgba(255,77,184,0.95), 0 0 90px rgba(168,85,247,0.75), 0 28px 70px rgba(0,0,0,0.55)'
-        : '0 0 0 1px rgba(255,255,255,0.62), 0 0 14px rgba(255,77,184,0.35), 0 0 22px rgba(168,85,247,0.25), 0 16px 34px rgba(0,0,0,0.42)',
+        ? '0 0 0 2px rgba(255,255,255,1), 0 0 40px rgba(255,77,184,0.65), 0 0 90px rgba(168,85,247,0.45), 0 28px 70px rgba(0,0,0,0.55)'
+        : '0 0 0 1px rgba(255,255,255,0.62), 0 0 14px rgba(255,77,184,0.28), 0 0 22px rgba(168,85,247,0.20), 0 16px 34px rgba(0,0,0,0.40)',
       borderColor: on ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.55)',
-      transform: on ? 'translateY(-3px) scale(1.04)' : 'translateY(0px) scale(1)',
-      filter: on ? 'brightness(1.12)' : 'brightness(1)',
+      transform: on ? 'translateY(-2px) scale(1.03)' : 'translateY(0px) scale(1)',
+      filter: on ? 'brightness(1.10)' : 'brightness(1)',
     };
   }, [baseBtn, hover]);
 
@@ -80,11 +198,11 @@ export default function Page() {
       background:
         'linear-gradient(90deg, rgba(168,85,247,0.62) 0%, rgba(255,255,255,0.18) 55%, rgba(124,58,237,0.62) 100%)',
       boxShadow: on
-        ? '0 0 0 2px rgba(255,255,255,1), 0 0 40px rgba(168,85,247,0.95), 0 0 90px rgba(255,77,184,0.70), 0 28px 70px rgba(0,0,0,0.55)'
-        : '0 0 0 1px rgba(255,255,255,0.58), 0 0 14px rgba(168,85,247,0.35), 0 0 22px rgba(255,77,184,0.22), 0 16px 34px rgba(0,0,0,0.42)',
+        ? '0 0 0 2px rgba(255,255,255,1), 0 0 40px rgba(168,85,247,0.62), 0 0 90px rgba(255,77,184,0.35), 0 28px 70px rgba(0,0,0,0.55)'
+        : '0 0 0 1px rgba(255,255,255,0.58), 0 0 14px rgba(168,85,247,0.26), 0 0 22px rgba(255,77,184,0.16), 0 16px 34px rgba(0,0,0,0.40)',
       borderColor: on ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.55)',
-      transform: on ? 'translateY(-3px) scale(1.04)' : 'translateY(0px) scale(1)',
-      filter: on ? 'brightness(1.12)' : 'brightness(1)',
+      transform: on ? 'translateY(-2px) scale(1.03)' : 'translateY(0px) scale(1)',
+      filter: on ? 'brightness(1.08)' : 'brightness(1)',
     };
   }, [baseBtn, hover]);
 
@@ -94,46 +212,51 @@ export default function Page() {
       <div className="vignette" aria-hidden="true" />
       <div className="spark" aria-hidden="true" />
 
-      {/* ✅ 중앙 그룹 */}
       <section className="center" aria-label="UPLOG 시작">
         <div className="brand">
-          <div className="logoShell" aria-hidden="true">
-            <div className="halo" />
-            <div className="logoCard">
-              <img className="logo" src="/gogo.png" alt="UPLOG 로고" draggable={false} />
-            </div>
-          </div>
-
           <div className="text">
             <h1 className="title">UPLOG</h1>
             <p className="tagline">오늘도 나를 UP시키다</p>
           </div>
+
+          <div className="slideCard" aria-label="소개 슬라이드">
+            <div key={safeIdx} className={`slide ${slide?.tone ?? ''}`} style={{ animationDuration: `${fadeMs}ms` }}>
+              <div className="lines">
+                {slide.lines.map((t, i) => (
+                  <div key={i} className="line">
+                    {t}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className={`actions ${done ? 'show' : ''}`} aria-label="로그인/회원가입">
+            <div style={dockStyle}>
+              <Link
+                href="/login"
+                style={loginBtn}
+                onMouseEnter={() => setHover('login')}
+                onMouseLeave={() => setHover(null)}
+                onFocus={() => setHover('login')}
+                onBlur={() => setHover(null)}
+              >
+                로그인
+              </Link>
+
+              <Link
+                href="/register"
+                style={joinBtn}
+                onMouseEnter={() => setHover('join')}
+                onMouseLeave={() => setHover(null)}
+                onFocus={() => setHover('join')}
+                onBlur={() => setHover(null)}
+              >
+                회원가입
+              </Link>
+            </div>
+          </div>
         </div>
-      </section>
-
-      {/* ✅ 하단 버튼(무조건 보이게: 인라인 + hover state) */}
-      <section style={dockStyle} aria-label="로그인/회원가입">
-        <Link
-          href="/login"
-          style={loginBtn}
-          onMouseEnter={() => setHover('login')}
-          onMouseLeave={() => setHover(null)}
-          onFocus={() => setHover('login')}
-          onBlur={() => setHover(null)}
-        >
-          로그인
-        </Link>
-
-        <Link
-          href="/register"
-          style={joinBtn}
-          onMouseEnter={() => setHover('join')}
-          onMouseLeave={() => setHover(null)}
-          onFocus={() => setHover('join')}
-          onBlur={() => setHover(null)}
-        >
-          회원가입
-        </Link>
       </section>
 
       <style jsx>{`
@@ -166,8 +289,8 @@ export default function Page() {
           inset: 0;
           z-index: 1;
           pointer-events: none;
-          background: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.14), transparent 58%),
-            radial-gradient(circle at 50% 92%, rgba(0, 0, 0, 0.22), transparent 62%);
+          background: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.14), transparent 60%),
+            radial-gradient(circle at 50% 94%, rgba(0, 0, 0, 0.22), transparent 62%);
         }
 
         .spark {
@@ -175,70 +298,36 @@ export default function Page() {
           inset: 0;
           z-index: 1;
           pointer-events: none;
-          background: radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.12), transparent 55%);
+          background: radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.12), transparent 56%);
         }
 
+        /* ✅ 너무 위가 아님: 살짝 아래 */
         .center {
           position: relative;
           z-index: 2;
           min-height: 100vh;
           display: grid;
-          place-items: center;
-          padding: 28px 18px 200px;
+          place-items: start center;
+          padding: 86px 16px 34px;
         }
 
         .brand {
-          width: min(520px, 92vw);
+          width: min(860px, 94vw);
           display: grid;
           justify-items: center;
           gap: 18px;
           text-align: center;
-          transform: translateY(-10px);
-        }
-
-        .logoShell {
-          position: relative;
-          width: 260px;
-          height: 260px;
-          display: grid;
-          place-items: center;
-        }
-
-        .halo {
-          position: absolute;
-          inset: -18px;
-          border-radius: 44px;
-          background: radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.22), transparent 62%);
-        }
-
-        .logoCard {
-          width: 100%;
-          height: 100%;
-          border-radius: 40px;
-          background: rgba(255, 255, 255, 0.14);
-          border: 1px solid rgba(255, 255, 255, 0.26);
-          box-shadow: 0 26px 70px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.18);
-          display: grid;
-          place-items: center;
-          overflow: hidden;
-        }
-
-        .logo {
-          width: 78%;
-          height: auto;
-          user-select: none;
-          filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.18));
         }
 
         .text {
           display: grid;
-          gap: 10px;
+          gap: 8px;
           justify-items: center;
         }
 
         .title {
           margin: 0;
-          font-size: 58px;
+          font-size: 56px;
           font-weight: 950;
           letter-spacing: 1px;
           color: rgba(255, 255, 255, 0.98);
@@ -248,22 +337,124 @@ export default function Page() {
 
         .tagline {
           margin: 0;
-          font-size: 18px;
-          font-weight: 800;
+          font-size: 19px;
+          font-weight: 900;
           color: rgba(255, 255, 255, 0.92);
           text-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
         }
 
-        @media (max-width: 420px) {
-          .logoShell {
-            width: 220px;
-            height: 220px;
+        .slideCard {
+          width: min(820px, 94vw);
+          border-radius: 28px;
+          padding: 26px 26px;
+          text-align: left;
+          background: rgba(255, 255, 255, 0.15);
+          border: 1px solid rgba(255, 255, 255, 0.26);
+          box-shadow: 0 22px 60px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+          backdrop-filter: blur(10px);
+          overflow: hidden;
+          margin-top: 10px;
+        }
+
+        .slide {
+          animation-name: slideIn;
+          animation-timing-function: ease;
+          animation-fill-mode: both;
+        }
+
+        @keyframes slideIn {
+          0% {
+            opacity: 0;
+            filter: blur(16px);
+            transform: translateY(12px);
+          }
+          100% {
+            opacity: 1;
+            filter: blur(0px);
+            transform: translateY(0px);
+          }
+        }
+
+        .lines {
+          display: grid;
+          gap: 14px;
+        }
+
+        /* ✅ 글씨 크게 */
+        .line {
+          font-size: 20px;
+          font-weight: 900;
+          line-height: 1.6;
+          letter-spacing: -0.2px;
+          color: rgba(255, 255, 255, 0.94);
+          text-shadow: 0 2px 14px rgba(0, 0, 0, 0.16);
+          word-break: keep-all;
+        }
+
+        .soft .line {
+          opacity: 0.92;
+        }
+
+        .strong .line {
+          font-weight: 950;
+        }
+
+        .ai .line {
+          font-weight: 950;
+          color: rgba(255, 255, 255, 0.97);
+          text-shadow: 0 0 18px rgba(168, 85, 247, 0.16), 0 2px 14px rgba(0, 0, 0, 0.18);
+        }
+
+        .final .line {
+          font-size: 24px;
+          font-weight: 1000;
+          color: rgba(255, 255, 255, 0.98);
+          text-shadow: 0 0 18px rgba(255, 122, 217, 0.22), 0 0 34px rgba(168, 85, 247, 0.16),
+            0 2px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .point {
+          background: linear-gradient(90deg, #ff7ad9 0%, #b86bff 50%, #7c3aed 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          font-weight: 1000;
+          text-shadow: 0 0 16px rgba(255, 122, 217, 0.28), 0 0 22px rgba(168, 85, 247, 0.20);
+        }
+
+        .actions {
+          opacity: 0;
+          transform: translateY(12px);
+          filter: blur(12px);
+          pointer-events: none;
+          transition: opacity 900ms ease, transform 900ms ease, filter 900ms ease;
+          margin-top: 18px;
+        }
+        .actions.show {
+          opacity: 1;
+          transform: translateY(0px);
+          filter: blur(0px);
+          pointer-events: auto;
+        }
+
+        @media (max-width: 520px) {
+          .center {
+            padding-top: 74px;
           }
           .title {
             font-size: 46px;
           }
           .tagline {
             font-size: 16px;
+          }
+          .line {
+            font-size: 17px;
+          }
+          .final .line {
+            font-size: 19px;
+          }
+          .slideCard {
+            padding: 20px 18px;
+            border-radius: 22px;
           }
         }
       `}</style>

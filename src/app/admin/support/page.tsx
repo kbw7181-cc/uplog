@@ -1,4 +1,3 @@
-// ✅✅✅ 전체복붙: src/app/admin/support/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -15,7 +14,7 @@ type SupportRow = {
   title: string | null;
   category: string | null;
   body: string | null;
-  status: SupportStatus | null;
+  status: any;
   created_at: string | null;
   is_read_admin: boolean | null;
 };
@@ -35,8 +34,22 @@ function fmt(iso: string | null) {
   return d.toLocaleString();
 }
 
-function safeStatus(s: SupportStatus | null | undefined): SupportStatus {
-  if (s === 'open' || s === 'pending' || s === 'closed') return s;
+/** ✅ DB에 값이 조금 섞여도 최대한 정상 상태로 복구 */
+function safeStatus(raw: any): SupportStatus {
+  const s = String(raw ?? '').toLowerCase().trim();
+
+  // 정상
+  if (s === 'open' || s === 'pending' || s === 'closed') return s as SupportStatus;
+
+  // 흔한 변형들
+  if (s === 'done' || s === 'completed' || s === 'complete' || s === 'finish' || s === 'finished') return 'closed';
+  if (s === 'progress' || s === 'inprogress' || s === 'in_progress' || s === 'working') return 'pending';
+
+  // 한글이 섞인 경우(혹시라도)
+  if (s.includes('완료')) return 'closed';
+  if (s.includes('진행')) return 'pending';
+  if (s.includes('답변')) return 'open';
+
   return 'open';
 }
 
@@ -46,9 +59,20 @@ function statusLabel(s: SupportStatus) {
   return '완료';
 }
 
-// ✅✅✅ 핵심: null도 미열람으로 취급
+// ✅ null도 미열람으로 취급
 function isUnreadAdmin(v: boolean | null | undefined) {
   return v !== true; // false + null + undefined = unread
+}
+
+function parseTabFromUrl(): TabKey | null {
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    const t = (sp.get('tab') || '').toLowerCase().trim();
+    if (t === 'unread' || t === 'open' || t === 'pending' || t === 'closed' || t === 'all') return t;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export default function AdminSupportPage() {
@@ -69,17 +93,35 @@ export default function AdminSupportPage() {
   const [reply, setReply] = useState('');
   const [nextStatus, setNextStatus] = useState<SupportStatus>('open');
 
+  // ✅ 최초 진입 시 URL tab 적용 (/admin/support?tab=unread)
+  useEffect(() => {
+    const initial = parseTabFromUrl();
+    if (initial) setTab(initial);
+    void fetchList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ✅ tab 바뀌면 URL도 맞춰줌(뒤로가기/공유 편의)
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      sp.set('tab', tab);
+      router.replace(`/admin/support?${sp.toString()}`);
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
   const counts = useMemo(() => {
     const open = rows.filter((x) => safeStatus(x.status) === 'open').length;
     const pending = rows.filter((x) => safeStatus(x.status) === 'pending').length;
     const closed = rows.filter((x) => safeStatus(x.status) === 'closed').length;
-    const unread = rows.filter((x) => isUnreadAdmin(x.is_read_admin)).length; // ✅ null 포함
+    const unread = rows.filter((x) => isUnreadAdmin(x.is_read_admin)).length;
     return { open, pending, closed, unread, all: rows.length };
   }, [rows]);
 
   const filteredRows = useMemo(() => {
     if (tab === 'all') return rows;
-    if (tab === 'unread') return rows.filter((x) => isUnreadAdmin(x.is_read_admin)); // ✅ null 포함
+    if (tab === 'unread') return rows.filter((x) => isUnreadAdmin(x.is_read_admin));
     if (tab === 'open') return rows.filter((x) => safeStatus(x.status) === 'open');
     if (tab === 'pending') return rows.filter((x) => safeStatus(x.status) === 'pending');
     return rows.filter((x) => safeStatus(x.status) === 'closed');
@@ -87,11 +129,7 @@ export default function AdminSupportPage() {
 
   const selected = useMemo(() => rows.find((r) => r.id === selectedId) ?? null, [rows, selectedId]);
 
-  useEffect(() => {
-    void fetchList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  // ✅ 탭 변경/리스트 변경 시 선택 보정
   useEffect(() => {
     if (filteredRows.length === 0) {
       setSelectedId(null);
@@ -151,6 +189,7 @@ export default function AdminSupportPage() {
 
     if (error) {
       setMsgs([]);
+      setErr(`${error.code ?? 'ERR'}: ${error.message}`);
       setLoadingDetail(false);
       return;
     }
@@ -160,10 +199,10 @@ export default function AdminSupportPage() {
   }
 
   async function markReadAdmin(id: string) {
-    try {
-      await supabase.from('supports').update({ is_read_admin: true }).eq('id', id);
+    const { error } = await supabase.from('supports').update({ is_read_admin: true }).eq('id', id);
+    if (!error) {
       setRows((prev) => prev.map((x) => (x.id === id ? { ...x, is_read_admin: true } : x)));
-    } catch {}
+    }
   }
 
   async function applyStatusOnly() {
@@ -192,9 +231,17 @@ export default function AdminSupportPage() {
     );
 
     await fetchList();
-    if (readMode === 'save') await markReadAdmin(selectedId);
-
     setSending(false);
+  }
+
+  // ✅ (추가) 티켓 주인 uid 확보: selected.user_id가 null이면 supports에서 다시 가져옴
+  async function getTicketOwnerUid(supportId: string): Promise<string | null> {
+    const local = rows.find((x) => x.id === supportId)?.user_id ?? null;
+    if (local) return local;
+
+    const { data, error } = await supabase.from('supports').select('user_id').eq('id', supportId).single();
+    if (error) return null;
+    return (data?.user_id as string | null) ?? null;
   }
 
   async function sendReply() {
@@ -214,9 +261,18 @@ export default function AdminSupportPage() {
       return;
     }
 
+    // ✅✅✅ 핵심:
+    // support_messages.user_id는 "관리자 uid"가 아니라 "문의한 사용자(uid)"로 저장
+    const ownerUid = await getTicketOwnerUid(selectedId);
+    if (!ownerUid) {
+      setErr('DATA: supports.user_id(문의자 uid)를 찾을 수 없습니다. supports 테이블 데이터 확인 필요.');
+      setSending(false);
+      return;
+    }
+
     const { error: insErr } = await supabase.from('support_messages').insert({
       support_id: selectedId,
-      user_id: adminUid,
+      user_id: ownerUid,
       sender: 'admin',
       message: text,
     });
@@ -257,7 +313,7 @@ export default function AdminSupportPage() {
         </div>
 
         <div className="title">
-          문의 관리 <span className="title-sub">리스트는 компакт, 상세는 넓게</span>
+          문의 관리 <span className="title-sub">리스트는 compact, 상세는 넓게</span>
         </div>
       </div>
 
@@ -301,7 +357,7 @@ export default function AdminSupportPage() {
               {filteredRows.map((r) => {
                 const active = r.id === selectedId;
                 const st = safeStatus(r.status);
-                const unread = isUnreadAdmin(r.is_read_admin); // ✅ null 포함
+                const unread = isUnreadAdmin(r.is_read_admin);
 
                 return (
                   <button
@@ -364,10 +420,12 @@ export default function AdminSupportPage() {
                 {!loadingDetail &&
                   msgs.map((m) => {
                     const mine = m.sender === 'admin';
+                    const who = m.sender === 'admin' ? '관리자' : m.sender === 'ai' ? 'AI' : '사용자';
+
                     return (
                       <div key={m.id} className={`msgRow ${mine ? 'mine' : 'other'}`}>
                         <div className="msg">
-                          <div className="msgWho">{mine ? '관리자' : '사용자'}</div>
+                          <div className="msgWho">{who}</div>
                           <div className="msgText">{m.message}</div>
                           <div className="msgTime">{fmt(m.created_at)}</div>
                         </div>
@@ -766,6 +824,7 @@ function ChipButton({
         cursor: 'pointer',
         boxShadow: active ? '0 10px 22px rgba(0,0,0,.10)' : 'none',
       }}
+      type="button"
     >
       {label}
     </button>
@@ -843,6 +902,7 @@ function StatusBtn({ active, label, onClick }: { active: boolean; label: string;
         cursor: 'pointer',
         fontSize: 13,
       }}
+      type="button"
     >
       {label}
     </button>

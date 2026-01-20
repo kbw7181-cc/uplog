@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getMyProfileSafe } from '@/lib/getMyProfile';
+import { getSafeImgSrc } from '@/lib/getSafeImgSrc';
 
 type MyProfile = {
   user_id: string;
@@ -25,7 +26,6 @@ export default function AppHeader() {
 
     (async () => {
       const { profile, error } = await getMyProfileSafe();
-
       if (!alive) return;
 
       if (error) {
@@ -50,6 +50,12 @@ export default function AppHeader() {
 
   const isAdmin = String(profile?.role ?? '').trim().toLowerCase() === 'admin';
 
+  const avatarSrc = getSafeImgSrc(profile?.avatar_url, {
+    bucket: 'avatars',
+    fallback: '/gogo.png',
+    cacheBust: true,
+  });
+
   return (
     <header className="appHeader">
       <div className="ahInner">
@@ -62,9 +68,22 @@ export default function AppHeader() {
             <span className="skeleton">로딩중…</span>
           ) : (
             <>
-              <span className="nickname" title={displayName}>
-                {displayName}
-              </span>
+              <div className="me">
+                <img
+                  className="avatar"
+                  src={avatarSrc}
+                  alt=""
+                  draggable={false}
+                  onError={(e) => {
+                    const img = e.currentTarget as HTMLImageElement;
+                    img.onerror = null;
+                    img.src = '/gogo.png';
+                  }}
+                />
+                <span className="nickname" title={displayName}>
+                  {displayName}
+                </span>
+              </div>
 
               {isAdmin && (
                 <button
@@ -80,8 +99,8 @@ export default function AppHeader() {
                 className="logoutBtn"
                 type="button"
                 onClick={async () => {
-                  const { supabase } = await import('@/lib/supabaseClient');
-                  await supabase.auth.signOut();
+                  const mod = await import('@/lib/supabaseClient');
+                  await mod.supabase.auth.signOut();
                   router.replace('/login');
                 }}
               >
@@ -124,10 +143,30 @@ export default function AppHeader() {
           gap: 8px;
         }
 
+        .me {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          max-width: 210px;
+        }
+
+        .avatar {
+          width: 28px;
+          height: 28px;
+          border-radius: 999px;
+          object-fit: cover;
+          border: 1px solid rgba(123, 59, 191, 0.25);
+          background: rgba(255, 255, 255, 0.9);
+          box-shadow: 0 10px 18px rgba(0,0,0,0.06);
+          flex-shrink: 0;
+          user-select: none;
+          -webkit-user-drag: none;
+        }
+
         .nickname {
           font-size: 13px;
           font-weight: 700;
-          max-width: 120px;
+          max-width: 150px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
