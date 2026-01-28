@@ -1,7 +1,9 @@
+// ✅✅✅ 전체복붙: src/app/layout.tsx
 import type { Metadata } from 'next';
 import './globals.css';
 import ThemeProvider from './components/ThemeProvider';
 import ClientBoot from './components/ClientBoot';
+import AuthGuard from './components/AuthGuard';
 
 export const metadata: Metadata = {
   title: 'UPLOG',
@@ -13,7 +15,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko">
       <body>
         <ThemeProvider>
-          <ClientBoot>{children}</ClientBoot>
+          <AuthGuard>
+            <ClientBoot>{children}</ClientBoot>
+          </AuthGuard>
         </ThemeProvider>
       </body>
     </html>

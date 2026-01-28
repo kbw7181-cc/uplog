@@ -1,10 +1,17 @@
 // ✅✅✅ 전체복붙: src/app/home/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+
+/* ✅✅✅ 핵심 수정 (로그인 튕김 해결)
+   - ❌ home에서 createClient로 새 Supabase 인스턴스 만들지 않음 (세션 저장소 불일치/타이밍 문제 방지)
+   - ✅ 프로젝트 공용 supabaseClient(=로그인 페이지와 동일 인스턴스)로 통일
+   - ✅ init에서 getUser가 바로 null이어도 몇 번 재시도(세션 저장 타이밍 흡수)
+   - ✅ onAuthStateChange로 SIGNED_OUT 즉시 /login, SIGNED_IN이면 init 재진입 가능
+*/
+import { supabase } from '@/lib/supabaseClient';
 
 /* =========================================================
    ✅ Home 올인원(달력/채팅 흐름 유지)
@@ -19,27 +26,13 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
    - ✅ (추가) 별(✨) 제거해서 마스코트 눈 가림 방지
 ========================================================= */
 
-/** ✅ Supabase (올인원) */
-let _supabase: SupabaseClient;
-function getSupabase() {
-  if (_supabase) return _supabase;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-  if (!url || !key) {
-    console.warn('[HOME] Missing Supabase env. Set NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  }
-  _supabase = createClient(url, key);
-  return _supabase;
-}
-
-/** ✅ Storage avatar public URL 만들기 */
+/** ✅ Storage avatar public URL 만들기 (공용 supabase 사용) */
 function getAvatarSrc(pathOrUrl: string) {
   if (!pathOrUrl) return '';
   const raw = String(pathOrUrl);
   if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-  const sb = getSupabase();
   try {
-    const { data } = sb.storage.from('avatars').getPublicUrl(raw);
+    const { data } = supabase.storage.from('avatars').getPublicUrl(raw);
     return data?.publicUrl || '';
   } catch {
     return '';
@@ -313,7 +306,9 @@ const MENU_ITEMS: HomeMenuItem[] = [
 
 export default function HomePage() {
   const router = useRouter();
-  const sb = useMemo(() => getSupabase(), []);
+  const sb = useMemo(() => supabase, []);
+
+  const initRunningRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -555,12 +550,49 @@ export default function HomePage() {
     }
   };
 
+  // ✅✅✅ 로그인 튕김 방지용: 유저 확보 재시도
+  const waitForUser = async () => {
+    // getUser가 바로 null 나오는 케이스(로그인 직후 저장 타이밍)를 흡수
+    for (let i = 0; i < 8; i++) {
+      const { data } = await sb.auth.getUser();
+      const u = data?.user;
+      if (u?.id) return u;
+
+      // 보조로 getSession도 한 번 확인(환경에 따라 getUser보다 빨리 잡히는 경우 있음)
+      const { data: s } = await sb.auth.getSession();
+      const su = s?.session?.user;
+      if (su?.id) return su;
+
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    // ✅ auth 이벤트로 로그아웃/만료 즉시 처리 + 로그인 직후에도 안정
+    const { data: sub } = sb.auth.onAuthStateChange((evt, session) => {
+      if (evt === 'SIGNED_OUT') {
+        router.replace('/login');
+        return;
+      }
+      if (evt === 'SIGNED_IN' && session?.user?.id) {
+        // init이 아직 안 끝난 상태면, 한 번 더 init이 돌 수 있게 열어줌
+        initRunningRef.current = false;
+      }
+    });
+
+    return () => {
+      sub?.subscription?.unsubscribe();
+    };
+  }, [router, sb]);
+
   useEffect(() => {
     const init = async () => {
-      const { data, error: userError } = await sb.auth.getUser();
-      const user = data?.user;
+      if (initRunningRef.current) return;
+      initRunningRef.current = true;
 
-      if (userError || !user) {
+      const user = await waitForUser();
+      if (!user) {
         router.replace('/login');
         return;
       }
@@ -754,6 +786,9 @@ export default function HomePage() {
                 })}
               </div>
             </div>
+
+          
+
 
             <div className="home-header-profile">
               <div className="profile-box">

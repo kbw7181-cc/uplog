@@ -1,6 +1,7 @@
+// ✅✅✅ 전체복붙: src/app/components/AuthGuard.tsx
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -11,35 +12,37 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  const isPublic = useMemo(() => {
+    return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
+  }, [pathname]);
+
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
     let mounted = true;
 
-    (async () => {
+    // ✅ 공개 페이지는 절대 막지 않기
+    if (isPublic) {
+      setChecking(false);
+      return;
+    }
+
+    // ✅ 핵심: getSession() 단발로 redirect 하지 말고,
+    // 1) getUser()로 서버 기준 로그인 상태를 확인하고
+    // 2) onAuthStateChange로 로그인/로그아웃 이벤트에 반응
+    const verify = async () => {
       try {
-        // ✅ 공개 페이지는 절대 막지 않기
-        const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
-        if (isPublic) {
-          if (mounted) setChecking(false);
-          return;
-        }
+        // ✅ 서버 기준 사용자 확인 (세션 초기 타이밍 null 문제 회피)
+        const { data, error } = await supabase.auth.getUser();
+        if (error) console.warn('[AuthGuard] getUser error:', error);
 
-        // ✅ 1) 세션 체크
-        const { data, error } = await supabase.auth.getSession();
-        if (error) {
-          console.warn('[AuthGuard] getSession error:', error);
-        }
-
-        const uid = data.session?.user?.id ?? null;
-        const hasSession = !!uid;
-
-        if (!hasSession) {
+        const uid = data?.user?.id ?? null;
+        if (!uid) {
           router.replace('/login');
           return;
         }
 
-        // ✅ 2) profiles 로드(안전)
+        // ✅ profiles 로드는 "참고용" (없다고 로그인 실패 처리 금지)
         const { data: rows, error: pErr } = await supabase
           .from('profiles')
           .select('user_id, email, nickname, role, is_admin, plan, theme, created_at')
@@ -51,9 +54,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           console.warn('[AuthGuard] profiles fetch error:', pErr);
         } else {
           const profile = rows?.[0] ?? null;
-          if (!profile) {
-            console.warn('[AuthGuard] profile row not found for uid:', uid);
-          }
+          if (!profile) console.warn('[AuthGuard] profile row not found for uid:', uid);
         }
 
         if (mounted) setChecking(false);
@@ -61,15 +62,35 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         console.warn('[AuthGuard] unexpected error:', e);
         if (mounted) setChecking(false);
       }
-    })();
+    };
+
+    // ✅ 1) 최초 진입 검증
+    verify();
+
+    // ✅ 2) 인증 상태 변화 구독 (로그인 직후 튕김 방지 핵심)
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+
+      // 로그아웃/만료면 로그인으로
+      if (!session?.user?.id) {
+        // 공개페이지면 그냥 둠
+        if (!isPublic) router.replace('/login');
+        return;
+      }
+
+      // 로그인/토큰 갱신 이벤트면 체크 해제
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        setChecking(false);
+      }
+    });
 
     return () => {
       mounted = false;
+      sub?.subscription?.unsubscribe();
     };
-  }, [pathname, router]);
+  }, [isPublic, router]);
 
   // ✅ 공개 페이지는 로딩 마스크도 없이 바로 렌더
-  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
   if (isPublic) return <>{children}</>;
 
   if (checking) {

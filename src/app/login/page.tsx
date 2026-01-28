@@ -1,7 +1,7 @@
 // ✅✅✅ 전체복붙: src/app/login/page.tsx
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
@@ -14,6 +14,25 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // ✅ 디버그: 방금 "로그인 성공" 후 다시 돌아온 경우 감지
+  useEffect(() => {
+    const lastOk = sessionStorage.getItem('uplog_login_last_ok_ts');
+    if (lastOk) {
+      const ts = Number(lastOk);
+      const diff = Date.now() - (Number.isFinite(ts) ? ts : 0);
+      sessionStorage.removeItem('uplog_login_last_ok_ts');
+
+      // 20초 이내면: 로그인 성공 후 /home에서 다시 /login으로 튕긴 케이스 가능성 높음
+      if (diff >= 0 && diff < 20_000) {
+        setMsg(
+          '⚠️ 로그인 성공 직후 다시 로그인 화면으로 돌아왔습니다.\n' +
+            '원인 후보: (1) /home 가드가 세션을 null로 판단 (2) 쿠키/도메인/환경변수로 세션이 유지되지 않음.\n' +
+            '아래 “로그인” 다시 누르면 콘솔에 signIn/getSession/getUser 로그가 남습니다.'
+        );
+      }
+    }
+  }, []);
+
   const canSubmit = useMemo(() => {
     const e = email.trim();
     return e.includes('@') && pw.trim().length >= 1 && !loading;
@@ -21,25 +40,56 @@ export default function LoginPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit) {
+      setMsg('이메일은 name@email.com 형식으로 입력해야 해요.');
+      return;
+    }
 
     setLoading(true);
     setMsg(null);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      // ✅ 1) signIn 결과를 콘솔에 남겨서 "실패/성공"을 확정
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: pw.trim(),
       });
 
+      console.log('[LOGIN] signInWithPassword result =>', { data, error });
+
       if (error) {
-        setMsg(error.message || '로그인에 실패했어요.');
+        const m = error.message || '로그인에 실패했어요.';
+        setMsg(m);
+        alert(m); // ✅ 지금은 무조건 띄워서 원인 확인
         return;
       }
 
+      // ✅ 2) 성공 직후 session/user를 한 번 더 확인 (세션이 "실제로" 생겼는지)
+      const s1 = await supabase.auth.getSession();
+      const u1 = await supabase.auth.getUser();
+
+      console.log('[LOGIN] getSession =>', s1);
+      console.log('[LOGIN] getUser =>', u1);
+
+      // ✅ 세션이 없으면: "성공처럼 보였지만 세션이 안 잡힘" 케이스
+      const session = s1?.data?.session ?? null;
+      if (!session) {
+        const m =
+          '로그인 응답은 성공처럼 보이지만, 세션이 생성/유지되지 않았습니다.\n' +
+          '원인 후보: (1) Supabase URL/ANON_KEY 불일치 (2) 쿠키 차단/도메인 문제 (3) auth 설정 문제.\n' +
+          '콘솔의 [LOGIN] getSession 로그를 확인하세요.';
+        setMsg(m);
+        alert(m);
+        return;
+      }
+
+      // ✅ 3) /home 이동 후 다시 /login으로 돌아오면, /home 가드 문제일 확률이 높음
+      sessionStorage.setItem('uplog_login_last_ok_ts', String(Date.now()));
       router.replace('/home');
     } catch (err: any) {
-      setMsg(err?.message || '로그인 중 오류가 발생했어요.');
+      const m = err?.message || '로그인 중 오류가 발생했어요.';
+      setMsg(m);
+      alert(m);
     } finally {
       setLoading(false);
     }
@@ -159,7 +209,6 @@ export default function LoginPage() {
           padding: 6px 6px 16px;
         }
 
-        /* ✅ 로고 더 크게 + 라운드 테두리 강화 */
         .auth-logo {
           width: 66px;
           height: 66px;
@@ -170,7 +219,6 @@ export default function LoginPage() {
           display: grid;
           place-items: center;
           overflow: hidden;
-
           box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 14px 40px rgba(0, 0, 0, 0.28);
         }
 
@@ -227,7 +275,6 @@ export default function LoginPage() {
           margin: 10px 0 8px;
         }
 
-        /* ✅ 입력칸 톤은 그대로(지금 스샷 느낌) */
         .auth-input {
           width: 100%;
           max-width: 100%;
@@ -237,7 +284,7 @@ export default function LoginPage() {
           font-size: 16px;
           color: rgba(20, 20, 30, 0.92);
           background: rgba(255, 255, 255, 0.92);
-          border: 1px solid rgba(255, 255, 255, 0.30);
+          border: 1px solid rgba(255, 255, 255, 0.3);
           outline: none;
           display: block;
         }
@@ -260,9 +307,9 @@ export default function LoginPage() {
           color: #ffffff;
           font-size: 14px;
           font-weight: 950;
+          white-space: pre-wrap;
         }
 
-        /* ✅ 버튼: Gate(첫화면)랑 “같은 계열” 네온/라운드 */
         .auth-btn {
           height: 56px;
           border-radius: 999px;
@@ -278,11 +325,14 @@ export default function LoginPage() {
 
         .auth-primary {
           margin-top: 6px;
-          background: linear-gradient(90deg, rgba(255, 77, 184, 0.95) 0%, rgba(200, 107, 255, 0.92) 55%, rgba(124, 58, 237, 0.92) 100%);
+          background: linear-gradient(
+            90deg,
+            rgba(255, 77, 184, 0.95) 0%,
+            rgba(200, 107, 255, 0.92) 55%,
+            rgba(124, 58, 237, 0.92) 100%
+          );
           color: #ffffff;
           cursor: pointer;
-
-          /* ✅ 기본 상태에서도 네온이 “살짝” 보이게 */
           box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55), 0 0 14px rgba(255, 77, 184, 0.35),
             0 0 22px rgba(168, 85, 247, 0.28), 0 18px 42px rgba(0, 0, 0, 0.36);
           text-shadow: 0 2px 14px rgba(0, 0, 0, 0.28);
@@ -325,7 +375,6 @@ export default function LoginPage() {
           color: rgba(255, 255, 255, 0.78);
         }
 
-        /* ✅ 회원가입 링크도 같은 네온 톤 */
         .auth-footLink {
           font-size: 13px;
           font-weight: 1000;
