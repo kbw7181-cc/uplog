@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import ClientShell from '../../components/ClientShell';
 import { supabase } from '@/lib/supabaseClient';
 
-import DealCard, { type DealData } from '../_components/DealCard';
+import DealCard, { type DealData } from '../DealCard';
 
 type Form = {
   name: string;
@@ -178,10 +178,7 @@ export default function CustomerNewPage() {
 
         {/* ✅ 계약/상품/관리 (합쳐진 카드) */}
         <section className="card dealWrap">
-          <DealCard
-            value={form.deal}
-            onChange={(d) => setForm((p) => ({ ...p, deal: d }))}
-          />
+          <DealCard value={form.deal} onChange={(d) => setForm((p) => ({ ...p, deal: d }))} />
           <div className="dealHint">※ 상품/금액/이슈/상담내역은 고객 저장 시 함께 저장됩니다.</div>
         </section>
 

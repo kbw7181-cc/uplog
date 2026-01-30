@@ -6,7 +6,7 @@ import ClientShell from '../../components/ClientShell';
 import { supabase } from '@/lib/supabaseClient';
 
 // ✅ 신버전 진행관리 카드(상품/금액/이슈/상담내역)
-import DealCard, { type DealData } from '../_components/DealCard';
+import DealCard, { type DealData } from '../DealCard';
 
 type CustomerRow = {
   id: string;
