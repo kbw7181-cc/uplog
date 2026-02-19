@@ -11,52 +11,30 @@ function P({ children }: { children: React.ReactNode }) {
   return <span className="point">{children}</span>;
 }
 
+/* =========================================================
+   ✅ 슬라이드: 6장 → 2장으로 압축
+   - 덩어리로 짧게, 한 번에 읽히게
+========================================================= */
 const SLIDES: Slide[] = [
-  { tone: 'soft', lines: ['오늘 뭐 했는지,', '기억 말고 기록하세요.'] },
-
   {
-    tone: 'strong',
+    tone: 'soft',
     lines: [
       <>
-        <P>UPLOG</P>는 영업자를 위한
+        <P>기억</P> 말고 <P>기록</P>.
       </>,
-      '하루 기록 관리 앱입니다.',
+      '일정 · 고객 · 메모 · 성과를 한 화면에.',
     ],
   },
-
-  {
-    tone: 'strong',
-    lines: [
-      '일정 · 고객 · 메모 · 성과를',
-      '한 화면에 정리합니다.',
-    ],
-  },
-
-  {
-    tone: 'ai',
-    lines: [
-      '고객 질문과 반론 대응을',
-      <><P>AI</P>가 자동으로 정리해요.</>,
-    ],
-  },
-
-  {
-    tone: 'ai',
-    lines: [
-      '경험은 쌓이고,',
-      <><P>데이터</P>는 무기가 됩니다.</>,
-    ],
-  },
-
   {
     tone: 'final',
     lines: [
-      <><P>기억</P>이 아니라 <P>기록</P>으로.</>,
-      '자, 이제 시작해볼까요?',
+      <>
+        반론 대응은 <P>AI</P>가 정리하고,
+      </>,
+      '경험은 데이터가 됩니다. 지금 시작할까요?',
     ],
   },
 ];
-
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -103,7 +81,8 @@ function useSoftSlides(total: number, opts?: { holdMs?: number; fadeMs?: number 
 export default function Page() {
   const [hover, setHover] = useState<'login' | 'join' | null>(null);
 
-  const { idx, done, fadeMs } = useSoftSlides(SLIDES.length, { holdMs: 4600, fadeMs: 1400 });
+  // ✅ 2장이라 너무 오래 기다리면 답답할 수 있어서 살짝 단축
+  const { idx, done, fadeMs } = useSoftSlides(SLIDES.length, { holdMs: 3200, fadeMs: 1200 });
 
   const safeIdx = clamp(idx, 0, Math.max(0, SLIDES.length - 1));
   const slide = SLIDES[safeIdx] ?? SLIDES[SLIDES.length - 1];
@@ -272,7 +251,6 @@ export default function Page() {
           background: radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.12), transparent 56%);
         }
 
-        /* ✅ 너무 위가 아님: 살짝 아래 */
         .center {
           position: relative;
           z-index: 2;
@@ -317,7 +295,7 @@ export default function Page() {
         .slideCard {
           width: min(820px, 94vw);
           border-radius: 28px;
-          padding: 26px 26px;
+          padding: 24px 26px;
           text-align: left;
           background: rgba(255, 255, 255, 0.15);
           border: 1px solid rgba(255, 255, 255, 0.26);
@@ -348,14 +326,13 @@ export default function Page() {
 
         .lines {
           display: grid;
-          gap: 14px;
+          gap: 12px;
         }
 
-        /* ✅ 글씨 크게 */
         .line {
           font-size: 20px;
-          font-weight: 900;
-          line-height: 1.6;
+          font-weight: 950;
+          line-height: 1.5;
           letter-spacing: -0.2px;
           color: rgba(255, 255, 255, 0.94);
           text-shadow: 0 2px 14px rgba(0, 0, 0, 0.16);
@@ -363,21 +340,11 @@ export default function Page() {
         }
 
         .soft .line {
-          opacity: 0.92;
-        }
-
-        .strong .line {
-          font-weight: 950;
-        }
-
-        .ai .line {
-          font-weight: 950;
-          color: rgba(255, 255, 255, 0.97);
-          text-shadow: 0 0 18px rgba(168, 85, 247, 0.16), 0 2px 14px rgba(0, 0, 0, 0.18);
+          opacity: 0.93;
         }
 
         .final .line {
-          font-size: 24px;
+          font-size: 22px;
           font-weight: 1000;
           color: rgba(255, 255, 255, 0.98);
           text-shadow: 0 0 18px rgba(255, 122, 217, 0.22), 0 0 34px rgba(168, 85, 247, 0.16),
@@ -389,7 +356,7 @@ export default function Page() {
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           font-weight: 1000;
-          text-shadow: 0 0 16px rgba(255, 122, 217, 0.28), 0 0 22px rgba(168, 85, 247, 0.20);
+          text-shadow: 0 0 16px rgba(255, 122, 217, 0.28), 0 0 22px rgba(168, 85, 247, 0.2);
         }
 
         .actions {
@@ -421,7 +388,7 @@ export default function Page() {
             font-size: 17px;
           }
           .final .line {
-            font-size: 19px;
+            font-size: 18px;
           }
           .slideCard {
             padding: 20px 18px;

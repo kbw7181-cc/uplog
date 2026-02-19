@@ -2,106 +2,93 @@
 'use client';
 
 import { ReactNode, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-/**
- * ✅ HomeLayout (인증 가드 + profiles 자동 복구)
- * - 비로그인: 즉시 /login
- * - 로그인: profiles(user_id) 존재 확인 → 없으면 upsert로 최소 생성
- * - SIGNED_OUT 이벤트: 즉시 /login
- *
- * ⚠️ "관리자로 로그인했는데 다른 회원 정보로 뜸" 방지 포인트
- * - uid는 반드시 supabase.auth.getUser()/getSession()에서 받은 현재 세션의 user.id만 사용
- * - profiles 조회는 eq('user_id', uid)로만
- * - (중요) 쿠키/스토리지에 예전 세션이 남아있으면 이런 현상이 나올 수 있음
- *   → /logout 페이지에서 signOut + 토큰삭제가 이미 있으면 그 흐름을 꼭 쓰기
- */
+function withTimeout<T>(p: Promise<T>, ms = 3500, label = 'timeout') {
+  return new Promise<T>((resolve, reject) => {
+    const t = window.setTimeout(() => reject(new Error(`${label}(${ms}ms)`)), ms);
+    p.then((v) => {
+      window.clearTimeout(t);
+      resolve(v);
+    }).catch((e) => {
+      window.clearTimeout(t);
+      reject(e);
+    });
+  });
+}
 
+/**
+ * ✅ HomeLayout (가드 최소화 버전)
+ * - 여기서는 "세션 유무 확인 + 없으면 /login"만 한다.
+ * - profiles upsert/복구 같은 DB 작업은 절대 하지 않는다. (RLS로 막혀서 무한로딩 유발)
+ * - 어떤 경우든 화면을 영원히 막지 않는다. (finally에서 always ok 처리)
+ */
 export default function HomeLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [ok, setOk] = useState(false);
+  const pathname = usePathname();
+
+  const [ready, setReady] = useState(false);
+  const mounted = useRef(true);
   const startedRef = useRef(false);
 
   useEffect(() => {
-    let alive = true;
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
-    // ✅ auth 이벤트: 로그아웃/만료 즉시 튕김
-    const { data: sub } = supabase.auth.onAuthStateChange((evt) => {
-      if (evt === 'SIGNED_OUT') {
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+
+    // ✅ auth 이벤트: 로그아웃/만료 즉시 /login
+    const { data } = supabase.auth.onAuthStateChange((evt, session) => {
+      if (evt === 'SIGNED_OUT' || !session?.user?.id) {
         router.replace('/login');
       }
     });
 
-    const waitForUser = async () => {
-      // 로그인 직후 storage 세션 타이밍 흡수
-      for (let i = 0; i < 8; i++) {
-        const { data: u } = await supabase.auth.getUser();
-        if (u?.user?.id) return u.user;
-
-        const { data: s } = await supabase.auth.getSession();
-        if (s?.session?.user?.id) return s.session.user;
-
-        await new Promise((r) => setTimeout(r, 120));
-      }
-      return null;
-    };
-
     (async () => {
-      if (startedRef.current) return;
-      startedRef.current = true;
-
       try {
-        const user = await waitForUser();
-        if (!user?.id) {
-          router.replace('/login');
-          return;
+        // ✅ 가장 빠르고 안정적인 세션 확인
+        const sessRes = await withTimeout(supabase.auth.getSession(), 3500, 'getSession');
+        const uid = (sessRes as any)?.data?.session?.user?.id ?? null;
+
+        if (!uid) {
+          // 백업: getUser
+          const userRes = await withTimeout(supabase.auth.getUser(), 3500, 'getUser');
+          const uid2 = (userRes as any)?.data?.user?.id ?? null;
+
+          if (!uid2) {
+            router.replace('/login');
+            return;
+          }
         }
 
-        const uid = user.id;
-
-        // ✅ 1) profiles 존재 확인 (중복/에러 대비: maybeSingle)
-        const { data: profile, error: profileErr } = await supabase
-          .from('profiles')
-          .select('user_id')
-          .eq('user_id', uid)
-          .maybeSingle();
-
-        // ✅ 2) 없으면 자동 생성(회원가입 때 RLS로 실패했어도 여기서 복구)
-        if (!profile && !profileErr) {
-          const payload: any = {
-            user_id: uid,
-            email: user.email ?? null,
-            role: 'user',
-          };
-
-          const meta: any = user.user_metadata || {};
-          if (meta.name) payload.name = String(meta.name);
-          if (meta.nickname) payload.nickname = String(meta.nickname);
-
-          // ⚠️ upsert가 RLS에 막히면 여기서 실패함 → 아래 "필요한 것"의 RLS 정책을 꼭 확인
-          await supabase.from('profiles').upsert(payload, { onConflict: 'user_id' });
-        }
-
-        if (!alive) return;
-        setOk(true);
+        // ✅ 여기서 DB 작업 금지 (profiles upsert 같은 것)
       } catch {
         router.replace('/login');
+      } finally {
+        // ✅ 핵심: 어떤 경우든 UI를 영원히 막지 않음
+        if (mounted.current) setReady(true);
       }
     })();
 
     return () => {
-      alive = false;
-      sub?.subscription?.unsubscribe();
+      data?.subscription?.unsubscribe();
     };
-  }, [router]);
+    // pathname 넣는 이유: /home 내부 네비게이션에서도 상태 꼬임 방지
+  }, [router, pathname]);
 
-  if (!ok) {
+  // ✅ 로딩은 아주 짧게만 (ready가 true가 되면 children 렌더)
+  if (!ready) {
     return (
       <div style={S.wrap}>
         <div style={S.card}>
           <div style={S.title}>로그인 확인 중…</div>
-          <div style={S.sub}>세션/프로필을 동기화하고 있어요.</div>
+          <div style={S.sub}>세션을 확인하고 있어요.</div>
         </div>
       </div>
     );

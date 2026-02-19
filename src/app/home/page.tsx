@@ -1,9 +1,9 @@
-// ✅✅✅ 전체복붙: src/app/home/page.tsx
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import ClientShell from '@/app/components/ClientShell'; // ✅ 상대경로 흔들림 방지(고정)
 
 /* ✅✅✅ 핵심 수정 (로그인 튕김 해결)
    - ❌ home에서 createClient로 새 Supabase 인스턴스 만들지 않음 (세션 저장소 불일치/타이밍 문제 방지)
@@ -24,6 +24,8 @@ import { supabase } from '@/lib/supabaseClient';
    - ✅ 이미지 경로: public 기준 (/gogo.png, /upzzu1.png) ✅ assets 금지
    - ✅ (추가) 말풍선/글씨가 기기마다 커지지 않게 text-size-adjust 강제 고정
    - ✅ (추가) 별(✨) 제거해서 마스코트 눈 가림 방지
+   - ✅✅✅ (핵심) return을 ClientShell(requireAuth)로 감싸서 인증/레이아웃 일관화
+   - ✅✅✅ (추가) init/loadDashboardData 에러가 나도 로딩이 “무한”으로 안 남게 finally 처리
 ========================================================= */
 
 /** ✅ Storage avatar public URL 만들기 (공용 supabase 사용) */
@@ -306,9 +308,10 @@ const MENU_ITEMS: HomeMenuItem[] = [
 
 export default function HomePage() {
   const router = useRouter();
-  const sb = useMemo(() => supabase, []);
+  const sb = supabase; // ✅ useMemo 불필요(고정 인스턴스 그대로 사용)
 
   const initRunningRef = useRef(false);
+  const aliveRef = useRef(true);
 
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -393,11 +396,13 @@ export default function HomePage() {
 
       if (error) {
         console.error('monthly_badges error', error);
-        setMyBadges([]);
+        if (aliveRef.current) setMyBadges([]);
         return;
       }
 
       const rows = (data ?? []) as any[];
+      if (!aliveRef.current) return;
+
       setMyBadges(
         rows
           .map((r) => ({ code: String(r.badge_code ?? ''), name: String(r.badge_name ?? '') }))
@@ -405,7 +410,7 @@ export default function HomePage() {
       );
     } catch (e) {
       console.error('loadMyMonthlyBadges fatal', e);
-      setMyBadges([]);
+      if (aliveRef.current) setMyBadges([]);
     }
   };
 
@@ -438,6 +443,8 @@ export default function HomePage() {
     if (scheduleError) throw scheduleError;
 
     const safeSchedules: ScheduleRow[] = (scheduleRows ?? []) as ScheduleRow[];
+    if (!aliveRef.current) return;
+
     setSchedules(safeSchedules);
 
     const summaryMap: Record<string, number> = {};
@@ -453,6 +460,8 @@ export default function HomePage() {
       .gte('log_date', from)
       .lte('log_date', to)
       .order('log_date', { ascending: true });
+
+    if (!aliveRef.current) return;
 
     if (upRows && upRows.length > 0) {
       const last = upRows[upRows.length - 1] as any;
@@ -508,8 +517,9 @@ export default function HomePage() {
       const obj = contractByDate[ds] ?? { newCount: 0, c1: 0, c2: 0, c3: 0 };
       list.push({ date: ds, newCount: obj.newCount, c1: obj.c1, c2: obj.c2, c3: obj.c3 });
     }
-    setContractDays(list);
+    if (!aliveRef.current) return;
 
+    setContractDays(list);
     setMoodByDate(moodMap);
 
     const { data: rebutRows } = await sb
@@ -518,6 +528,7 @@ export default function HomePage() {
       .eq('user_id', uid)
       .order('id', { ascending: false })
       .limit(3);
+    if (!aliveRef.current) return;
     setRecentRebuttals((rebutRows ?? []) as RebuttalSummary[]);
 
     const today = formatDate(new Date());
@@ -527,6 +538,8 @@ export default function HomePage() {
       .eq('user_id', uid)
       .eq('task_date', today)
       .order('id', { ascending: true });
+
+    if (!aliveRef.current) return;
 
     if (taskRows) {
       setTodayTasks(
@@ -543,46 +556,54 @@ export default function HomePage() {
 
     try {
       const live = await fetchLiveWeatherSlots(lat, lon);
+      if (!aliveRef.current) return;
       setTodayWeather(Array.isArray(live) ? live : []);
     } catch (e) {
       console.error('weather live error', e);
+      if (!aliveRef.current) return;
       setTodayWeather([]);
     }
   };
 
   // ✅✅✅ 로그인 튕김 방지용: 유저 확보 재시도
   const waitForUser = async () => {
-    // getUser가 바로 null 나오는 케이스(로그인 직후 저장 타이밍)를 흡수
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 18; i++) {
       const { data } = await sb.auth.getUser();
       const u = data?.user;
       if (u?.id) return u;
 
-      // 보조로 getSession도 한 번 확인(환경에 따라 getUser보다 빨리 잡히는 경우 있음)
       const { data: s } = await sb.auth.getSession();
       const su = s?.session?.user;
       if (su?.id) return su;
 
-      await new Promise((r) => setTimeout(r, 120));
+      await new Promise((r) => setTimeout(r, 140));
     }
     return null;
   };
 
   useEffect(() => {
-    // ✅ auth 이벤트로 로그아웃/만료 즉시 처리 + 로그인 직후에도 안정
-    const { data: sub } = sb.auth.onAuthStateChange((evt, session) => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    // ✅✅✅ ClientShell과 같은 언서브 패턴으로 고정(타입/런타임 흔들림 제거)
+    const {
+      data: { subscription },
+    } = sb.auth.onAuthStateChange((evt, session) => {
       if (evt === 'SIGNED_OUT') {
         router.replace('/login');
         return;
       }
       if (evt === 'SIGNED_IN' && session?.user?.id) {
-        // init이 아직 안 끝난 상태면, 한 번 더 init이 돌 수 있게 열어줌
         initRunningRef.current = false;
       }
     });
 
     return () => {
-      sub?.subscription?.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, [router, sb]);
 
@@ -591,59 +612,72 @@ export default function HomePage() {
       if (initRunningRef.current) return;
       initRunningRef.current = true;
 
-      const user = await waitForUser();
-      if (!user) {
-        router.replace('/login');
-        return;
+      try {
+        const user = await waitForUser();
+        if (!user) {
+          router.replace('/login');
+          return;
+        }
+
+        if (!aliveRef.current) return;
+        setUserId(user.id);
+        setEmail(user.email ?? null);
+
+        const { data: profile, error: pErr } = await sb
+          .from('profiles')
+          .select('name, nickname, industry, grade, career, company, department, team, avatar_url, address_text, lat, lon, role')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (pErr) {
+          console.error('[HOME] profiles error', pErr);
+        }
+
+        let lat = weatherLat;
+        let lon = weatherLon;
+        let label = weatherLabel;
+
+        if (profile) {
+          const p: any = profile;
+
+          const role = String(p?.role ?? '').trim().toLowerCase();
+          if (aliveRef.current) setIsAdmin(role === 'admin');
+
+          if (p.nickname) setNickname(p.nickname);
+          else if (p.name) setNickname(p.name);
+          else if (user.email) setNickname(user.email.split('@')[0]);
+
+          if (p.industry) setIndustry(p.industry);
+          if (p.grade) setGrade(p.grade);
+          if (p.career) setCareerYears(getCareerLabel(p.career));
+          if (p.company) setCompany(p.company);
+          if (p.department) setDepartment(p.department);
+          if (p.team) setTeam(p.team);
+
+          const region = resolveRegionFromProfile(p);
+          label = region.label;
+          lat = region.lat;
+          lon = region.lon;
+
+          if (aliveRef.current) {
+            setWeatherLabel(label);
+            setWeatherLat(lat);
+            setWeatherLon(lon);
+          }
+
+          if (p.avatar_url) setProfileImage(String(p.avatar_url));
+        } else if (user.email) {
+          setNickname(user.email.split('@')[0]);
+        }
+
+        await loadDashboardData(user.id, currentMonth, lat, lon);
+        await loadMyMonthlyBadges(user.id);
+      } catch (e) {
+        console.error('[HOME] init fatal', e);
+      } finally {
+        if (aliveRef.current) setLoading(false);
+        initRunningRef.current = false;
       }
-
-      setUserId(user.id);
-      setEmail(user.email ?? null);
-
-      const { data: profile } = await sb
-        .from('profiles')
-        .select('name, nickname, industry, grade, career, company, department, team, avatar_url, address_text, lat, lon, role')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      let lat = weatherLat;
-      let lon = weatherLon;
-      let label = weatherLabel;
-
-      if (profile) {
-        const p: any = profile;
-
-        const role = String(p?.role ?? '').trim().toLowerCase();
-        setIsAdmin(role === 'admin');
-
-        if (p.nickname) setNickname(p.nickname);
-        else if (p.name) setNickname(p.name);
-        else if (user.email) setNickname(user.email.split('@')[0]);
-
-        if (p.industry) setIndustry(p.industry);
-        if (p.grade) setGrade(p.grade);
-        if (p.career) setCareerYears(getCareerLabel(p.career));
-        if (p.company) setCompany(p.company);
-        if (p.department) setDepartment(p.department);
-        if (p.team) setTeam(p.team);
-
-        const region = resolveRegionFromProfile(p);
-        label = region.label;
-        lat = region.lat;
-        lon = region.lon;
-        setWeatherLabel(label);
-        setWeatherLat(lat);
-        setWeatherLon(lon);
-
-        if (p.avatar_url) setProfileImage(String(p.avatar_url));
-      } else if (user.email) {
-        setNickname(user.email.split('@')[0]);
-      }
-
-      await loadDashboardData(user.id, currentMonth, lat, lon);
-      await loadMyMonthlyBadges(user.id);
-
-      setLoading(false);
     };
 
     init();
@@ -652,7 +686,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!userId) return;
-    loadDashboardData(userId, currentMonth, weatherLat, weatherLon);
+    loadDashboardData(userId, currentMonth, weatherLat, weatherLon).catch((e) => console.error('[HOME] reload fatal', e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMonth, userId, weatherLat, weatherLon]);
 
@@ -693,7 +727,6 @@ export default function HomePage() {
     return { total, newCount: row.newCount, c1: row.c1, c2: row.c2, c3: row.c3 };
   }, [contractDays, selectedDate]);
 
-  // ✅ 상세영역: 선택한 날짜 기분 표시(칩 + 큰 이모지)
   const selectedMoodEmoji = useMemo(() => {
     const raw = moodByDate?.[selectedDate];
     return raw ? getMoodEmoji(raw) : '';
@@ -741,12 +774,14 @@ export default function HomePage() {
 
   if (loading) {
     return (
-      <div className="home-root">
-        <div className="home-inner">
-          <div className="home-loading">대시보드를 불러오는 중입니다...</div>
+      <ClientShell requireAuth>
+        <div className="home-root">
+          <div className="home-inner">
+            <div className="home-loading">대시보드를 불러오는 중입니다...</div>
+          </div>
+          <style jsx>{styles}</style>
         </div>
-        <style jsx>{styles}</style>
-      </div>
+      </ClientShell>
     );
   }
 
@@ -755,451 +790,448 @@ export default function HomePage() {
   const orgCombined = [company, department, team].filter(Boolean).join(' / ') || '조직/팀 미설정';
 
   return (
-    <div className="home-root">
-      <div className="home-inner">
-        <header className="home-header">
-          <div className="home-header-top">
-            <div className="home-header-left">
-              <div className="home-logo-row">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/gogo.png" alt="UPLOG 로고" className="home-logo" />
-                <div className="home-logo-text-wrap">
-                  <div className="wave-text" aria-label="UPLOG">
-                    {'UPLOG'.split('').map((ch, i) => (
-                      <span key={i} style={{ animationDelay: `${i * 0.12}s` }}>
-                        {ch}
-                      </span>
-                    ))}
+    <ClientShell requireAuth>
+      <div className="home-root">
+        <div className="home-inner">
+          <header className="home-header">
+            <div className="home-header-top">
+              <div className="home-header-left">
+                <div className="home-logo-row">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/gogo.png" alt="UPLOG 로고" className="home-logo" />
+                  <div className="home-logo-text-wrap">
+                    <div className="wave-text" aria-label="UPLOG">
+                      {'UPLOG'.split('').map((ch, i) => (
+                        <span key={i} style={{ animationDelay: `${i * 0.12}s` }}>
+                          {ch}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="home-logo-sub">오늘도 나를 UP시키다</div>
                   </div>
-                  <div className="home-logo-sub">오늘도 나를 UP시키다</div>
+
+                  <AdminEntryButton label="관리자" size="sm" show={isAdmin} />
                 </div>
 
-                <AdminEntryButton label="관리자" size="sm" show={isAdmin} />
-              </div>
-
-              <div className="home-date">
-                {new Date().toLocaleDateString('ko-KR', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                  weekday: 'long',
-                })}
-              </div>
-            </div>
-
-          
-
-
-            <div className="home-header-profile">
-              <div className="profile-box">
-                <button type="button" className="profile-settings-btn" onClick={() => router.push('/settings')} aria-label="설정">
-                  <span className="ps-gear">⚙</span>
-                  <span className="ps-text">설정</span>
-                </button>
-
-                <button type="button" className="profile-click" onClick={() => setBadgeOpen(true)} aria-label="프로필 열기">
-                  <div className="profile-main">
-                    <div className="profile-avatar">
-                      {avatarSrc ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={avatarSrc}
-                          alt="프로필"
-                          onError={(e) => {
-                            console.warn('[HOME] avatar img error:', profileImage, avatarSrc);
-                            setProfileImage(null);
-                            (e.currentTarget as HTMLImageElement).style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        avatarInitial
-                      )}
-                    </div>
-                    <div className="profile-main-text">
-                      <div className="profile-name">{nickname}</div>
-                      {email && <div className="profile-email">{email}</div>}
-                    </div>
-                  </div>
-
-                  <div className="badge-icons" aria-label="내 배지 아이콘">
-                    {(myBadges.length > 0
-                      ? myBadges.slice(0, 6)
-                      : [
-                          { code: 'monthly_top', name: '월간 1등' },
-                          { code: 'streak_month_king', name: '연속왕' },
-                          { code: 'most_likes_month', name: '좋아요왕' },
-                          { code: 'mvp_count_month', name: '실적건수 MVP' },
-                          { code: 'mvp_amount_month', name: '실적금액 MVP' },
-                          { code: 'attendance_month_mvp', name: '출석 MVP' },
-                        ]
-                    ).map((b, i) => (
-                      <span key={`${b.code}-${i}`} className={`badge-icon badge-${(b.code || 'etc').toLowerCase()}`} title={b.name}>
-                        {badgeIcon(b.code)}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="profile-meta">
-                    <span className="profile-pill">{industry ?? '업종 미설정'}</span>
-                    <span className="profile-pill">{careerCombined}</span>
-                    <span className="profile-pill">{orgCombined}</span>
-                  </div>
-
-                  <div className="profile-stats">
-                    <span className="profile-stat-pill">
-                      새 피드백 <strong>{newRebuttalCount}건</strong>
-                    </span>
-                    <span className="profile-stat-pill">
-                      오늘 스케줄 <strong>{newScheduleCountToday}건</strong>
-                    </span>
-                  </div>
-                </button>
-
-                {badgeOpen && (
-                  <div className="mp-backdrop" onClick={() => setBadgeOpen(false)}>
-                    <div className="mp-panel" onClick={(e) => e.stopPropagation()}>
-                      <button type="button" className="mp-close" onClick={() => setBadgeOpen(false)}>
-                        ✕
-                      </button>
-                      <div className="mp-title">내 배지</div>
-                      <div className="mp-sub">이번 달 기준으로 보여드려요.</div>
-
-                      {myBadges.length === 0 ? (
-                        <div className="mp-empty">아직 이번 달 수상 배지가 없어요. 그래도 오늘의 기록이 쌓이면 바로 바뀝니다</div>
-                      ) : (
-                        <ul className="mp-list">
-                          {myBadges.map((b, idx) => (
-                            <li key={`${b.code}-${idx}`} className="mp-item">
-                              <span className="mp-emoji">{badgeIcon(b.code)}</span>
-                              <span className="mp-name">{b.name || b.code}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* ✅ 말풍선/마스코트: "최종 목표" 절대 표시 안 함 */}
-          <div className="home-header-bottom">
-            <div className="coach-row">
-              <div className="coach-bubble-panel" aria-live="polite">
-                <div className="coach-topline">
-                  <div className="coach-pill">오늘의 U P 한마디</div>
-
-                  <div className="coach-goal-mini" aria-label="목표 요약">
-                    <span className="cg-chip">
-                      <span className="cg-tag">월</span>
-                      <span className="cg-txt">{latestGoals?.month_goal || '이달엔 30건 이상 계약하기'}</span>
-                    </span>
-                    <span className="cg-chip">
-                      <span className="cg-tag">주</span>
-                      <span className="cg-txt">{latestGoals?.week_goal || '신규고객 3명 이상'}</span>
-                    </span>
-                    <span className="cg-chip cg-strong">
-                      <span className="cg-tag">오늘</span>
-                      <span className="cg-txt">{latestGoals?.day_goal || '가망고객 안부 문자인사하기'}</span>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="coach-text">{EMO_QUOTES[emotionIndex] ?? ''}</div>
-              </div>
-
-              <div className="coach-mascot-wrap" aria-hidden="true">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className="coach-mascot-img" src="/upzzu1.png" alt="" />
-                {/* ✅ 별(✨) 제거 완료 */}
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <HomeMenuRow items={MENU_ITEMS} />
-
-        <section className="weather-wide">
-          <div className="weather-panel">
-            <div className="weather-panel-header">
-              <div>
-                <div className="section-title">오늘 날씨</div>
-                <div className="section-sub">{weatherLabel} · 외근/미팅 계획 세울 때 참고하세요.</div>
-              </div>
-            </div>
-
-            <div className="weather-strip">
-              {(Array.isArray(todayWeather) ? todayWeather : []).map((w, idx) => (
-                <div key={idx} className="weather-slot">
-                  <div className="weather-time">
-                    {weatherEmoji(w.desc)} {w.time}
-                  </div>
-                  <div className="weather-temp">{w.temp}°C</div>
-                  <div className="weather-desc">{w.desc}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <main className="home-main">
-          <section className="home-top-summary">
-            <div className="summary-card goals-card">
-              <h3 className="summary-title">월 · 주 · 일 목표</h3>
-
-              <div className="goal-inline">
-                <span className="goal-tag">이번 달</span>
-                <span className="goal-text">{latestGoals?.month_goal || '이달엔 30건 이상 계약하기'}</span>
-                <span className="goal-divider">|</span>
-                <span className="goal-tag">이번 주</span>
-                <span className="goal-text">{latestGoals?.week_goal || '신규고객 3명 이상'}</span>
-                <span className="goal-divider">|</span>
-                <span className="goal-tag">오늘</span>
-                <span className="goal-text-strong">{latestGoals?.day_goal || '가망고객 안부 문자인사하기'}</span>
-              </div>
-
-              <div className="tiny-note fill-note">
-                ※ 목표/체크 항목 입력은 <strong>나의 U P 관리</strong>에서만 합니다. 홈에서는 체크만 가능해요.
-              </div>
-            </div>
-
-            <div className="summary-card todo-card">
-              <h3 className="summary-title">오늘 할 일</h3>
-              <p className="summary-desc">
-                <strong>나의 U P 관리</strong>에서 입력한 체크항목을 여기에서 한 번에 체크할 수 있어요.
-              </p>
-
-              {todayTasks.length === 0 ? (
-                <div className="todo-empty big">
-                  <div className="todo-empty-title">아직 등록된 할 일이 없어요.</div>
-                  <div className="todo-empty-sub">
-                    오늘의 할 일은 <strong>나의 U P 관리</strong>에서 추가해 주세요.
-                  </div>
-                </div>
-              ) : (
-                <ul className="todo-list big">
-                  {todayTasks.map((task) => (
-                    <li key={task.id} className="todo-item big">
-                      <button
-                        type="button"
-                        className={'todo-check ' + (task.done ? 'todo-check-done' : '')}
-                        onClick={() => handleToggleTask(task)}
-                        aria-label="체크"
-                      >
-                        {task.done ? '✓' : ''}
-                      </button>
-                      <span className={'todo-text ' + (task.done ? 'todo-text-done' : '')}>{task.content}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
-
-          <section className="home-section calendar-section">
-            <div className="section-header">
-              <div>
-                <div className="section-title">CALENDAR &amp; PERFORMANCE</div>
-                <div className="section-sub">달력에서 근태/스케줄/실적을 한눈에 보고, 아래에서 상세를 확인해요.</div>
-              </div>
-
-              <div className="month-nav">
-                <button type="button" className="nav-btn" onClick={() => moveMonth(-1)}>
-                  ◀
-                </button>
-                <div className="month-label">{getMonthLabel(currentMonth)}</div>
-                <button type="button" className="nav-btn" onClick={() => moveMonth(1)}>
-                  ▶
-                </button>
-              </div>
-            </div>
-
-            <div className="calendar-legend" aria-label="달력 표시 가이드">
-              <div className="legend-item">
-                <span className="legend-dot dot-attend" />
-                <span className="legend-label">
-                  근태 <b className="legend-n">{monthLegendCounts.attend}</b>
-                </span>
-              </div>
-              <div className="legend-item">
-                <span className="legend-dot dot-work" />
-                <span className="legend-label">
-                  업무 <b className="legend-n">{monthLegendCounts.work}</b>
-                </span>
-              </div>
-              <div className="legend-item">
-                <span className="legend-dot dot-etc" />
-                <span className="legend-label">
-                  기타 <b className="legend-n">{monthLegendCounts.etc}</b>
-                </span>
-              </div>
-              <div className="legend-item">
-                <span className="legend-dot dot-new" />
-                <span className="legend-label">
-                  신규계약 <b className="legend-n">{monthLegendCounts.newContracts}</b>
-                </span>
-              </div>
-              <div className="legend-item legend-hint">※ 달력 안 표시는 “DOT + 개수”만 표시되고, 기분은 상세에서 확인해요</div>
-            </div>
-
-            <div className="calendar-layout">
-              <div className="calendar-left">
-                <div className="calendar-board" role="grid" aria-label="월간 달력">
-                  {['일', '월', '화', '수', '목', '금', '토'].map((w) => (
-                    <div key={w} className="calendar-weekday-cell" role="columnheader">
-                      {w}
-                    </div>
-                  ))}
-
-                  {daysInMonth.map((d, index) => {
-                    const dStr = formatDate(d);
-                    const isCurrentMonth = d.getMonth() === currentMonth.getMonth();
-                    const isToday = dStr === todayStr;
-                    const isSelected = dStr === selectedDate;
-
-                    const schedulesForDay = schedules.filter((s) => s.schedule_date === dStr);
-                    const cd = contractDays.find((x) => x.date === dStr);
-                    const newPerf = cd ? cd.newCount : 0;
-
-                    let workN = 0;
-                    let attendN = 0;
-                    let etcN = 0;
-                    schedulesForDay.forEach((s) => {
-                      const meta = getScheduleCategoryMeta(s.category);
-                      if (meta.kind === 'attendance') attendN += 1;
-                      else if (meta.kind === 'work') workN += 1;
-                      else etcN += 1;
-                    });
-
-                    return (
-                      <button
-                        key={`${dStr}-${index}`}
-                        type="button"
-                        role="gridcell"
-                        className={[
-                          'calendar-cell',
-                          !isCurrentMonth ? 'calendar-cell-out' : '',
-                          isToday ? 'calendar-cell-today' : '',
-                          isSelected ? 'calendar-cell-selected' : '',
-                        ]
-                          .filter(Boolean)
-                          .join(' ')}
-                        onClick={() => setSelectedDate(dStr)}
-                        aria-label={`${d.getDate()}일`}
-                      >
-                        <div className="cell-top">
-                          <div className="cell-date">{d.getDate()}</div>
-                        </div>
-
-                        {(attendN > 0 || workN > 0 || etcN > 0 || newPerf > 0) && (
-                          <div className="cell-bottom" aria-label="카테고리별 개수">
-                            {attendN > 0 && (
-                              <span className="cell-pill" title="근태">
-                                <span className="cell-dot dot-attend" />
-                                <span className="cell-num">{attendN}</span>
-                              </span>
-                            )}
-                            {workN > 0 && (
-                              <span className="cell-pill" title="업무">
-                                <span className="cell-dot dot-work" />
-                                <span className="cell-num">{workN}</span>
-                              </span>
-                            )}
-                            {etcN > 0 && (
-                              <span className="cell-pill" title="기타">
-                                <span className="cell-dot dot-etc" />
-                                <span className="cell-num">{etcN}</span>
-                              </span>
-                            )}
-                            {newPerf > 0 && (
-                              <span className="cell-pill" title="신규계약">
-                                <span className="cell-dot dot-new" />
-                                <span className="cell-num">{newPerf}</span>
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </button>
-                    );
+                <div className="home-date">
+                  {new Date().toLocaleDateString('ko-KR', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    weekday: 'long',
                   })}
                 </div>
-
-                <div className="calendar-footer">
-                  <span>
-                    오늘은 <strong>{getKoreanWeekday(new Date())}</strong> 입니다.
-                  </span>
-                </div>
               </div>
 
-              <div className="calendar-right">
-                <div className="right-card calendar-selected-card">
-                  <div className="right-card-header">
-                    <div>
-                      <div className="section-title">선택한 날짜 상세</div>
-                      <div className="section-sub">
-                        {selectedDateLabel}
-                        {' · '}스케줄 {selectedDateSchedules.length}개
-                        {' · '}실적 {selectedDateContract.total}건
-                      </div>
+              <div className="home-header-profile">
+                <div className="profile-box">
+                  <button type="button" className="profile-settings-btn" onClick={() => router.push('/settings')} aria-label="설정">
+                    <span className="ps-gear">⚙</span>
+                    <span className="ps-text">설정</span>
+                  </button>
 
-                      <div className="mood-row">
-                        <span className={'mood-chip ' + (selectedMoodEmoji ? 'is-active' : '')}>
-                          <span className="mood-label">기분</span>
-                          <span className="mood-emoji">{selectedMoodEmoji || '미선택'}</span>
+                  <button type="button" className="profile-click" onClick={() => setBadgeOpen(true)} aria-label="프로필 열기">
+                    <div className="profile-main">
+                      <div className="profile-avatar">
+                        {avatarSrc ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={avatarSrc}
+                            alt="프로필"
+                            onError={(e) => {
+                              console.warn('[HOME] avatar img error:', profileImage, avatarSrc);
+                              setProfileImage(null);
+                              (e.currentTarget as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          avatarInitial
+                        )}
+                      </div>
+                      <div className="profile-main-text">
+                        <div className="profile-name">{nickname}</div>
+                        {email && <div className="profile-email">{email}</div>}
+                      </div>
+                    </div>
+
+                    <div className="badge-icons" aria-label="내 배지 아이콘">
+                      {(myBadges.length > 0
+                        ? myBadges.slice(0, 6)
+                        : [
+                            { code: 'monthly_top', name: '월간 1등' },
+                            { code: 'streak_month_king', name: '연속왕' },
+                            { code: 'most_likes_month', name: '좋아요왕' },
+                            { code: 'mvp_count_month', name: '실적건수 MVP' },
+                            { code: 'mvp_amount_month', name: '실적금액 MVP' },
+                            { code: 'attendance_month_mvp', name: '출석 MVP' },
+                            { code: 'most_posts_month', name: '게시글왕' },
+                          ]
+                      ).map((b, i) => (
+                        <span key={`${b.code}-${i}`} className={`badge-icon badge-${(b.code || 'etc').toLowerCase()}`} title={b.name}>
+                          {badgeIcon(b.code)}
                         </span>
-                        <span className="mood-hint">기분 입력은 ‘나의 U P 관리’에서 해요</span>
+                      ))}
+                    </div>
+
+                    <div className="profile-meta">
+                      <span className="profile-pill">{industry ?? '업종 미설정'}</span>
+                      <span className="profile-pill">{careerCombined}</span>
+                      <span className="profile-pill">{orgCombined}</span>
+                    </div>
+
+                    <div className="profile-stats">
+                      <span className="profile-stat-pill">
+                        새 피드백 <strong>{newRebuttalCount}건</strong>
+                      </span>
+                      <span className="profile-stat-pill">
+                        오늘 스케줄 <strong>{newScheduleCountToday}건</strong>
+                      </span>
+                    </div>
+                  </button>
+
+                  {badgeOpen && (
+                    <div className="mp-backdrop" onClick={() => setBadgeOpen(false)}>
+                      <div className="mp-panel" onClick={(e) => e.stopPropagation()}>
+                        <button type="button" className="mp-close" onClick={() => setBadgeOpen(false)}>
+                          ✕
+                        </button>
+                        <div className="mp-title">내 배지</div>
+                        <div className="mp-sub">이번 달 기준으로 보여드려요.</div>
+
+                        {myBadges.length === 0 ? (
+                          <div className="mp-empty">아직 이번 달 수상 배지가 없어요. 그래도 오늘의 기록이 쌓이면 바로 바뀝니다</div>
+                        ) : (
+                          <ul className="mp-list">
+                            {myBadges.map((b, idx) => (
+                              <li key={`${b.code}-${idx}`} className="mp-item">
+                                <span className="mp-emoji">{badgeIcon(b.code)}</span>
+                                <span className="mp-name">{b.name || b.code}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
                     </div>
-                  </div>
-
-                  {selectedDateSchedules.length === 0 ? (
-                    <div className="empty-text">
-                      아직 등록된 일정이 없어요.
-                      <br />
-                      스케줄 추가/수정은 <strong>나의 U P 관리 · 고객관리</strong>에서 할 수 있어요.
-                    </div>
-                  ) : (
-                    <ul className="schedule-list">
-                      {selectedDateSchedules.map((s) => {
-                        const meta = getScheduleCategoryMeta(s.category);
-                        const timeText = s.schedule_time ? s.schedule_time.slice(0, 5) : '--:--';
-                        return (
-                          <li key={s.id} className="schedule-item">
-                            <div className="schedule-time">{timeText}</div>
-                            <div className="schedule-content">
-                              <span className={'schedule-category ' + meta.badgeClass}>{meta.label}</span>
-                              <span className="schedule-title">{s.title}</span>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
                   )}
                 </div>
               </div>
             </div>
+
+            <div className="home-header-bottom">
+              <div className="coach-row">
+                <div className="coach-bubble-panel" aria-live="polite">
+                  <div className="coach-topline">
+                    <div className="coach-pill">오늘의 U P 한마디</div>
+
+                    <div className="coach-goal-mini" aria-label="목표 요약">
+                      <span className="cg-chip">
+                        <span className="cg-tag">월</span>
+                        <span className="cg-txt">{latestGoals?.month_goal || '이달엔 30건 이상 계약하기'}</span>
+                      </span>
+                      <span className="cg-chip">
+                        <span className="cg-tag">주</span>
+                        <span className="cg-txt">{latestGoals?.week_goal || '신규고객 3명 이상'}</span>
+                      </span>
+                      <span className="cg-chip cg-strong">
+                        <span className="cg-tag">오늘</span>
+                        <span className="cg-txt">{latestGoals?.day_goal || '가망고객 안부 문자인사하기'}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="coach-text">{EMO_QUOTES[emotionIndex] ?? ''}</div>
+                </div>
+
+                <div className="coach-mascot-wrap" aria-hidden="true">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img className="coach-mascot-img" src="/upzzu1.png" alt="" />
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <HomeMenuRow items={MENU_ITEMS} />
+
+          <section className="weather-wide">
+            <div className="weather-panel">
+              <div className="weather-panel-header">
+                <div>
+                  <div className="section-title">오늘 날씨</div>
+                  <div className="section-sub">{weatherLabel} · 외근/미팅 계획 세울 때 참고하세요.</div>
+                </div>
+              </div>
+
+              <div className="weather-strip">
+                {(Array.isArray(todayWeather) ? todayWeather : []).map((w, idx) => (
+                  <div key={idx} className="weather-slot">
+                    <div className="weather-time">
+                      {weatherEmoji(w.desc)} {w.time}
+                    </div>
+                    <div className="weather-temp">{w.temp}°C</div>
+                    <div className="weather-desc">{w.desc}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </section>
 
-          {/* ✅✅✅ 친구 목록 섹션: 요청대로 "완전 삭제" */}
+          <main className="home-main">
+            <section className="home-top-summary">
+              <div className="summary-card goals-card">
+                <h3 className="summary-title">월 · 주 · 일 목표</h3>
 
-          {/* ✅ 문의하기(실시간 채팅) 플로팅: 블루 원형 */}
-          <button type="button" onClick={() => router.push('/support')} className="floating-support-btn" aria-label="문의하기">
-            <span>문의하기</span>
-            <span> 채팅</span>
-          </button>
-        </main>
+                <div className="goal-inline">
+                  <span className="goal-tag">이번 달</span>
+                  <span className="goal-text">{latestGoals?.month_goal || '이달엔 30건 이상 계약하기'}</span>
+                  <span className="goal-divider">|</span>
+                  <span className="goal-tag">이번 주</span>
+                  <span className="goal-text">{latestGoals?.week_goal || '신규고객 3명 이상'}</span>
+                  <span className="goal-divider">|</span>
+                  <span className="goal-tag">오늘</span>
+                  <span className="goal-text-strong">{latestGoals?.day_goal || '가망고객 안부 문자인사하기'}</span>
+                </div>
+
+                <div className="tiny-note fill-note">
+                  ※ 목표/체크 항목 입력은 <strong>나의 U P 관리</strong>에서만 합니다. 홈에서는 체크만 가능해요.
+                </div>
+              </div>
+
+              <div className="summary-card todo-card">
+                <h3 className="summary-title">오늘 할 일</h3>
+                <p className="summary-desc">
+                  <strong>나의 U P 관리</strong>에서 입력한 체크항목을 여기에서 한 번에 체크할 수 있어요.
+                </p>
+
+                {todayTasks.length === 0 ? (
+                  <div className="todo-empty big">
+                    <div className="todo-empty-title">아직 등록된 할 일이 없어요.</div>
+                    <div className="todo-empty-sub">
+                      오늘의 할 일은 <strong>나의 U P 관리</strong>에서 추가해 주세요.
+                    </div>
+                  </div>
+                ) : (
+                  <ul className="todo-list big">
+                    {todayTasks.map((task) => (
+                      <li key={task.id} className="todo-item big">
+                        <button
+                          type="button"
+                          className={'todo-check ' + (task.done ? 'todo-check-done' : '')}
+                          onClick={() => handleToggleTask(task)}
+                          aria-label="체크"
+                        >
+                          {task.done ? '✓' : ''}
+                        </button>
+                        <span className={'todo-text ' + (task.done ? 'todo-text-done' : '')}>{task.content}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </section>
+
+            <section className="home-section calendar-section">
+              <div className="section-header">
+                <div>
+                  <div className="section-title">CALENDAR &amp; PERFORMANCE</div>
+                  <div className="section-sub">달력에서 근태/스케줄/실적을 한눈에 보고, 아래에서 상세를 확인해요.</div>
+                </div>
+
+                <div className="month-nav">
+                  <button type="button" className="nav-btn" onClick={() => moveMonth(-1)}>
+                    ◀
+                  </button>
+                  <div className="month-label">{getMonthLabel(currentMonth)}</div>
+                  <button type="button" className="nav-btn" onClick={() => moveMonth(1)}>
+                    ▶
+                  </button>
+                </div>
+              </div>
+
+              <div className="calendar-legend" aria-label="달력 표시 가이드">
+                <div className="legend-item">
+                  <span className="legend-dot dot-attend" />
+                  <span className="legend-label">
+                    근태 <b className="legend-n">{monthLegendCounts.attend}</b>
+                  </span>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-dot dot-work" />
+                  <span className="legend-label">
+                    업무 <b className="legend-n">{monthLegendCounts.work}</b>
+                  </span>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-dot dot-etc" />
+                  <span className="legend-label">
+                    기타 <b className="legend-n">{monthLegendCounts.etc}</b>
+                  </span>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-dot dot-new" />
+                  <span className="legend-label">
+                    신규계약 <b className="legend-n">{monthLegendCounts.newContracts}</b>
+                  </span>
+                </div>
+                <div className="legend-item legend-hint">※ 달력 안 표시는 “DOT + 개수”만 표시되고, 기분은 상세에서 확인해요</div>
+              </div>
+
+              <div className="calendar-layout">
+                <div className="calendar-left">
+                  <div className="calendar-board" role="grid" aria-label="월간 달력">
+                    {['일', '월', '화', '수', '목', '금', '토'].map((w) => (
+                      <div key={w} className="calendar-weekday-cell" role="columnheader">
+                        {w}
+                      </div>
+                    ))}
+
+                    {daysInMonth.map((d, index) => {
+                      const dStr = formatDate(d);
+                      const isCurrentMonth = d.getMonth() === currentMonth.getMonth();
+                      const isToday = dStr === todayStr;
+                      const isSelected = dStr === selectedDate;
+
+                      const schedulesForDay = schedules.filter((s) => s.schedule_date === dStr);
+                      const cd = contractDays.find((x) => x.date === dStr);
+                      const newPerf = cd ? cd.newCount : 0;
+
+                      let workN = 0;
+                      let attendN = 0;
+                      let etcN = 0;
+                      schedulesForDay.forEach((s) => {
+                        const meta = getScheduleCategoryMeta(s.category);
+                        if (meta.kind === 'attendance') attendN += 1;
+                        else if (meta.kind === 'work') workN += 1;
+                        else etcN += 1;
+                      });
+
+                      return (
+                        <button
+                          key={`${dStr}-${index}`}
+                          type="button"
+                          role="gridcell"
+                          className={[
+                            'calendar-cell',
+                            !isCurrentMonth ? 'calendar-cell-out' : '',
+                            isToday ? 'calendar-cell-today' : '',
+                            isSelected ? 'calendar-cell-selected' : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
+                          onClick={() => setSelectedDate(dStr)}
+                          aria-label={`${d.getDate()}일`}
+                        >
+                          <div className="cell-top">
+                            <div className="cell-date">{d.getDate()}</div>
+                          </div>
+
+                          {(attendN > 0 || workN > 0 || etcN > 0 || newPerf > 0) && (
+                            <div className="cell-bottom" aria-label="카테고리별 개수">
+                              {attendN > 0 && (
+                                <span className="cell-pill" title="근태">
+                                  <span className="cell-dot dot-attend" />
+                                  <span className="cell-num">{attendN}</span>
+                                </span>
+                              )}
+                              {workN > 0 && (
+                                <span className="cell-pill" title="업무">
+                                  <span className="cell-dot dot-work" />
+                                  <span className="cell-num">{workN}</span>
+                                </span>
+                              )}
+                              {etcN > 0 && (
+                                <span className="cell-pill" title="기타">
+                                  <span className="cell-dot dot-etc" />
+                                  <span className="cell-num">{etcN}</span>
+                                </span>
+                              )}
+                              {newPerf > 0 && (
+                                <span className="cell-pill" title="신규계약">
+                                  <span className="cell-dot dot-new" />
+                                  <span className="cell-num">{newPerf}</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="calendar-footer">
+                    <span>
+                      오늘은 <strong>{getKoreanWeekday(new Date())}</strong> 입니다.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="calendar-right">
+                  <div className="right-card calendar-selected-card">
+                    <div className="right-card-header">
+                      <div>
+                        <div className="section-title">선택한 날짜 상세</div>
+                        <div className="section-sub">
+                          {selectedDateLabel}
+                          {' · '}스케줄 {selectedDateSchedules.length}개
+                          {' · '}실적 {selectedDateContract.total}건
+                        </div>
+
+                        <div className="mood-row">
+                          <span className={'mood-chip ' + (selectedMoodEmoji ? 'is-active' : '')}>
+                            <span className="mood-label">기분</span>
+                            <span className="mood-emoji">{selectedMoodEmoji || '미선택'}</span>
+                          </span>
+                          <span className="mood-hint">기분 입력은 ‘나의 U P 관리’에서 해요</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedDateSchedules.length === 0 ? (
+                      <div className="empty-text">
+                        아직 등록된 일정이 없어요.
+                        <br />
+                        스케줄 추가/수정은 <strong>나의 U P 관리 · 고객관리</strong>에서 할 수 있어요.
+                      </div>
+                    ) : (
+                      <ul className="schedule-list">
+                        {selectedDateSchedules.map((s) => {
+                          const meta = getScheduleCategoryMeta(s.category);
+                          const timeText = s.schedule_time ? s.schedule_time.slice(0, 5) : '--:--';
+                          return (
+                            <li key={s.id} className="schedule-item">
+                              <div className="schedule-time">{timeText}</div>
+                              <div className="schedule-content">
+                                <span className={'schedule-category ' + meta.badgeClass}>{meta.label}</span>
+                                <span className="schedule-title">{s.title}</span>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <button type="button" onClick={() => router.push('/support')} className="floating-support-btn" aria-label="문의하기">
+              <span>문의하기</span>
+              <span> 채팅</span>
+            </button>
+          </main>
+        </div>
+
+        <style jsx>{styles}</style>
       </div>
-
-      <style jsx>{styles}</style>
-    </div>
+    </ClientShell>
   );
 }
 
+
 /* ===========================
-   ✅ styles (문자열)
+   ✅ styles (문자열) - 단 1개만 유지
+   - 아래 const styles 통째로 교체
 =========================== */
-const styles = `
+const styles = /*css*/ `
 :root{
   --uplog-accent-pink:#f472b6;
   --uplog-accent-purple:#a855f7;
@@ -1207,7 +1239,6 @@ const styles = `
   --soft-sub:#6f60b8;
   --soft-shadow:0 14px 26px rgba(0,0,0,0.10);
 
-  /* ✅ 말풍선/마스코트 "고정 규격" */
   --uplog-bubble-h:148px;
   --uplog-bubble-radius:22px;
   --uplog-bubble-pad:14px 16px;
@@ -1216,39 +1247,48 @@ const styles = `
   --uplog-mascot-size:180px;
   --uplog-font:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 }
+
 html,body{margin:0;padding:0;}
+body{font-family:var(--uplog-font); color:var(--soft-ink); background:transparent;}
 a{color:inherit;text-decoration:none;}
 *{box-sizing:border-box;}
 
 /* ✅✅✅ 전역 텍스트 인플레이션 방지 */
 .coach-bubble-panel,
-.coach-bubble-panel *{
-  -webkit-text-size-adjust:100%;
-  text-size-adjust:100%;
-}
+.coach-bubble-panel *,
 .right-card,
 .right-card *{
   -webkit-text-size-adjust:100%;
   text-size-adjust:100%;
 }
 
+/* ===== Root layout ===== */
 .home-root{
   min-height:100vh;
-  padding:24px;
-  font-size:16px;
+  padding:20px;
   background:
     radial-gradient(900px 520px at 18% 12%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 62%),
     radial-gradient(900px 560px at 82% 18%, rgba(243,232,255,0.55) 0%, rgba(243,232,255,0) 64%),
     linear-gradient(180deg,#fff3fb 0%, #f6f2ff 45%, #eef8ff 100%);
-  font-family:var(--uplog-font);
-  color:var(--soft-ink);
 }
-.home-inner{max-width:1200px;margin:0 auto;}
-.section-title{font-size:18px;font-weight:900;color:#5d3bdb;}
-.section-sub{font-size:14px;margin-top:4px;color:var(--soft-sub);}
-.home-loading{margin-top:120px;text-align:center;font-size:20px;}
+.home-inner{
+  width:min(1120px, 100%);
+  margin:0 auto;
+}
+.home-loading{
+  width:min(560px, 92vw);
+  margin:0 auto;
+  padding:18px 16px;
+  border-radius:18px;
+  background:rgba(255,255,255,0.94);
+  border:1px solid rgba(229,221,255,1);
+  box-shadow:var(--soft-shadow);
+  font-weight:950;
+  text-align:center;
+  color:#2a0f3a;
+}
 
-/* Header */
+/* ===== Header ===== */
 .home-header{
   display:flex;
   flex-direction:column;
@@ -1270,11 +1310,12 @@ a{color:inherit;text-decoration:none;}
   align-items:start;
 }
 @media (max-width:980px){
+  .home-header{padding:18px 16px 26px;}
   .home-header-top{grid-template-columns:1fr;}
   .home-header-profile{justify-content:flex-start;}
   .profile-box{max-width:520px;height:auto;}
 }
-.home-logo-row{display:flex;align-items:center;gap:12px;}
+.home-logo-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .home-logo{
   width:70px;height:70px;border-radius:22px;padding:8px;
   background:rgba(255,255,255,0.16);
@@ -1292,7 +1333,7 @@ a{color:inherit;text-decoration:none;}
   transform-origin:center bottom;
   text-shadow:0 2px 10px rgba(0,0,0,0.18);
 }
-@keyframes uplogBounce{0%,100%{transform:translateY(0);}50%{transform:translateY(-5px);}}
+@keyframes uplogBounce{0%,100%{transform:translateY(0);}50%{transform:translateY(-5px);} }
 .home-logo-sub{font-size:16px;font-weight:900;color:rgba(255,255,255,0.92);text-shadow:0 2px 8px rgba(0,0,0,0.18);}
 .home-date{font-size:18px;font-weight:900;margin-top:10px;color:rgba(255,255,255,0.92);text-shadow:0 2px 10px rgba(0,0,0,0.18);}
 
@@ -1309,7 +1350,7 @@ a{color:inherit;text-decoration:none;}
 .admin-btn-sm{height:34px;padding:0 12px;font-size:12px;}
 .admin-btn-md{height:40px;padding:0 14px;font-size:13px;}
 
-/* Profile */
+/* ===== Profile ===== */
 .home-header-profile{display:flex;justify-content:flex-end;align-items:flex-start;}
 .profile-box{
   width:100%;
@@ -1357,7 +1398,6 @@ a{color:inherit;text-decoration:none;}
   background:#fff;border:2px solid rgba(180,160,255,0.50);
   box-shadow:0 10px 16px rgba(0,0,0,0.06), 0 0 12px rgba(168,85,247,0.12);
 }
-
 .profile-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;font-size:12px;}
 .profile-pill{font-size:12px;padding:4px 9px;border-radius:999px;background:#f4f0ff;color:#352153;}
 .profile-stats{display:flex;gap:8px;margin-top:6px;font-size:11px;overflow:hidden;flex-wrap:wrap;}
@@ -1367,7 +1407,7 @@ a{color:inherit;text-decoration:none;}
 }
 .profile-stat-pill strong{color:#ff4f9f;}
 
-/* Badge Modal */
+/* ===== Badge modal ===== */
 .mp-backdrop{position:fixed;inset:0;background:rgba(15,23,42,0.50);display:flex;align-items:center;justify-content:center;z-index:60;}
 .mp-panel{
   width:380px;max-width:92vw;border-radius:26px;background:#fff;box-shadow:0 24px 54px rgba(15,23,42,0.38);
@@ -1382,7 +1422,7 @@ a{color:inherit;text-decoration:none;}
 .mp-emoji{width:34px;height:34px;border-radius:999px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #eadcff;}
 .mp-name{font-size:15px;font-weight:900;color:#2a1236;}
 
-/* Coach */
+/* ===== Coach bubble + mascot ===== */
 .home-header-bottom{margin-top:6px;}
 .coach-row{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;}
 @media (max-width:980px){.coach-row{flex-direction:column;align-items:stretch;}}
@@ -1441,10 +1481,10 @@ a{color:inherit;text-decoration:none;}
   margin-bottom:-10px;
   animation: floaty 2.8s ease-in-out infinite;
 }
-@keyframes floaty{0%,100%{transform:translateY(8px);}50%{transform:translateY(-2px);}}
+@keyframes floaty{0%,100%{transform:translateY(8px);}50%{transform:translateY(-2px);} }
 .coach-mascot-img{width:var(--uplog-mascot-size);height:var(--uplog-mascot-size);object-fit:contain;filter:drop-shadow(0 18px 22px rgba(0,0,0,0.22));}
 
-/* ✅✅✅ 홈 메뉴: 데스크탑 6개 균등 / 모바일 3열 2행 정렬 고정 */
+/* ===== Menu row ===== */
 .home-menu-row{
   margin:18px 0 16px;
   display:grid;
@@ -1455,10 +1495,7 @@ a{color:inherit;text-decoration:none;}
 }
 @media (max-width:760px){
   .home-root{padding:16px;}
-  .home-menu-row{
-    grid-template-columns:repeat(3, minmax(0, 1fr));
-    gap:10px;
-  }
+  .home-menu-row{grid-template-columns:repeat(3, minmax(0, 1fr));gap:10px;}
 }
 .hm-item{
   width:100%;
@@ -1479,7 +1516,7 @@ a{color:inherit;text-decoration:none;}
   will-change:transform;
   animation: menuFloat 3.6s ease-in-out infinite;
 }
-@keyframes menuFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-2px);}}
+@keyframes menuFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-2px);} }
 .hm-item:hover{
   transform:translateY(-4px) scale(1.01);
   filter:brightness(1.08);
@@ -1487,213 +1524,337 @@ a{color:inherit;text-decoration:none;}
 }
 .hm-label{white-space:nowrap;}
 
-/* Weather */
+/* ===== Weather ===== */
 .weather-wide{margin-bottom:10px;}
-.weather-panel{border-radius:18px;background:rgba(255,255,255,0.96);padding:10px 14px;box-shadow:var(--soft-shadow);border:1px solid #e3dafb;color:#241336;}
+.weather-panel{
+  border-radius:18px;
+  background:rgba(255,255,255,0.96);
+  padding:12px 14px;
+  box-shadow:var(--soft-shadow);
+  border:1px solid #e3dafb;
+  color:#241336;
+}
+.weather-panel-header{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:8px;}
+.section-title{font-size:16px;font-weight:950;color:#2a0f3a;}
+.section-sub{margin-top:4px;font-size:13px;font-weight:850;color:#7a68c4;}
 .weather-strip{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none;}
 .weather-strip::-webkit-scrollbar{display:none;}
-.weather-slot{min-width:100px;border-radius:12px;background:#f7f3ff;padding:6px;font-size:13px;}
-.weather-time{font-weight:800;margin-bottom:2px;}
+.weather-slot{min-width:104px;border-radius:14px;background:#f7f3ff;padding:8px 8px;font-size:13px;border:1px solid rgba(224,212,255,0.9);}
+.weather-time{font-weight:850;margin-bottom:2px;}
 .weather-temp{font-size:20px;font-weight:950;color:rgba(243,95,166,0.95);}
 .weather-desc{font-size:13px;color:#7a68c4;}
 
-/* Main */
+/* ===== Main container ===== */
 .home-main{display:flex;flex-direction:column;gap:14px;}
 
-/* Summary */
-.home-top-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
-@media (max-width:860px){.home-top-summary{grid-template-columns:1fr;}}
-.summary-card{
-  border-radius:20px;
-  padding:18px 18px;
-  background:rgba(255,255,255,0.96);
-  box-shadow:var(--soft-shadow);
-  border:1px solid #e5ddff;
-  color:#211437;
-  display:flex;
-  flex-direction:column;
+/* ===== Goals + Today tasks ===== */
+.home-top-summary{
+  display:grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap:14px;
+  align-items:stretch;
 }
-.summary-title{font-size:20px;font-weight:950;margin-bottom:10px;color:#5d3bdb;}
-.summary-desc{font-size:15px;color:#7a69c4;margin:0 0 10px;}
-.tiny-note{margin-top:10px;font-size:12px;color:#7a69c4;}
-.fill-note{margin-top:auto;padding-top:12px;}
-.goal-inline{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:6px;font-size:17px;font-weight:950;}
-.goal-tag{padding:5px 11px;border-radius:999px;background:#ede9ff;color:#5b21b6;font-size:13px;}
-.goal-text-strong{font-size:19px;color:#ec4899;}
-.goal-text{font-size:17px;color:#372153;}
-.goal-divider{opacity:.35;font-weight:900;}
+@media (max-width:980px){
+  .home-top-summary{grid-template-columns:1fr;gap:12px;}
+}
+.summary-card{
+  background:rgba(255,255,255,0.96);
+  border:1px solid rgba(227,218,251,0.95);
+  box-shadow:var(--soft-shadow);
+  border-radius:22px;
+  padding:14px 14px;
+  color:#241336;
+}
+.summary-title{
+  margin:0 0 10px;
+  font-size:18px;
+  font-weight:950;
+  letter-spacing:-0.2px;
+  color:#2a0f3a;
+}
+.summary-desc{
+  margin:0 0 10px;
+  font-size:13px;
+  font-weight:850;
+  color:#7a68c4;
+  line-height:1.45;
+}
+.goal-inline{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  padding:10px 10px;
+  border-radius:16px;
+  background:#faf7ff;
+  border:1px solid rgba(224,212,255,0.95);
+}
+.goal-tag{
+  font-size:12px;
+  font-weight:950;
+  padding:4px 10px;
+  border-radius:999px;
+  background:#efe7ff;
+  border:1px solid rgba(212,200,255,0.95);
+  color:#3a1f62;
+}
+.goal-text{
+  font-size:13px;
+  font-weight:900;
+  color:#2a1236;
+}
+.goal-text-strong{
+  font-size:13px;
+  font-weight:950;
+  color:#ff4f9f;
+}
+.goal-divider{
+  color:#b7a6ee;
+  font-weight:950;
+}
+.tiny-note{
+  margin-top:10px;
+  font-size:12px;
+  font-weight:850;
+  color:#7a68c4;
+}
+.fill-note strong{color:#ff4f9f;}
 
-.todo-empty{margin-top:10px;border-radius:16px;padding:10px 12px;background:#faf7ff;border:1px dashed rgba(165,148,230,0.9);font-size:14px;color:#7461be;line-height:1.5;}
-.todo-empty.big{margin-top:12px;padding:16px 14px;min-height:110px;display:flex;flex-direction:column;justify-content:center;gap:6px;}
-.todo-empty-title{font-size:16px;font-weight:950;color:#5b21b6;}
-.todo-empty-sub{font-size:14px;color:#7a69c4;}
-.todo-list{margin:10px 0 0;padding:0;list-style:none;}
-.todo-list.big{margin-top:12px;}
-.todo-item{display:flex;align-items:center;gap:10px;padding:4px 0;font-size:15px;}
-.todo-item.big{padding:6px 0;font-size:16px;}
-.todo-check{width:22px;height:22px;border-radius:8px;border:1.5px solid rgba(241,83,170,0.85);background:#fff;font-size:13px;font-weight:950;cursor:pointer;display:flex;align-items:center;justify-content:center;}
-.todo-check-done{background:linear-gradient(135deg, rgba(241,83,170,0.92), rgba(163,109,255,0.90));box-shadow:0 0 10px rgba(241,83,170,0.30);color:#fff;}
-.todo-text{color:#2b163e;}
-.todo-text-done{color:#a39ad3;text-decoration:line-through;}
+.todo-empty.big{
+  border-radius:16px;
+  padding:12px;
+  background:#faf7ff;
+  border:1px dashed rgba(170,150,240,0.95);
+}
+.todo-empty-title{font-weight:950;color:#2a1236;margin-bottom:4px;}
+.todo-empty-sub{font-size:13px;font-weight:850;color:#7a68c4;line-height:1.45;}
+.todo-list.big{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;}
+.todo-item.big{display:flex;align-items:center;gap:10px;}
+.todo-check{
+  width:22px;height:22px;border-radius:6px;
+  border:2px solid rgba(168,85,247,0.55);
+  background:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:950;color:#7c3aed;cursor:pointer;
+}
+.todo-check.todo-check-done{
+  background:linear-gradient(135deg,#f472b6,#a855f7);
+  border-color:transparent;
+  color:#fff;
+}
+.todo-text{font-size:14px;font-weight:900;color:#2a1236;line-height:1.35;word-break:keep-all;}
+.todo-text.todo-text-done{opacity:0.55;text-decoration:line-through;}
 
-/* Calendar section */
-.home-section{border-radius:22px;background:rgba(255,255,255,0.96);border:1px solid #e5ddff;box-shadow:var(--soft-shadow);padding:16px;}
-.section-header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:12px;}
-@media (max-width:860px){.section-header{flex-direction:column;align-items:flex-start;gap:10px;}}
-.month-nav{display:flex;align-items:center;gap:10px;}
-.nav-btn{height:34px;width:34px;border-radius:999px;border:1px solid #eadcff;background:#fff;color:#5b21b6;font-weight:950;cursor:pointer;box-shadow:0 10px 16px rgba(0,0,0,0.06);}
-.month-label{font-weight:950;color:#2a1236;}
+/* ===== Calendar section ===== */
+.home-section{background:rgba(255,255,255,0.96);border:1px solid rgba(227,218,251,0.95);box-shadow:var(--soft-shadow);border-radius:22px;padding:14px;}
+.calendar-section{padding:14px;}
+.section-header{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+}
+.month-nav{display:flex;align-items:center;gap:10px;flex:0 0 auto;}
+.nav-btn{
+  width:34px;height:34px;border-radius:999px;
+  border:1px solid rgba(212,200,255,0.95);
+  background:#faf7ff;
+  cursor:pointer;
+  font-weight:950;
+  color:#3a1f62;
+  box-shadow:0 8px 14px rgba(0,0,0,0.06);
+}
+.month-label{font-size:14px;font-weight:950;color:#2a1236;min-width:120px;text-align:center;}
 
-.calendar-legend{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0 14px;}
-.legend-item{display:flex;align-items:center;gap:8px;font-size:13px;color:#4b2d7a;}
-.legend-hint{opacity:.85}
+.calendar-legend{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  align-items:center;
+  padding:10px 10px;
+  border-radius:16px;
+  background:#faf7ff;
+  border:1px solid rgba(224,212,255,0.95);
+  margin-bottom:12px;
+}
+.legend-item{display:flex;align-items:center;gap:8px;}
 .legend-dot{
   width:10px;height:10px;border-radius:999px;
-  display:inline-block;
-  flex:0 0 10px;
-  /* ✅ 테두리/링 완전 제거 */
-  border:none; outline:none; box-shadow:none;
+  flex:0 0 auto;
 }
-.legend-n{color:#ec4899;}
-
-.dot-attend{background:#fbbf24;}
+.dot-attend{background:#f59e0b;}
 .dot-work{background:#22c55e;}
 .dot-etc{background:#60a5fa;}
 .dot-new{background:#ef4444;}
+.legend-label{font-size:13px;font-weight:900;color:#2a1236;}
+.legend-n{color:#ff4f9f;}
+.legend-hint{font-size:12px;font-weight:850;color:#7a68c4;}
 
-.calendar-layout{display:grid;grid-template-columns:1.2fr .8fr;gap:12px;align-items:start;}
-@media (max-width:920px){.calendar-layout{grid-template-columns:1fr;}}
+.calendar-layout{
+  display:grid;
+  grid-template-columns: 1fr minmax(0, 360px);
+  gap:14px;
+  align-items:start;
+}
+@media (max-width:980px){
+  .calendar-layout{grid-template-columns:1fr;gap:12px;}
+}
+
 .calendar-board{
   display:grid;
-  grid-template-columns:repeat(7, minmax(0, 1fr));
+  grid-template-columns:repeat(7, minmax(0,1fr));
   gap:8px;
+  width:100%;
 }
-.calendar-weekday-cell{font-size:12px;font-weight:950;color:#6b4cc8;text-align:center;opacity:.9;}
+.calendar-weekday-cell{
+  text-align:center;
+  font-size:12px;
+  font-weight:950;
+  color:#5b44a5;
+  padding:6px 0;
+}
 
 .calendar-cell{
   border:none;
-  background:#faf7ff;
-  border-radius:16px;
-  padding:10px 10px 8px;
   cursor:pointer;
-  box-shadow:0 10px 16px rgba(0,0,0,0.05);
-  transition:transform .15s ease, filter .15s ease;
-  min-height:72px;
+  border-radius:14px;
+  background:#ffffff;
+  border:1px solid rgba(224,212,255,0.95);
+  box-shadow:0 10px 18px rgba(0,0,0,0.04);
+  padding:8px 8px;
+  min-height:74px;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  align-items:stretch;
+  text-align:left;
+  transition:transform .15s ease, box-shadow .15s ease, filter .15s ease;
 }
-.calendar-cell:hover{transform:translateY(-2px);filter:brightness(1.02);}
-.calendar-cell-out{opacity:.45;}
-.calendar-cell-today{outline:2px solid rgba(236,72,153,0.30);}
-.calendar-cell-selected{outline:2px solid rgba(124,58,237,0.40);background:#f3e8ff;}
-
+.calendar-cell:hover{transform:translateY(-2px);filter:brightness(1.02);box-shadow:0 14px 22px rgba(0,0,0,0.06);}
+.calendar-cell-out{opacity:0.40;}
+.calendar-cell-today{
+  border-color:rgba(236,72,153,0.55);
+  box-shadow:0 16px 24px rgba(236,72,153,0.10);
+}
+.calendar-cell-selected{
+  border-color:rgba(168,85,247,0.75);
+  box-shadow:0 18px 28px rgba(168,85,247,0.16);
+}
 .cell-top{display:flex;align-items:center;justify-content:space-between;}
-.cell-date{font-size:14px;font-weight:950;color:#2a1236;}
+.cell-date{font-size:13px;font-weight:950;color:#2a1236;}
 
 .cell-bottom{
-  margin-top:8px;
-
   display:flex;
   flex-wrap:wrap;
   gap:6px;
-
-  width:100%;                 /* ✅ 셀 폭 기준 */
-  justify-content:center;     /* ✅ 중앙 정렬 */
+  justify-content:flex-start;
   align-items:center;
-
-  padding:0 2px;              /* ✅ 아주 살짝만 여백 */
-  box-sizing:border-box;
 }
-
-/* ✅✅✅ pill: 더 작게 + 가운데 정렬 + 테두리 제거 */
 .cell-pill{
   display:inline-flex;
   align-items:center;
-  justify-content:center;
-
-  gap:5px;
+  gap:6px;
   padding:3px 7px;
-
   border-radius:999px;
-  background:rgba(255,255,255,0.92);
-
-  border:none !important;
-  box-shadow:0 6px 10px rgba(0,0,0,0.04);
-
-  font-size:12px;
-  font-weight:900;
-  color:#2a1236;
-  line-height:1;
-
-  max-width:100%;
-  margin:0;                   /* ✅ 혹시 margin-left:auto 같은 거 있으면 무력화 */
-}
-
-/* ✅✅✅ dot: 더 작게 + 링/테두리 완전 제거 */
-.cell-dot{
-  width:9px;
-  height:9px;
-  border-radius:999px;
-  display:inline-block;
-  flex:0 0 9px;
-
-  border:none !important;
-  outline:none !important;
-  box-shadow:none !important;
-
-  transform:translateY(0.5px);    /* ✅ 숫자와 수평 맞춤(미세) */
-}
-
-/* ✅✅✅ 숫자: 폭 고정해서 오른쪽 치우침/흔들림 제거 */
-.cell-num{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  width:14px;                     /* ✅ 1~2자리도 정렬 고정 */
-  text-align:center;
-  line-height:1;
-  transform:translateY(0.5px);    /* ✅ dot과 수평 맞춤(미세) */
-}
-.day-cell{
-  text-align:center;
-}
-
-/* Right card */
-.right-card{
-  border-radius:18px;
-  background:#fff;
-  border:1px solid #e5ddff;
-  box-shadow:var(--soft-shadow);
-  padding:14px;
-}
-.empty-text{margin-top:10px;border-radius:14px;padding:12px;background:#faf7ff;border:1px dashed rgba(165,148,230,0.9);color:#7461be;font-weight:900;line-height:1.5;}
-
-.mood-row{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;}
-.mood-chip{
-  display:inline-flex;align-items:center;gap:10px;
-  padding:10px 12px;
-  border-radius:999px;
-  background:#f7f2ff;
-  border:1px solid #eadcff;
+  background:#faf7ff;
+  border:1px solid rgba(224,212,255,0.95);
+  font-size:11px;
   font-weight:950;
   color:#2a1236;
+  line-height:1;
 }
-.mood-chip.is-active{background:linear-gradient(135deg, rgba(244,114,182,0.22), rgba(168,85,247,0.18));}
-.mood-label{font-size:12px;opacity:.9;}
-.mood-emoji{font-size:22px;line-height:1;}
-.mood-hint{font-size:12px;color:#7a69c4;font-weight:900;}
+.cell-dot{
+  width:7px;height:7px;border-radius:999px;flex:0 0 auto;
+  /* ✅✅✅ 도트 링/테두리 제거 */
+  box-shadow:none;
+  border:none;
+}
+.cell-num{min-width:10px;text-align:center;}
 
-.schedule-list{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:8px;}
-.schedule-item{display:flex;align-items:center;gap:10px;border-radius:14px;padding:10px;background:#faf7ff;border:1px solid rgba(212,200,255,0.9);}
-.schedule-time{width:52px;font-weight:950;color:#5d3bdb;}
-.schedule-content{display:flex;align-items:center;gap:10px;min-width:0;}
-.schedule-title{font-weight:950;color:#2a1236;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.schedule-category{font-size:12px;font-weight:950;padding:4px 10px;border-radius:999px;color:#fff;white-space:nowrap;}
+.calendar-footer{
+  margin-top:10px;
+  font-size:13px;
+  font-weight:850;
+  color:#7a68c4;
+}
+
+/* ===== Right side detail ===== */
+.right-card{
+  background:#fff;
+  border-radius:18px;
+  border:1px solid rgba(224,212,255,0.95);
+  box-shadow:var(--soft-shadow);
+  padding:12px 12px;
+  color:#241336;
+}
+.right-card-header{margin-bottom:10px;}
+.mood-row{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;}
+.mood-chip{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:6px 10px;border-radius:999px;
+  background:#faf7ff;border:1px solid rgba(224,212,255,0.95);
+  font-size:12px;font-weight:950;color:#2a1236;
+}
+.mood-chip.is-active{border-color:rgba(236,72,153,0.55);box-shadow:0 10px 18px rgba(236,72,153,0.10);}
+.mood-label{opacity:0.85;}
+.mood-emoji{font-size:14px;}
+.mood-hint{font-size:12px;font-weight:850;color:#7a68c4;}
+
+.empty-text{
+  border-radius:16px;
+  padding:12px;
+  background:#faf7ff;
+  border:1px dashed rgba(170,150,240,0.95);
+  font-size:13px;
+  font-weight:850;
+  color:#7a68c4;
+  line-height:1.5;
+}
+.empty-text strong{color:#ff4f9f;}
+
+.schedule-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;}
+.schedule-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 10px;
+  border-radius:16px;
+  background:#faf7ff;
+  border:1px solid rgba(224,212,255,0.95);
+}
+.schedule-time{
+  width:56px;
+  flex:0 0 56px;
+  font-size:12px;
+  font-weight:950;
+  color:#3a1f62;
+  text-align:center;
+  padding:6px 0;
+  border-radius:12px;
+  background:#efe7ff;
+  border:1px solid rgba(212,200,255,0.95);
+}
+.schedule-content{min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.schedule-category{
+  font-size:11px;font-weight:950;
+  padding:4px 8px;border-radius:999px;color:#fff;
+}
 .schedule-cat-work{background:#22c55e;}
-.schedule-cat-attend{background:#fbbf24;color:#2a1236;}
-.schedule-cat-etc{background:#60a5fa;}
-.schedule-cat-edu{background:#8b5cf6;}
-.schedule-cat-event{background:#ec4899;}
+.schedule-cat-attend{background:#f59e0b;}
+.schedule-cat-edu{background:#60a5fa;}
+.schedule-cat-event{background:#a855f7;}
+.schedule-cat-etc{background:#94a3b8;}
+.schedule-title{
+  font-size:13px;
+  font-weight:950;
+  color:#2a1236;
+  line-height:1.35;
+  word-break:keep-all;
+}
 
-/* Floating support */
+/* ===== Floating support ===== */
 .floating-support-btn{
   position:fixed;
   right:18px;

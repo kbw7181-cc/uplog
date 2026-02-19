@@ -2,8 +2,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import ThemeProvider from './components/ThemeProvider';
-import ClientBoot from './components/ClientBoot';
-import AuthGuard from './components/AuthGuard';
 
 export const metadata: Metadata = {
   title: 'UPLOG',
@@ -14,11 +12,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ko">
       <body>
-        <ThemeProvider>
-          <AuthGuard>
-            <ClientBoot>{children}</ClientBoot>
-          </AuthGuard>
-        </ThemeProvider>
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

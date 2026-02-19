@@ -1,4 +1,3 @@
-// ✅✅✅ 전체복붙: src/app/login/page.tsx
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
@@ -14,6 +13,24 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // ✅ 이미 세션이 있으면 /home으로 바로 보내기 (로그인 화면 머무름 방지)
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const uid = data?.session?.user?.id ?? null;
+        if (!alive) return;
+        if (uid) router.replace('/home');
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [router]);
+
   // ✅ 디버그: 방금 "로그인 성공" 후 다시 돌아온 경우 감지
   useEffect(() => {
     const lastOk = sessionStorage.getItem('uplog_login_last_ok_ts');
@@ -22,12 +39,11 @@ export default function LoginPage() {
       const diff = Date.now() - (Number.isFinite(ts) ? ts : 0);
       sessionStorage.removeItem('uplog_login_last_ok_ts');
 
-      // 20초 이내면: 로그인 성공 후 /home에서 다시 /login으로 튕긴 케이스 가능성 높음
       if (diff >= 0 && diff < 20_000) {
         setMsg(
           '⚠️ 로그인 성공 직후 다시 로그인 화면으로 돌아왔습니다.\n' +
             '원인 후보: (1) /home 가드가 세션을 null로 판단 (2) 쿠키/도메인/환경변수로 세션이 유지되지 않음.\n' +
-            '아래 “로그인” 다시 누르면 콘솔에 signIn/getSession/getUser 로그가 남습니다.'
+            '아래 “로그인” 다시 누르면 콘솔에 signIn/getSession/getUser 로그가 남습니다.',
         );
       }
     }
@@ -49,7 +65,6 @@ export default function LoginPage() {
     setMsg(null);
 
     try {
-      // ✅ 1) signIn 결과를 콘솔에 남겨서 "실패/성공"을 확정
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: pw.trim(),
@@ -60,19 +75,28 @@ export default function LoginPage() {
       if (error) {
         const m = error.message || '로그인에 실패했어요.';
         setMsg(m);
-        alert(m); // ✅ 지금은 무조건 띄워서 원인 확인
+        alert(m);
         return;
       }
 
-      // ✅ 2) 성공 직후 session/user를 한 번 더 확인 (세션이 "실제로" 생겼는지)
+      // ✅ 성공 직후 session/user 확인 + 아주 짧게 재확인(저장 타이밍 흡수)
       const s1 = await supabase.auth.getSession();
       const u1 = await supabase.auth.getUser();
-
       console.log('[LOGIN] getSession =>', s1);
       console.log('[LOGIN] getUser =>', u1);
 
-      // ✅ 세션이 없으면: "성공처럼 보였지만 세션이 안 잡힘" 케이스
-      const session = s1?.data?.session ?? null;
+      let session = s1?.data?.session ?? null;
+
+      // 1차에서 세션이 비어있으면 2~3번 짧게 재시도
+      if (!session) {
+        for (let i = 0; i < 3; i++) {
+          await new Promise((r) => setTimeout(r, 180));
+          const s2 = await supabase.auth.getSession();
+          session = s2?.data?.session ?? null;
+          if (session) break;
+        }
+      }
+
       if (!session) {
         const m =
           '로그인 응답은 성공처럼 보이지만, 세션이 생성/유지되지 않았습니다.\n' +
@@ -83,9 +107,10 @@ export default function LoginPage() {
         return;
       }
 
-      // ✅ 3) /home 이동 후 다시 /login으로 돌아오면, /home 가드 문제일 확률이 높음
+      // ✅ /home 이동 보장
       sessionStorage.setItem('uplog_login_last_ok_ts', String(Date.now()));
       router.replace('/home');
+      setTimeout(() => router.replace('/home'), 0);
     } catch (err: any) {
       const m = err?.message || '로그인 중 오류가 발생했어요.';
       setMsg(m);
@@ -104,7 +129,6 @@ export default function LoginPage() {
         <header className="auth-head">
           <div className="auth-logo" aria-hidden="true">
             <div className="auth-logoHalo" aria-hidden="true" />
-            {/* ✅ public/gogo.png */}
             <img src="/gogo.png" alt="" className="auth-logoImg" draggable={false} />
           </div>
 
