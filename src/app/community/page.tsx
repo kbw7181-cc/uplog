@@ -176,12 +176,16 @@ export default function CommunityPage() {
   const [thumbMap, setThumbMap] = useState<Record<string, string>>({});
 
   const [meId, setMeId] = useState<string>('');
+  const [meRole, setMeRole] = useState<string>('');
+
   const [likeCount, setLikeCount] = useState<Record<string, number>>({});
   const [likedMe, setLikedMe] = useState<Record<string, boolean>>({});
   const [liking, setLiking] = useState<Record<string, boolean>>({});
 
   const [viewCount, setViewCount] = useState<Record<string, number>>({});
   const [commentCount, setCommentCount] = useState<Record<string, number>>({});
+
+  const [deleting, setDeleting] = useState<Record<string, boolean>>({});
 
   const guideSlides = useMemo(() => buildGuideSlides(), []);
   const [guideIdx, setGuideIdx] = useState(0);
@@ -203,6 +207,14 @@ export default function CommunityPage() {
         return;
       }
       setMeId(uid);
+
+      // ✅ 내 role 로드(없어도 안전)
+      try {
+        const pr = await supabase.from('profiles').select('role').eq('user_id', uid).maybeSingle();
+        setMeRole(String((pr.data as any)?.role || ''));
+      } catch {
+        setMeRole('');
+      }
 
       let rows: PostRow[] = [];
       {
@@ -300,6 +312,8 @@ export default function CommunityPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const isAdmin = useMemo(() => String(meRole || '').toLowerCase() === 'admin', [meRole]);
+
   const filtered = useMemo(() => {
     const keyword = q.trim().toLowerCase();
     const base = [...posts].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -364,6 +378,67 @@ export default function CommunityPage() {
   function openPost(postId: string) {
     bumpView(postId);
     router.push(`/community/${postId}`);
+  }
+
+  async function deletePost(postId: string, ownerId: string) {
+    if (!meId) return;
+    if (deleting[postId]) return;
+
+    const ok = window.confirm('이 게시글을 삭제할까요?\n삭제하면 복구할 수 없습니다.');
+    if (!ok) return;
+
+    setDeleting((m) => ({ ...m, [postId]: true }));
+    setErrMsg(null);
+
+    try {
+      // ✅ 관련 데이터 먼저 정리(외래키/정책 환경에 따라 필요)
+      try {
+        await supabase.from('community_comments').delete().eq('post_id', postId);
+      } catch {}
+      try {
+        await supabase.from('post_likes').delete().eq('post_id', postId);
+      } catch {}
+
+      // ✅ 게시글 삭제: admin이면 id만, 아니면 본인 글만 삭제
+      const qDel = isAdmin
+        ? supabase.from('community_posts').delete().eq('id', postId)
+        : supabase.from('community_posts').delete().eq('id', postId).eq('user_id', ownerId || meId);
+
+      const { error } = await qDel;
+      if (error) throw error;
+
+      // ✅ UI 즉시 반영
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      setThumbMap((prev) => {
+        const n = { ...prev };
+        delete n[postId];
+        return n;
+      });
+      setLikeCount((prev) => {
+        const n = { ...prev };
+        delete n[postId];
+        return n;
+      });
+      setLikedMe((prev) => {
+        const n = { ...prev };
+        delete n[postId];
+        return n;
+      });
+      setViewCount((prev) => {
+        const n = { ...prev };
+        delete n[postId];
+        return n;
+      });
+      setCommentCount((prev) => {
+        const n = { ...prev };
+        delete n[postId];
+        return n;
+      });
+    } catch (e: any) {
+      setErrMsg(e?.message || '삭제 실패 (권한/RLS 확인 필요)');
+    } finally {
+      setDeleting((m) => ({ ...m, [postId]: false }));
+    }
   }
 
   const activeGuide = guideSlides[Math.min(guideIdx, guideSlides.length - 1)];
@@ -458,6 +533,14 @@ export default function CommunityPage() {
                       key={p.id}
                       p={p}
                       compact
+                      meId={meId}
+                      isAdmin={isAdmin}
+                      deleting={!!deleting[p.id]}
+                      onDelete={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        deletePost(p.id, p.user_id);
+                      }}
                       thumbSrc={thumbMap[p.id] || ''}
                       ensureThumb={() => ensureThumb(p.id, p.image_url)}
                       likeN={likeCount[p.id] || 0}
@@ -484,6 +567,14 @@ export default function CommunityPage() {
                       key={p.id}
                       p={p}
                       compact
+                      meId={meId}
+                      isAdmin={isAdmin}
+                      deleting={!!deleting[p.id]}
+                      onDelete={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        deletePost(p.id, p.user_id);
+                      }}
                       thumbSrc={thumbMap[p.id] || ''}
                       ensureThumb={() => ensureThumb(p.id, p.image_url)}
                       likeN={likeCount[p.id] || 0}
@@ -514,6 +605,14 @@ export default function CommunityPage() {
                 <PostCard
                   key={p.id}
                   p={p}
+                  meId={meId}
+                  isAdmin={isAdmin}
+                  deleting={!!deleting[p.id]}
+                  onDelete={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    deletePost(p.id, p.user_id);
+                  }}
                   thumbSrc={thumbMap[p.id] || ''}
                   ensureThumb={() => ensureThumb(p.id, p.image_url)}
                   likeN={likeCount[p.id] || 0}
@@ -538,17 +637,14 @@ export default function CommunityPage() {
 }
 
 function EmptySmall() {
-  return (
-    <div style={styles.emptySmall}>
-      아직 없어요.
-    </div>
-  );
+  return <div style={styles.emptySmall}>아직 없어요.</div>;
 }
 
 function PostCard({
   p,
   onOpen,
   onLike,
+  onDelete,
   likeN,
   liked,
   liking,
@@ -557,10 +653,14 @@ function PostCard({
   viewN,
   commentN,
   compact,
+  meId,
+  isAdmin,
+  deleting,
 }: {
   p: PostRow;
   onOpen: () => void;
   onLike: (e: any) => void;
+  onDelete: (e: any) => void;
   likeN: number;
   liked: boolean;
   liking: boolean;
@@ -569,6 +669,9 @@ function PostCard({
   viewN: number;
   commentN: number;
   compact?: boolean;
+  meId: string;
+  isAdmin: boolean;
+  deleting: boolean;
 }) {
   const catLabel = p.category || '실전 세일즈';
   const title = safeText(p.title, '(제목 없음)');
@@ -580,6 +683,8 @@ function PostCard({
     : snippetBase.length > 56
       ? `${snippetBase.slice(0, 56)}…`
       : snippetBase;
+
+  const canDelete = !!meId && (isAdmin || p.user_id === meId);
 
   useEffect(() => {
     if (!thumbSrc && p.image_url) ensureThumb();
@@ -620,6 +725,23 @@ function PostCard({
             >
               좋아요 <span style={{ fontWeight: 1000 }}>{likeN}</span>
             </button>
+
+            {canDelete ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDelete(e);
+                }}
+                disabled={deleting}
+                style={{ ...styles.delBtnMini, ...(deleting ? styles.delBtnDisabled : {}) }}
+                aria-label="delete"
+                title="삭제"
+              >
+                {deleting ? '삭제중…' : '삭제'}
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -661,6 +783,23 @@ function PostCard({
           >
             좋아요 <span style={{ fontWeight: 1000 }}>{likeN}</span>
           </button>
+
+          {canDelete ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete(e);
+              }}
+              disabled={deleting}
+              style={{ ...styles.delBtn, ...(deleting ? styles.delBtnDisabled : {}) }}
+              aria-label="delete"
+              title="삭제"
+            >
+              {deleting ? '삭제중…' : '삭제'}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -750,7 +889,6 @@ const styles: Record<string, any> = {
   dot: { width: 7, height: 7, borderRadius: 999, background: 'rgba(120,80,160,0.20)', cursor: 'pointer' },
   dotOn: { background: 'rgba(255,120,200,0.72)' },
 
-  // ✅ 경고카드: 연핑크 유지
   warnCard: {
     marginTop: 12,
     borderRadius: 18,
@@ -946,6 +1084,34 @@ const styles: Record<string, any> = {
   likeBtnOn: {
     background: 'linear-gradient(135deg, rgba(255,120,200,0.20), rgba(170,120,255,0.16))',
     borderColor: 'rgba(255,120,200,0.28)',
+  },
+
+  // ✅ 삭제 버튼(핑크-레드 계열)
+  delBtn: {
+    border: '1px solid rgba(255,70,140,0.22)',
+    background: 'linear-gradient(180deg, rgba(255,220,235,0.75), rgba(255,245,250,0.92))',
+    borderRadius: 999,
+    padding: '7px 12px',
+    fontSize: 12.5,
+    fontWeight: 1000,
+    color: '#7a1a3a',
+    cursor: 'pointer',
+    minWidth: 74,
+  },
+  delBtnMini: {
+    border: '1px solid rgba(255,70,140,0.22)',
+    background: 'linear-gradient(180deg, rgba(255,220,235,0.75), rgba(255,245,250,0.92))',
+    borderRadius: 999,
+    padding: '5px 9px',
+    fontSize: 11.5,
+    fontWeight: 1000,
+    color: '#7a1a3a',
+    cursor: 'pointer',
+    minWidth: 64,
+  },
+  delBtnDisabled: {
+    opacity: 0.6,
+    cursor: 'not-allowed',
   },
 
   postBodyMini: { minWidth: 0, overflow: 'hidden' },
