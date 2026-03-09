@@ -13,14 +13,12 @@ type CustomerRow = {
   id: string;
   user_id: string;
 
-  // ✅ 기본정보
   name: string | null;
   phone: string | null;
   address?: string | null;
   birth?: string | null;
   email?: string | null;
 
-  // ✅ 상태/속성
   stage?: string | null;
   grade?: string | null;
   propensity?: number | null;
@@ -53,14 +51,14 @@ type DealRow = {
   user_id: string;
   customer_id: string;
 
-  deal_date: string; // YYYY-MM-DD
-  deal_type: string; // sale/contract/renewal/referral/aftercare...
-  amount_int: number; // ✅ 통계용
-  amount_text: string | null; // ✅ "무이자 10개월" 등
+  deal_date: string;
+  deal_type: string; // sale / contract / renewal / referral / aftercare
+  amount_int: number;
+  amount_text: string | null;
   gift_text: string | null;
   discount_text: string | null;
-  followup_type: string | null; // 재판매/소개/지속관리
-  delivery_status: string | null; // 발송/배송완료/제품확인/오배송/파손/교환...
+  followup_type: string | null;
+  delivery_status: string | null;
   memo: string | null;
 
   created_at: string | null;
@@ -75,7 +73,6 @@ function ymdFromISO(iso: string | null | undefined) {
   if (Number.isNaN(d.getTime())) return null;
   return fmtYMD(d);
 }
-
 function startOfMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
@@ -98,18 +95,15 @@ function fmtMoney(n: number) {
   }
 }
 function moneyToNumber(s: string) {
-  // ✅ 빈칸이면 0 (저장 시만 숫자화)
   return Number((s || '').replace(/[^0-9]/g, '')) || 0;
 }
 function formatMoneyInput(s: string) {
-  // ✅✅✅ 금액 입력란 "0 고정" 제거: 빈칸이면 빈칸 유지
   const raw = (s || '').trim();
   if (!raw) return '';
   const n = moneyToNumber(raw);
   if (!n) return '';
   return new Intl.NumberFormat('ko-KR').format(n);
 }
-
 function yn(v: boolean | null | undefined) {
   if (v === true) return '예';
   if (v === false) return '아니오';
@@ -120,6 +114,15 @@ function shortAddr(s: string | null | undefined) {
   if (!t) return '-';
   if (t.length <= 16) return t;
   return t.slice(0, 16) + '…';
+}
+
+/* =========================
+   판매 실적 규칙
+   ✅ sale(신규 판매), renewal(재판매)만 집계
+========================= */
+function isSalesDealType(type?: string | null) {
+  const t = (type || '').trim();
+  return t === 'sale' || t === 'renewal';
 }
 
 /* =========================
@@ -134,10 +137,11 @@ export default function CustomersPage() {
 
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
+  const [monthDeals, setMonthDeals] = useState<DealRow[]>([]);
+
   const [monthCursor, setMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(() => new Date());
 
-  // ✅ 고객 검색(이름/전화)
   const [q, setQ] = useState('');
 
   const monthLabel = useMemo(
@@ -146,10 +150,33 @@ export default function CustomersPage() {
   );
 
   /* =========================
+     공용 로더
+  ========================= */
+  const loadMonthDeals = async (uid: string, baseDate: Date) => {
+    const { data, error } = await supabase
+      .from('customer_deals')
+      .select('*')
+      .eq('user_id', uid)
+      .gte('deal_date', fmtYMD(startOfMonth(baseDate)))
+      .lte('deal_date', fmtYMD(endOfMonth(baseDate)))
+      .order('deal_date', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      setErr(error.message);
+      setMonthDeals([]);
+      return;
+    }
+
+    setMonthDeals((data || []) as DealRow[]);
+  };
+
+  /* =========================
      초기 로드
   ========================= */
   useEffect(() => {
     let alive = true;
+
     (async () => {
       setLoading(true);
       setErr(null);
@@ -174,13 +201,22 @@ export default function CustomersPage() {
         .gte('schedule_date', fmtYMD(startOfMonth(monthCursor)))
         .lte('schedule_date', fmtYMD(endOfMonth(monthCursor)));
 
+      const { data: d, error: de } = await supabase
+        .from('customer_deals')
+        .select('*')
+        .eq('user_id', uid)
+        .gte('deal_date', fmtYMD(startOfMonth(monthCursor)))
+        .lte('deal_date', fmtYMD(endOfMonth(monthCursor)));
+
       if (!alive) return;
 
       if (ce) setErr(ce.message);
       if (se) setErr(se.message);
+      if (de) setErr(de.message);
 
       setCustomers((c || []) as CustomerRow[]);
       setSchedules((s || []) as ScheduleRow[]);
+      setMonthDeals((d || []) as DealRow[]);
       setLoading(false);
     })();
 
@@ -213,7 +249,6 @@ export default function CustomersPage() {
     return map;
   }, [schedules]);
 
-  // ✅ customersByDate는 별도 useMemo로 (중첩 Hook 방지)
   const customersByDate = useMemo(() => {
     const map: Record<string, number> = {};
     for (const c of customers || []) {
@@ -223,6 +258,57 @@ export default function CustomersPage() {
     }
     return map;
   }, [customers]);
+
+  /* =========================
+     ✅ 날짜별 판매 실적
+     sale + renewal 만 반영
+  ========================= */
+  const salesAmountByDate = useMemo(() => {
+    const map: Record<string, number> = {};
+
+    for (const d of monthDeals || []) {
+      const day = (d.deal_date || '').trim();
+      if (!day) continue;
+      if (!isSalesDealType(d.deal_type)) continue;
+
+      const amount = Number(d.amount_int || 0);
+      if (amount <= 0) continue;
+
+      map[day] = (map[day] || 0) + amount;
+    }
+
+    return map;
+  }, [monthDeals]);
+
+  const monthSalesTotal = useMemo(() => {
+    return Object.values(salesAmountByDate).reduce((sum, n) => sum + n, 0);
+  }, [salesAmountByDate]);
+
+  const maxSingleSaleAmount = useMemo(() => {
+    let max = 0;
+
+    for (const d of monthDeals || []) {
+      if (!isSalesDealType(d.deal_type)) continue;
+      const amount = Number(d.amount_int || 0);
+      if (amount > max) max = amount;
+    }
+
+    return max;
+  }, [monthDeals]);
+
+  const maxDailySalesInfo = useMemo(() => {
+    let bestDate = '';
+    let bestAmount = 0;
+
+    for (const [date, amount] of Object.entries(salesAmountByDate)) {
+      if (amount > bestAmount) {
+        bestAmount = amount;
+        bestDate = date;
+      }
+    }
+
+    return { date: bestDate, amount: bestAmount };
+  }, [salesAmountByDate]);
 
   const selectedYMD = fmtYMD(selectedDate);
   const prevMonth = () => setMonthCursor((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
@@ -259,14 +345,13 @@ export default function CustomersPage() {
 
   const [form, setForm] = useState<CustomerRow>(emptyCustomer);
 
-  // ✅ notes_json 확장(스키마 변경 없이 개인정보 필드 추가 저장)
   type Notes = {
     callLogs?: { date: string; text: string }[];
     checks?: { date: string; items: { label: string; done: boolean }[] }[];
     profile?: {
-      jobType?: string | null; // 직장인/자영업/프리랜서/무직/기타
-      jobCategory?: string | null; // 사무/영업/현장/전문직/서비스/제조/교육/의료/공공/기타
-      jobDetail?: string | null; // 직업 상세
+      jobType?: string | null;
+      jobCategory?: string | null;
+      jobDetail?: string | null;
     };
   };
 
@@ -290,6 +375,7 @@ export default function CustomersPage() {
   const loadDealsForCustomer = async (customerId: string) => {
     if (!userId) return;
     setErr(null);
+
     const { data, error } = await supabase
       .from('customer_deals')
       .select('*')
@@ -303,6 +389,7 @@ export default function CustomersPage() {
       setDeals([]);
       return;
     }
+
     setDeals((data || []) as DealRow[]);
   };
 
@@ -320,11 +407,11 @@ export default function CustomersPage() {
   const [callText, setCallText] = useState('');
 
   /* =========================
-     customer_deals 입력 (금액 0 고정 제거)
+     customer_deals 입력
   ========================= */
   const [dealDate, setDealDate] = useState(() => fmtYMD(new Date()));
   const [dealType, setDealType] = useState<string>('sale');
-  const [amountInt, setAmountInt] = useState<string>(''); // ✅ 기본 빈칸
+  const [amountInt, setAmountInt] = useState<string>('');
   const [amountText, setAmountText] = useState<string>('');
   const [giftText, setGiftText] = useState<string>('');
   const [discountText, setDiscountText] = useState<string>('');
@@ -372,26 +459,20 @@ export default function CustomersPage() {
 
     const payload: any = {
       user_id: userId,
-
       name: (form.name || '').trim() || null,
       phone: (form.phone || '').trim() || null,
-
       address: (form.address || '').trim() || null,
       birth: (form.birth || '').trim() || null,
       email: (form.email || '').trim() || null,
-
       stage: form.stage || null,
       grade: form.grade || null,
       propensity: typeof form.propensity === 'number' ? form.propensity : null,
-
       gender: (form.gender || '').trim() || null,
       married: form.married ?? null,
       student: form.student ?? null,
       children: form.children ?? null,
-
       job: (form.job || '').trim() || null,
       medical: (form.medical || '').trim() || null,
-
       memo: (form.memo || '').trim() || null,
       notes_json: form.notes_json ?? {},
     };
@@ -422,12 +503,15 @@ export default function CustomersPage() {
     if (!userId) return;
     if (!confirm('삭제할까요?')) return;
     setErr(null);
+
     try {
       const { error } = await supabase.from('customers').delete().eq('id', id).eq('user_id', userId);
       if (error) throw error;
 
       setCustomers((prev) => prev.filter((x) => x.id !== id));
       if (editingId === id) closeModal();
+
+      await loadMonthDeals(userId, monthCursor);
     } catch (e: any) {
       setErr(e?.message || '삭제 중 오류');
     }
@@ -494,7 +578,7 @@ export default function CustomersPage() {
   };
 
   /* =========================
-     notes_json 편집 helpers
+     notes_json helpers
   ========================= */
   const addCallLog = () => {
     const text = callText.trim();
@@ -553,11 +637,9 @@ export default function CustomersPage() {
       deal_type: (dealType || 'sale').trim() || 'sale',
       amount_int: n,
       amount_text: amountText.trim() || null,
-
       gift_text: giftText.trim() || null,
       discount_text: discountText.trim() || null,
       followup_type: followupType.trim() || null,
-
       delivery_status: deliveryStatus.trim() || null,
       memo: dealMemo.trim() || null,
     };
@@ -567,6 +649,7 @@ export default function CustomersPage() {
       if (error) throw error;
 
       await loadDealsForCustomer(editingId);
+      await loadMonthDeals(userId, monthCursor);
       resetDealInputs();
     } catch (e: any) {
       setErr(e?.message || '기록 추가 오류');
@@ -582,7 +665,9 @@ export default function CustomersPage() {
     try {
       const { error } = await supabase.from('customer_deals').delete().eq('id', id).eq('user_id', userId);
       if (error) throw error;
+
       await loadDealsForCustomer(editingId);
+      await loadMonthDeals(userId, monthCursor);
     } catch (e: any) {
       setErr(e?.message || '기록 삭제 오류');
     }
@@ -602,7 +687,7 @@ export default function CustomersPage() {
   }, [deals]);
 
   /* =========================
-     고객 검색 필터(이름/전화)
+     고객 검색 필터
   ========================= */
   const filteredCustomers = useMemo(() => {
     const raw = (q || '').trim();
@@ -627,7 +712,6 @@ export default function CustomersPage() {
   const isSameMonth = (a: Date, monthBase: Date) =>
     a.getFullYear() === monthBase.getFullYear() && a.getMonth() === monthBase.getMonth();
 
-  // ✅ 도트 색상(선명 유지)
   const catMeta = (cat?: string | null) => {
     const c = (cat || '').trim();
 
@@ -641,7 +725,6 @@ export default function CustomersPage() {
     return { dot: '•', color: 'rgba(42,15,58,0.70)' };
   };
 
-  // ✅ 달력 도트: 도트만 표시(텍스트/숫자 최소화)
   const getDayDotCats = (ymd: string) => {
     const list = schedulesByDate[ymd] || [];
     const set = new Set<string>();
@@ -654,6 +737,10 @@ export default function CustomersPage() {
     const newC = customersByDate[ymd] || 0;
     if (newC > 0) set.add('고객');
 
+    if ((salesAmountByDate[ymd] || 0) > 0) {
+      set.add('계약');
+    }
+
     const order = ['체크', '통화', '문자', '방문', '계약', '고객'];
     const cats = order.filter((k) => set.has(k));
     const extra = [...set].filter((k) => !order.includes(k));
@@ -661,7 +748,7 @@ export default function CustomersPage() {
   };
 
   /* =========================
-     스타일 (✅ 빨간줄 원인: 중복키/객체 끊김 제거 + 정렬/짤림 방지)
+     스타일
   ========================= */
   const S: Record<string, any> = {
     page: { maxWidth: 980, margin: '0 auto', padding: '14px 14px 40px', boxSizing: 'border-box' },
@@ -707,7 +794,6 @@ export default function CustomersPage() {
       overflow: 'hidden',
     },
 
-    // ✅ 말풍선/마스코트: 모바일에서도 치우침/짤림 없게 (기본 세로, 넓으면 2열은 CSS에서)
     coachRow: { display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'stretch' },
     bubble: {
       borderRadius: 18,
@@ -731,27 +817,22 @@ export default function CustomersPage() {
     },
 
     mascotWrap: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
-    // ✅ 업쮸(고고) 안 보이는 경우: frame이 투명/overflow 영향 -> 안전한 배경 + 중앙 정렬
     mascotFrame: {
-  width: 160,
-  height: 160,
-  borderRadius: 22,
-
-  /* ❌ 테두리/배경/그림자 제거 */
-  border: 'none',
-  background: 'transparent',
-  boxShadow: 'none',
-
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  animation: 'uplogFloat 3.2s ease-in-out infinite',
-  transform: 'translateZ(0)',
-  willChange: 'transform',
-  boxSizing: 'border-box',
-  overflow: 'visible', // ← 이미지 잘림 방지
-},
-
+      width: 160,
+      height: 160,
+      borderRadius: 22,
+      border: 'none',
+      background: 'transparent',
+      boxShadow: 'none',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      animation: 'uplogFloat 3.2s ease-in-out infinite',
+      transform: 'translateZ(0)',
+      willChange: 'transform',
+      boxSizing: 'border-box',
+      overflow: 'visible',
+    },
     mascotImg: { width: 150, height: 150, objectFit: 'contain', filter: 'drop-shadow(0 8px 14px rgba(30,10,40,0.18))' },
 
     listRow: {
@@ -819,6 +900,16 @@ export default function CustomersPage() {
       fontSize: 12,
       whiteSpace: 'nowrap',
     },
+    salesPill: {
+      padding: '8px 10px',
+      borderRadius: 999,
+      border: '1px solid rgba(255,80,170,0.28)',
+      background: 'linear-gradient(135deg, rgba(255,80,170,0.14), rgba(170,90,255,0.12))',
+      fontWeight: 950,
+      color: '#7a1038',
+      fontSize: 12,
+      whiteSpace: 'nowrap',
+    },
     calBtn: {
       padding: '9px 10px',
       borderRadius: 12,
@@ -830,7 +921,6 @@ export default function CustomersPage() {
       whiteSpace: 'nowrap',
     },
 
-    // ✅ 달력 도트 안내(달력 스케줄 글귀 밑으로 이동)
     dotLegendWrap: {
       marginTop: 10,
       padding: '10px 12px',
@@ -862,7 +952,6 @@ export default function CustomersPage() {
 
     calGrid: { marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 },
 
-    // ✅ 셀: 높이 고정 + 내부는 2줄 구조(짤림 방지)
     dayCell: (active: boolean, inMonth: boolean) => ({
       borderRadius: 16,
       border: active ? '1px solid rgba(255,80,170,0.38)' : '1px solid rgba(20,10,30,0.06)',
@@ -871,7 +960,7 @@ export default function CustomersPage() {
       cursor: 'pointer',
       userSelect: 'none',
       boxSizing: 'border-box',
-      height: 62, // ✅ 고정
+      height: 62,
       display: 'flex',
       flexDirection: 'column',
       justifyContent: 'space-between',
@@ -935,7 +1024,6 @@ export default function CustomersPage() {
     formRow: { marginTop: 10 },
     miniLabel: { fontSize: 12, fontWeight: 950, color: 'rgba(42,15,58,0.75)' },
 
-    // ✅ 입력줄: auto-fit로 좁으면 아래로 자연스럽게
     addRow: { marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, alignItems: 'center' },
 
     input: {
@@ -995,7 +1083,6 @@ export default function CustomersPage() {
       boxSizing: 'border-box',
     },
 
-    // ✅ 모달
     modalBack: {
       position: 'fixed' as const,
       inset: 0,
@@ -1045,7 +1132,6 @@ export default function CustomersPage() {
       whiteSpace: 'nowrap',
     },
 
-    // ✅ 모달 내부 그리드: 기본 1열(짤림 방지), 넓으면 2열은 CSS에서
     modalGrid: { display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10 },
     modalCol: { display: 'flex', flexDirection: 'column', gap: 10 },
 
@@ -1135,7 +1221,7 @@ export default function CustomersPage() {
     { label: '통화', color: catMeta('통화').color },
     { label: '문자', color: catMeta('문자').color },
     { label: '방문', color: catMeta('방문').color },
-    { label: '계약', color: catMeta('계약').color },
+    { label: '계약/실적', color: catMeta('계약').color },
     { label: '고객', color: catMeta('고객').color },
   ];
 
@@ -1180,7 +1266,6 @@ export default function CustomersPage() {
           100% { transform: translateY(0); }
         }
 
-        /* ✅ 넓은 화면에서만 2열로(모바일은 1열 고정) */
         @media (min-width: 860px) {
           .coachRowWide {
             display: grid !important;
@@ -1198,11 +1283,10 @@ export default function CustomersPage() {
       `}</style>
 
       <div style={S.page}>
-        {/* 상단 */}
         <div style={S.top}>
           <div style={S.titleWrap}>
             <div style={S.title}>고객관리</div>
-            <div style={S.sub}>고객 정보 + 일정 + 통화/체크 + 계약(기록)까지 한 화면에서 관리</div>
+            <div style={S.sub}>고객 정보 + 일정 + 통화/체크 + 계약/판매 기록 + 월 실적 연동</div>
           </div>
 
           <button type="button" style={S.saveBtn} onClick={openNew}>
@@ -1212,7 +1296,6 @@ export default function CustomersPage() {
 
         {err ? <div style={S.errBox}>{err}</div> : null}
 
-        {/* 말풍선/마스코트 (✅ 업쮸 이미지 복구) */}
         <div style={S.headerCard}>
           <div className="coachRowWide" style={S.coachRow}>
             <div style={S.bubble}>
@@ -1220,9 +1303,11 @@ export default function CustomersPage() {
               <div style={S.bubbleBody}>
                 고객을 추가하고, 달력에서 날짜를 눌러 일정(체크/통화/문자/방문/계약)을 쌓아보세요.
                 <br />
-                계약/판매 기록은 고객 상세에서 바로 남길 수 있어요.
+                판매·재구매 금액은 이번 달 실적으로 자동 반영돼요.
               </div>
-              <div style={S.bubbleTip}>팁) 달력은 “도트 색상”만 보여요. 날짜를 눌러 아래에서 상세를 확인해요.</div>
+              <div style={S.bubbleTip}>
+                팁) 실적 집계는 판매(sale) + 재구매(renewal)만 포함돼요. 계약/소개/사후관리는 금액왕 집계에서 제외됩니다.
+              </div>
             </div>
 
             <div style={S.mascotWrap}>
@@ -1241,7 +1326,6 @@ export default function CustomersPage() {
           </div>
         </div>
 
-        {/* 고객 리스트 */}
         <div style={S.card}>
           <div style={S.sectionTitle}>고객 목록</div>
           <div style={S.sectionSub}>이름/전화로 빠르게 찾고, 눌러서 바로 편집하세요</div>
@@ -1281,14 +1365,20 @@ export default function CustomersPage() {
           </div>
         </div>
 
-        {/* 달력 + 선택날짜 일정 */}
         <div style={S.card}>
           <div style={S.calTop}>
             <div>
               <div style={S.sectionTitle}>달력 스케줄</div>
               <div style={S.sectionSub}>날짜별로 체크/통화/문자/방문/계약(및 고객 추가)을 도트로 표시</div>
 
-              {/* ✅✅✅ 달력도트색상안내: “달력 스케줄 글귀 밑”으로 이동 */}
+              <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <span style={S.salesPill}>이번달 누적 판매 {fmtMoney(monthSalesTotal)}원</span>
+                <span style={S.salesPill}>
+                  이번달 최대 일간 판매 {maxDailySalesInfo.amount > 0 ? `${fmtMoney(maxDailySalesInfo.amount)}원` : '0원'}
+                </span>
+                <span style={S.salesPill}>이번달 최대 단건 판매 {fmtMoney(maxSingleSaleAmount)}원</span>
+              </div>
+
               <div style={S.dotLegendWrap}>
                 <div style={S.dotLegendTitle}>달력 도트 색상 안내</div>
                 <div style={S.dotLegendRow}>
@@ -1331,6 +1421,7 @@ export default function CustomersPage() {
                 const cats = getDayDotCats(ymd);
                 const list = schedulesByDate[ymd] || [];
                 const cnt = list.length + (customersByDate[ymd] || 0);
+                const sales = salesAmountByDate[ymd] || 0;
 
                 return (
                   <div key={ymd} style={S.dayCell(active, inMonth)} onClick={() => pickDay(d)}>
@@ -1344,7 +1435,9 @@ export default function CustomersPage() {
                     </div>
 
                     <div style={S.dayBottom}>
-                      <div style={S.dayCount}>{cnt > 0 ? `기록 ${cnt}` : ''}</div>
+                      <div style={S.dayCount}>
+                        {sales > 0 ? `실적 ${fmtMoney(sales)}` : cnt > 0 ? `기록 ${cnt}` : ''}
+                      </div>
                       <div style={{ fontSize: 11, fontWeight: 900, color: 'rgba(42,15,58,0.35)' }}>{active ? '선택' : ''}</div>
                     </div>
                   </div>
@@ -1352,14 +1445,16 @@ export default function CustomersPage() {
               })}
             </div>
 
-            <div style={S.mobileHint}>달력이 작아도 셀 밖으로 내용이 튀지 않게 “고정 높이 + 도트 중심”으로 구성했습니다.</div>
+            <div style={S.mobileHint}>달력의 실적 표시는 판매/재구매 금액만 합산됩니다.</div>
           </div>
 
-          {/* 선택 날짜 상세 + 추가 */}
           <div style={S.stack}>
             <div style={S.box}>
               <div style={S.boxTitle}>선택 날짜: {selectedYMD}</div>
-              <div style={S.boxSub}>이 날짜에 저장된 일정 목록(시간순)</div>
+              <div style={S.boxSub}>
+                이 날짜 일정 목록(시간순)
+                {(salesAmountByDate[selectedYMD] || 0) > 0 ? ` · 판매실적 ${fmtMoney(salesAmountByDate[selectedYMD])}원` : ''}
+              </div>
 
               <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {daySchedules.length === 0 ? (
@@ -1412,7 +1507,6 @@ export default function CustomersPage() {
           </div>
         </div>
 
-        {/* 모달 */}
         {isOpen ? (
           <div style={S.modalBack} onMouseDown={(e) => e.currentTarget === e.target && closeModal()}>
             <div style={S.modal}>
@@ -1439,7 +1533,6 @@ export default function CustomersPage() {
               {err ? <div style={S.errBox}>{err}</div> : null}
 
               <div className="modalGridWide" style={S.modalGrid}>
-                {/* 좌측: 고객 정보 / 개인정보 / 메모 */}
                 <div style={S.modalCol}>
                   <div style={S.box}>
                     <div style={S.boxTitle}>기본 정보</div>
@@ -1632,7 +1725,6 @@ export default function CustomersPage() {
                   </div>
                 </div>
 
-                {/* 우측: 체크/통화 기록 + 계약/판매 기록 */}
                 <div style={S.modalCol}>
                   <div style={S.box}>
                     <div style={S.boxTitle}>오늘 체크(선택 날짜 기준)</div>
@@ -1684,7 +1776,7 @@ export default function CustomersPage() {
 
                   <div style={S.box}>
                     <div style={S.boxTitle}>계약/판매 기록(customer_deals)</div>
-                    <div style={S.boxSub}>고객 저장 후에 기록 추가 가능 (금액 입력은 빈칸 유지 가능)</div>
+                    <div style={S.boxSub}>판매(sale) + 재구매(renewal)만 월 판매 실적에 반영됩니다</div>
 
                     <div style={S.dealForm}>
                       <div>
@@ -1713,14 +1805,14 @@ export default function CustomersPage() {
                       </div>
                     </div>
 
-                                        <div style={S.dealForm2}>
+                    <div style={S.dealForm2}>
                       <div>
                         <div style={S.label}>조건/메모(텍스트)</div>
                         <input
                           style={S.input}
                           value={amountText}
                           onChange={(e) => setAmountText(e.target.value)}
-                          placeholder='예: 무이자 10개월 / 현금할인 / 카드사 이벤트'
+                          placeholder="예: 무이자 10개월 / 현금할인 / 카드사 이벤트"
                         />
                       </div>
                       <div>
@@ -1792,7 +1884,12 @@ export default function CustomersPage() {
                           .sort((a, b) => b.localeCompare(a))
                           .map((day) => (
                             <div key={day} style={S.dealDay}>
-                              <div style={S.dealDayTitle}>{day}</div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <div style={S.dealDayTitle}>{day}</div>
+                                <div style={S.dealDayTitle}>
+                                  {salesAmountByDate[day] > 0 ? `판매실적 ${fmtMoney(salesAmountByDate[day])}원` : ''}
+                                </div>
+                              </div>
 
                               {(dealsByDate[day] || []).map((d) => {
                                 const t = dealTypeMeta(d.deal_type);
@@ -1825,7 +1922,6 @@ export default function CustomersPage() {
                 </div>
               </div>
 
-              {/* ✅ 모달 하단 안내 */}
               <div style={{ marginTop: 12, fontSize: 12, fontWeight: 900, color: 'rgba(42,15,58,0.55)' }}>
                 저장 버튼을 누르면 고객 정보/개인정보/체크/통화 로그/직업(확장)까지 함께 저장됩니다.
               </div>
